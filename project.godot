@@ -1,0 +1,35 @@
+; Engine configuration file.
+; It's best edited using the editor UI and not directly,
+; since the parameters that go here are not all obvious.
+;
+; Format documentation:
+; https://docs.godotengine.org/en/stable/tutorials/editor/project_settings.html
+
+config_version=5
+
+[application]
+
+config/name="The Outpost"
+config/description="Single-player 2D Greco-Roman strategy/RPG with a local-LLM game master."
+run/main_scene="res://core/bootstrap/boot.tscn"
+config/features=PackedStringArray("4.7", "GL Compatibility")
+config/icon="res://icon.svg"
+
+[autoload]
+
+Kernel="*res://core/kernel.gd"
+
+[debug]
+
+gdscript/warnings/untyped_declaration=1
+gdscript/warnings/unsafe_property_access=1
+gdscript/warnings/unsafe_method_access=1
+
+[editor_plugins]
+
+enabled=PackedStringArray("res://addons/gut/plugin.cfg")
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"

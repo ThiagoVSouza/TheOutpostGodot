@@ -1,0 +1,27 @@
+# Normalize line endings; Godot text resources are LF.
+* text=auto eol=lf
+
+# Godot / GDScript text resources
+*.gd        text eol=lf
+*.tres      text eol=lf
+*.tscn      text eol=lf
+*.godot     text eol=lf
+*.cfg       text eol=lf
+*.import    text eol=lf
+*.json      text eol=lf
+
+# PowerShell tooling stays LF for cross-tool consistency
+*.ps1       text eol=lf
+
+# Binary assets — never touch line endings, don't diff
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.webp      binary
+*.ogg       binary
+*.wav       binary
+*.mp3       binary
+*.ttf       binary
+*.otf       binary
+*.pck       binary
+*.exe       binary
