@@ -1,0 +1,42 @@
+# Godot 4+ specific ignores
+.godot/
+.import/
+export.cfg
+export_presets.cfg
+
+# Imported translations (automatically generated from CSV files)
+*.translation
+
+# Mono-specific ignores
+.mono/
+data_*/
+
+# System/tooling
+.vs/
+.vscode/
+*.swp
+*~
+
+# OS-generated files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Build/export output
+build/
+builds/
+export/
+*.pck
+*.exe
+*.app
+*.dmg
+*.apk
+
+# Environment / secrets
+.env
+.env.local
+
+# Node/JS leftovers (legacy Tauri app reference, if kept temporarily)
+node_modules/
+dist/
+target/
