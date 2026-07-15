@@ -14,9 +14,12 @@ var log: GameLog
 var events: EventBus
 var state: GameState
 var commands: CommandBus
+var command_registry: CommandRegistry
+var tools: ToolRegistry
 var modules: ModuleRegistry
 var screens: ScreenRegistry
 var ai: AiBackend
+var ai_orchestrator: AiOrchestrator
 var clock: GameClock
 var scheduler: Scheduler
 var saves: SaveManager
@@ -45,21 +48,28 @@ func boot() -> void:
 	events = EventBus.new()
 	state = GameState.new()
 
-	# 4. Command choke point (needs state).
+	# 4. Command choke point (needs state) + the whitelist of AI-producible commands.
 	commands = CommandBus.new(state, events, log)
+	command_registry = CommandRegistry.new()
 
-	# 5-6. Module + screen registries.
+	# 5. Registries modules populate.
+	tools = ToolRegistry.new()
 	modules = ModuleRegistry.new(log)
 	screens = ScreenRegistry.new()
 
-	# 7. AI seam — FakeAiBackend by default; orchestrator wired in a later milestone.
+	# 6. AI seam — FakeAiBackend by default; real backends swap in later.
 	ai = FakeAiBackend.new()
 
-	# 8. Deferred seams: constructed so their types/interfaces exist, inert for now.
-	clock = GameClock.new()
-	scheduler = Scheduler.new()
-	saves = SaveManager.new()
+	# 7. Calendar + workflow subsystems (scheduler listens on the event bus and runs
+	#    due workflows through the engine).
 	workflows = WorkflowEngine.new()
+	clock = GameClock.new(events)
+	scheduler = Scheduler.new(events, workflows, self)
+	saves = SaveManager.new()
+
+	# 8. AI orchestrator ties the above together (needs tools, command_registry, ai,
+	#    commands, workflows, scheduler, events).
+	ai_orchestrator = AiOrchestrator.new(self)
 
 	# 9. Discover + load modules; each registers its content through the seams above.
 	modules.load_all(self)

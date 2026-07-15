@@ -1,16 +1,44 @@
 class_name GameClock
 extends RefCounted
 
-## In-game calendar. STUB SEAM — filled in milestone 1.
-##
-## Will track the game date and advance it (day/month/turn), emitting calendar events
-## (e.g. "month_ended") that the [Scheduler] and workflows hook into. For now it only
-## holds a day counter so the seam and its type exist.
+## In-game calendar. Tracks elapsed days and emits calendar events that the [Scheduler]
+## and workflows hook into. Days are advanced explicitly (turn-/action-driven), not by
+## real time. Emits (via the injected [EventBus]):
+##   "day_passed"   -> { "total_days": int }
+##   "month_ended"  -> { "month": int, "total_days": int }
 
-var day: int = 0
+const DAYS_PER_MONTH: int = 30
+
+var total_days: int = 0
+
+var _events: EventBus
 
 
-## Advance the calendar by [param days]. Real implementation will emit date events.
+func _init(events: EventBus = null) -> void:
+	_events = events
+
+
+## Advance the calendar day by day so per-day and month-boundary events all fire.
 func advance(days: int = 1) -> void:
-	# TODO(milestone-1): emit "day_passed"/"month_ended" via EventBus and drive Scheduler.
-	day += days
+	for _i in maxi(days, 0):
+		total_days += 1
+		_emit("day_passed", {"total_days": total_days})
+		if total_days % DAYS_PER_MONTH == 0:
+			_emit("month_ended", {"month": months_elapsed(), "total_days": total_days})
+
+
+## Number of whole months elapsed.
+func months_elapsed() -> int:
+	return total_days / DAYS_PER_MONTH
+
+
+## 1-based day within the current month (0 before any day has passed).
+func day_of_month() -> int:
+	if total_days == 0:
+		return 0
+	return ((total_days - 1) % DAYS_PER_MONTH) + 1
+
+
+func _emit(event_name: String, payload: Dictionary) -> void:
+	if _events != null:
+		_events.emit(event_name, payload)

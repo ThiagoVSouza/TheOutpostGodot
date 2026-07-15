@@ -11,13 +11,13 @@ func test_kernel_boots_and_loads_base_game() -> void:
 	assert_true(kernel.is_booted(), "kernel should be booted after entering the tree")
 	assert_true(kernel.modules.is_loaded("base_game"), "base_game module should load")
 	assert_true(
-		kernel.screens.has("base_game.placeholder"),
-		"base_game should register its placeholder screen"
+		kernel.screens.has("base_game.chat"),
+		"base_game should register its chat screen"
 	)
 	assert_eq(
 		kernel.screens.start_screen_id(),
-		"base_game.placeholder",
-		"placeholder should be the start screen"
+		"base_game.chat",
+		"chat should be the start screen"
 	)
 
 
