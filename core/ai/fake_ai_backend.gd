@@ -7,7 +7,8 @@ extends AiBackend
 ## UI testing run the full orchestration flow without loading a model. Responses can be
 ## seeded per-intent; an unseeded request falls back to a canned echo response.
 
-var _canned: Dictionary = {}  # intent/key: String -> response: Dictionary
+var _canned: Dictionary = {}   # key: String -> response: Dictionary
+var _queues: Dictionary = {}   # key: String -> Array[Dictionary] returned in order
 
 
 func backend_id() -> String:
@@ -18,13 +19,24 @@ func is_ready() -> bool:
 	return true
 
 
-## Seed a canned response for a given key (e.g. an intent name the test expects).
+## Seed a single canned response for a key (e.g. a classified intent).
 func set_response(key: String, response: Dictionary) -> void:
 	_canned[key] = response
 
 
+## Seed an ordered sequence of responses for a key, returned one per [method generate]
+## call with that key. This models a multi-turn tool-use exchange (turn 1 asks to call a
+## tool, turn 2 returns commands + narrative) without a real model.
+func queue_responses(key: String, responses: Array) -> void:
+	_queues[key] = responses.duplicate(true)
+
+
 func generate(request: Dictionary) -> Dictionary:
 	var key := String(request.get("intent", ""))
+	# Queued sequence takes precedence so scripted multi-turn exchanges play in order.
+	var queue: Array = _queues.get(key, [])
+	if not queue.is_empty():
+		return (queue.pop_front() as Dictionary).duplicate(true)
 	if _canned.has(key):
 		return (_canned[key] as Dictionary).duplicate(true)
 	# Default deterministic fallback so orchestration has something well-formed to consume.
