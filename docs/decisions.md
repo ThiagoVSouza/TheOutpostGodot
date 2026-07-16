@@ -142,9 +142,37 @@ orchestration design.
 
 | Tier | Model | Size | Why |
 |---|---|---|---|
-| **Mobile default** | Gemma 4 **E2B** it-qat | 2.43 GiB | 29.5 t/s on S26 Ultra, ±0.16 — the only thing both fast and stable on a phone |
-| **Mid / opt-in** | Gemma 4 **E4B** it-qat | 3.91 GiB | Better writing; **prior phone test invalid** (see below) |
+| **Mobile default** | Gemma 4 **E2B** it-qat | 2.43 GiB | Fits a phone's *available* RAM comfortably; fastest and most stable option measured |
+| **Mobile, deferred** | Gemma 4 **E4B** it-qat | 3.91 GiB | **Not viable via llama.cpp** — but see the runtime question below |
 | **Desktop default** | **Bonsai-27B** Q1_0 | 3.53 GiB | 26.9 B params at **54% VRAM on 8 GB**, current-gen Qwen3.6, passes the D4 protocol test |
+
+### E4B on mobile: our runtime's problem, possibly not the model's — **deferred**
+
+**Via llama.cpp it is unusable.** Retested at full CPU with the battery saver off and
+it got *worse*: `tg` **2.01 ± 1.53** (variance 76% of the mean = thrashing). The
+uncapped clock lifted `pp` 4.6x (8.57 → 39.47, compute-bound) and did nothing for
+`tg` (memory-bound). Mechanism: **3.91 GiB of weights vs ~3.8 GiB available RAM** →
+llama.cpp pages weights from storage every token. No clock speed fixes that.
+
+**But the same model runs at 10+ t/s in Google's Edge Gallery on the same phone.**
+That is a **5x gap against our own measurement**, and Edge Gallery is **LiteRT-LM,
+not llama.cpp** — Gemma-specific kernels, a tuned OpenCL GPU path, and MTP
+speculative decoding. So the honest conclusion is **not** "E4B doesn't fit a phone";
+it is **"E4B doesn't fit a phone *the way we run models*."**
+
+This deserves care, because it undercuts a conclusion we nearly shipped, and it is
+the second time a runtime difference produced a fake model verdict (the first: the
+PrismML fork's missing NEON kernel, D17 item 2).
+
+**Deferred, not closed.** Open questions if it is picked up:
+- Is the win LiteRT's GPU path, its Gemma kernels, MTP, or a different quant?
+- Would adopting LiteRT-LM mean a *second* inference stack alongside llama.cpp
+  (Android-only, no GGUF, different API) — and is that worth an E2B→E4B upgrade?
+- Does anything in D9 (Android CPU over GPU) survive on a runtime with GPU kernels
+  that were actually written for the model?
+
+**Until then E2B is the mobile default**, and phone players have no local upgrade
+path — which makes **D16 (dispatch) more valuable than it first appeared**.
 
 **Why Gemma on mobile.** There is no viable Bonsai: the 4B and 8B are `qwen3`-arch
 (two-to-three generations old, opaque base), and the 4B failed badly on quality —
@@ -174,9 +202,10 @@ chat templates, which llama.cpp reads from GGUF metadata automatically.
 
 **Safe only because of D4.** Three models, three different rewards for one roll.
 
-**Open:** E4B's phone number is **invalid** — measured with the prime core capped to
-83% by battery saver *and* under memory pressure (±7.34 variance = thrashing). Needs
-a clean re-run before it is confirmed as the middle tier.
+**On the numbers themselves:** absolute phone figures in this project move wildly
+with CPU cap, thermals and memory — E2B alone measured 29.52, 23.24 and 7.92 across
+one afternoon. **The ordering never moved.** Trust the rankings and the mechanisms;
+treat any single absolute number as provisional. See D17.
 
 ---
 
@@ -410,8 +439,16 @@ its own security review. Don't let dispatch delay local inference.
 3. **Read the source, not the model card.** PrismML's card says *"Q2_0 is not yet in
    mainline"*. It is — with a NEON kernel the fork lacks (the fork's ARM
    `ggml_vec_dot_q2_0_q8_0` is a passthrough to `_generic`).
-4. **Check the CPU governor.** Battery saver capped the prime core to 83% for an
-   entire session's numbers.
+4. **Check the CPU governor — every run, not once.** Battery saver capped the prime
+   core to 83%. We disabled it, verified 100%, and **the phone silently re-capped
+   itself to ~71% within the hour.** Samsung's power management re-applies. Read
+   `scaling_max_freq` vs `cpuinfo_max_freq` immediately before *and* after any run
+   whose numbers you intend to trust. This also means **any on-device benchmark we
+   ship (D14) will hit the same thing** — the user's phone will not be in a good
+   state when we measure it.
+5. **Watch swap, not just MemAvailable.** After a large model runs, the page cache is
+   wrecked (`MemFree` 204 MB, 4.85 GB swap in use). The *next* model measures badly
+   through no fault of its own. Cooling does not fix this; only time or a reboot does.
 5. **Start from Thermal Status 0.** Gemma's pp512 read 107 → 62 → 29 across one
    afternoon purely from heat. The first SKIN/AP sensor in `dumpsys thermalservice`
    is **stale** — read the second set.
@@ -425,3 +462,8 @@ its own security review. Don't let dispatch delay local inference.
    there can still take 89% of VRAM at 8K. Always test at the real context.
 10. **Quality is device-independent.** Test it on the fastest machine available —
     desktop results decide the mobile default too.
+11. **A model verdict is really a model+runtime verdict.** Twice now a runtime
+    difference masqueraded as a model property: the PrismML fork's missing NEON
+    kernel (item 2), and E4B reading 2 t/s under llama.cpp while doing 10+ t/s in
+    Google's Edge Gallery on the same handset. Before concluding "model X can't run
+    on device Y", check whether *another runtime already runs it there*.
