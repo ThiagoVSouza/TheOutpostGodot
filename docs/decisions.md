@@ -299,6 +299,74 @@ and should be settled before the downloader is built.
 
 ---
 
+## D17 — Game mechanics live in **code**, not in the model. The AI narrates; it does not adjudicate.
+
+**Status:** Proposed (2026-07-16) — **amends the brief's AI pipeline**
+
+**The brief says:** `plan actions → call typed tools → generate validated game
+commands`. That is, the model decides to roll, and decides the resulting command.
+
+**What we found:** a schema constrains *shape*, not *meaning*. Both halves matter,
+and only one works.
+
+**Evidence** — same system prompt, same JSON schema (tool/command names constrained
+by enum, so the model *cannot* name anything the registry would reject):
+
+| | E2B (the default, per D4) | 12B |
+|---|---|---|
+| Valid JSON, whitelisted names | always | always |
+| Roll before deciding | **no** — went straight to a command | **yes** — clean `tool_calls:[roll_die]`, empty commands/narrative |
+| Obeys "commands must be empty on turn 1" | **no** — rolled *and* granted +10 in one reply | yes |
+| Sensible reward for a 17/20 roll | **no** — `grant_resource(grain, +17)`, using the *die value* as the amount | `+20` (plausible) |
+| Sensible sign | **no** — `grant_resource(grain, -10)` for an expedition *to find* grain | yes |
+
+So E2B reliably emits well-formed, fully-whitelisted, **semantically wrong**
+commands. The safety boundary held perfectly — and safety is not correctness.
+
+**Two independent reasons this forces mechanics into code:**
+
+1. **The default model cannot do it.** D4 fixes E2B as the default because it is
+   the only model viable on a phone. A design that only works on 12B is not a
+   design; it is a high-end feature.
+
+2. **The stronger reason: model choice is a user setting (D5, D6), so
+   model-driven mechanics means model-dependent game balance.** The same action
+   would grant +17 grain on E2B and +20 on 12B. In a strategy game, the economy
+   cannot depend on which GGUF the player downloaded. This argument holds *even if
+   every model were as good as 12B*.
+
+**Decision:** the orchestrator owns adjudication.
+
+```
+player message
+  -> classify intent                       (code)
+  -> decide whether a roll is needed       (code, per rules)
+  -> roll                                  (code, seeded, deterministic, testable)
+  -> compute outcome + reward from rules   (code)
+  -> build + validate + apply the command  (code, existing whitelist)
+  -> model narrates the decided outcome    (AI)
+```
+
+The model's remaining jobs — understanding intent and writing prose — are exactly
+what E2B *is* good at. Its narratives were consistently decent even when its
+arithmetic was nonsense.
+
+**Consequences:**
+- Game balance becomes deterministic, testable and reproducible — and stops being
+  a property of the player's hardware.
+- The AI trace and replay story get stronger: outcomes are code, so a recorded
+  session replays exactly.
+- The brief's `tool_calls` path is not deleted. It stays for genuinely open-ended
+  tool use where no balance is at stake, and may be enabled as an enhancement on
+  high-tier models. But **no game rule may depend on it**.
+- Cost: less emergent AI-driven mechanics than the brief imagined. This is the
+  trade for consistency, and it is worth it.
+
+**Open:** where the line sits for a request the rules do not cover ("I want to
+sing to the goats"). Probably: no state change, narrate only.
+
+---
+
 ## D16 — Dispatch: run inference on another machine — **amends the brief**
 
 **Status:** Open — accepted in principle (2026-07-16)
