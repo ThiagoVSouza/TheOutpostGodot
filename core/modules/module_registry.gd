@@ -34,9 +34,13 @@ func discover() -> Array[ModuleManifest]:
 		if sub_dir == null:
 			continue
 		for file in sub_dir.get_files():
-			if not file.ends_with(".tres"):
+			# Exported builds convert text resources to binary and ship `foo.tres`
+			# as `foo.tres.remap`, so match the logical name rather than the file
+			# on disk. load() resolves the remap back to the real resource.
+			var logical := file.trim_suffix(".remap")
+			if not (logical.ends_with(".tres") or logical.ends_with(".res")):
 				continue
-			var res: Resource = load("%s/%s" % [module_dir, file])
+			var res: Resource = load("%s/%s" % [module_dir, logical])
 			var manifest := res as ModuleManifest
 			if manifest != null:
 				_manifests.append(manifest)

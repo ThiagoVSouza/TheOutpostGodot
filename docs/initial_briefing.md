@@ -1,5 +1,14 @@
 # The Outpost — Initial Project Brief
 
+> **Note (2026-07-16):** this is the *initial* brief and is no longer authoritative
+> on every point. Decisions taken since — with the reasoning and evidence behind
+> them — live in `docs/decisions.md`. In particular **D16 amends this document**:
+> the Phase 2 network AI backend below is described here as development-only
+> ("the production architecture must not depend on this server"), but is now
+> planned as an optional shipped feature. The constraint is restated as: production
+> must not *require* dispatch, but may *offer* it. Local inference remains the
+> default and the fallback.
+
 ## Game overview
 
 **The Outpost** is a single-player 2D strategy and role-playing game set in a Greco-Roman-inspired fantasy world.

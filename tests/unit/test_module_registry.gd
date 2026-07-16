@@ -31,6 +31,31 @@ func test_module_registry_discovers_manifest() -> void:
 	assert_has(ids, "base_game", "discover() should find the base_game manifest")
 
 
+func test_discovers_binary_manifest() -> void:
+	# Exported builds convert text resources to binary, so a manifest does not
+	# reach the device named `.tres`. Discovery must not key off that extension.
+	var root := "user://test_modules_binary"
+	var module_dir := "%s/mod_a" % root
+	DirAccess.make_dir_recursive_absolute(module_dir)
+
+	var manifest := ModuleManifest.new()
+	manifest.id = "binary_mod"
+	manifest.entry_script = Module
+	var err := ResourceSaver.save(manifest, "%s/manifest.res" % module_dir)
+	assert_eq(err, OK, "saving a binary manifest should succeed")
+
+	var registry := ModuleRegistry.new(GameLog.new(), root)
+	var ids: Array = []
+	for m in registry.discover():
+		ids.append(m.id)
+
+	DirAccess.remove_absolute("%s/manifest.res" % module_dir)
+	DirAccess.remove_absolute(module_dir)
+	DirAccess.remove_absolute(root)
+
+	assert_has(ids, "binary_mod", "discover() should find a binary (.res) manifest")
+
+
 func test_resolve_order_skips_missing_dependency() -> void:
 	var registry := ModuleRegistry.new(GameLog.new())
 
