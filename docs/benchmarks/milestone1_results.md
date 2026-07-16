@@ -15,6 +15,10 @@ these numbers are the input to the E2B-vs-E4B decision, not a one-off.
    single biggest latency factor — bigger than model choice.
 3. **Prefix-cache the system prompt.** Worth ~20x on prompt processing per turn.
 4. Together these give a **~0.85 s desktop game turn**. Untested on phone.
+5. **Keep the phone on CPU, not the Adreno GPU.** OpenCL works and is 4.4x faster
+   at prompt processing, but 2.1x *slower* at generation — and generation is what
+   a game turn is made of. Break-even ≈ 5 turns. Ingest the system prompt once at
+   load time instead.
 
 ## Hardware
 
@@ -60,6 +64,58 @@ thermally-throttled laptop GPU (±10.20).
 
 On desktop E4B is merely 2x slower than E2B and fits fine. So the constraint is
 mobile, and it is decisive: **E2B**.
+
+## Android GPU (Adreno 840 via OpenCL) — helps prompt, hurts generation
+
+Built llama.cpp b10043 from source with `-DGGML_OPENCL=ON` against NDK 27.2. The
+phone already ships the full Qualcomm OpenCL stack in `/vendor/lib64`
+(`libOpenCL_adreno.so`, `libadreno_compiler_cl.so`), so no device-side work was
+needed. `llama-bench` reports:
+
+```
+ggml_opencl: device: 'QUALCOMM Adreno(TM) 840 (OpenCL 3.0 Adreno(TM) 840)'
+Available devices:
+  GPUOpenCL: QUALCOMM Adreno(TM) 840 (5561 MiB, 4537 MiB free)
+```
+
+| E2B on S26 Ultra | pp512 (t/s) | tg128 (t/s) |
+|---|---|---|
+| CPU (8 threads) | 107.49 ± 0.90 | **29.52 ± 0.16** |
+| Adreno 840 OpenCL (`-ngl 99`) | **470.46 ± 6.92** | 13.95 ± 0.00 |
+| | **4.4x faster** | **2.1x slower** |
+
+A real trade-off, not a win. Against our 1552-token system prompt:
+
+- ingest it once: GPU **3.3 s** vs CPU **14.5 s** (GPU saves ~11 s)
+- each turn (~60 tokens): CPU **2.0 s** vs GPU **4.3 s** (CPU saves ~2.3 s *per turn*)
+
+**Break-even ≈ 5 turns, so CPU stays the default for the game.** The 14.5 s prompt
+ingestion is not an argument for GPU — it is an argument for doing it once at load
+time behind the boot screen.
+
+Caveat: the OpenCL build warns `TODO: implement BF16, Q4_0, Q4_1, Q5_0, Q5_1,
+Q8_0, IQ4_NL support`, so the kernels may lack an optimised path for this quant.
+**13.95 t/s is probably not Adreno's ceiling.** Untested knobs: partial offload
+(`-ngl` between 0 and 99, to put prompt-heavy layers on GPU and keep generation on
+CPU), the Vulkan backend, and the Hexagon NPU backend.
+
+Build gotcha: `libomp.so` must be pushed from the NDK alongside the binaries
+(`toolchains/llvm/prebuilt/windows-x86_64/lib/clang/18/lib/linux/aarch64/libomp.so`)
+or the executable will not link on device. Host CMake cannot configure
+OpenCL-Headers (no MSVC on this machine) — copy `CL/*` into the NDK sysroot by hand.
+
+Build lives at `C:\Dev\_build\llama.cpp\build_ocl`; device copy at
+`/data/local/tmp/llama_ocl`.
+
+### iOS
+
+OpenCL is **not** available on iOS (Apple never shipped it there). The iOS path is
+**Metal**, via llama.cpp's prebuilt **XCFramework** (iOS/tvOS/visionOS/macOS),
+consumable from Swift Package Manager; Metal is enabled by default on Apple
+platforms. Unified memory means Apple GPUs do not have the CPU/GPU bandwidth split
+that hurts Adreno generation here, so iOS may well behave better than Android —
+but this is **untested** (no Mac available). Maps onto the brief's `AiBackend`
+abstraction as `AndroidLlamaBackend` (OpenCL) vs `IosLlamaBackend` (Metal).
 
 ## Reasoning — Gemma 4 thinks by default, and it dominates latency
 
