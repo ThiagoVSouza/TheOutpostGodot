@@ -6,6 +6,23 @@ vertical slice to a phone; record desktop and Android performance).
 Measured 2026-07-16. Re-run whenever the llama.cpp build or the quant changes —
 these numbers are the input to the E2B-vs-E4B decision, not a one-off.
 
+## Decisions taken (2026-07-16)
+
+- **Default: E2B, CPU-only, on every platform.** Simple, predictable, and the
+  fastest option for the generation-dominated workload a game turn actually is.
+- **E4B: offer as an optional user setting, not the default.** It is fine on
+  desktop (57.6 t/s) and unusable on a phone like the S26 Ultra (5.69 t/s,
+  thrashing). Users with headroom can opt in; the model assignment must stay
+  configurable per the brief, never hardcoded.
+- **Adreno GPU: available but not used.** See the Android GPU section — it is
+  4.4x faster at prompt and 2.1x slower at generation.
+
+Implication for the AI layer: model choice and backend must be **runtime
+configuration**, and the UI should be honest that E4B is a "better writing, much
+slower, needs a strong device" trade rather than a free upgrade. A device-capability
+check (available RAM vs model size) should gate or warn before enabling E4B on
+mobile — the E4B phone failure was a memory-pressure failure, not a compute one.
+
 ## Headline conclusions
 
 1. **Ship E2B, not E4B.** E4B is not viable on the target phone (5.69 t/s, and
@@ -42,6 +59,45 @@ Two caveats on the hardware:
 - The phone ran **CPU-only**. The prebuilt Android binary has no GPU backend, so
   the Adreno 840 sat idle. Phone numbers are a floor, not a ceiling; a custom
   build with OpenCL/Vulkan is unexplored headroom.
+
+## Gemma 4 12B — runs on 8 GB, but crowds out the game
+
+Checked because a 12B was assumed not to fit. It does — the assumption was wrong.
+
+| 12B UD-Q4_K_XL (6.24 GiB, 11.91 B params) | |
+|---|---|
+| `llama-bench` full GPU (`-ngl 99`) | pp512 **793.64 ± 62.60** · tg128 **29.17 ± 1.61** |
+| At 8K context, full GPU | **VRAM 7281 / 8188 MiB (89%)** |
+| Cold turn (1552-token system prompt) | 6.15 s (2.5 s prompt + 3.6 s generate) |
+| **Warm turn** | **~4.05 s** (~24-25 t/s) |
+
+Two caveats behind the "it runs":
+
+- `llama-bench` uses a ~640-token context, so its KV cache is trivial. Fitting
+  there says little about fitting at a useful context — hence the 8K test.
+- At 8K it fits with ~900 MiB spare, and llama.cpp's own auto-fit **tried to reduce
+  the layer count**, proceeding only because `-ngl 99` forced it:
+  `W common_fit_params: failed to fit params to free device memory: n_gpu_layers already set by user to 99, abort`
+
+~900 MiB is survivable for today's chat screen and not for the map that milestone
+2+ adds — and the brief is explicit that inference must leave GPU capacity for the
+game. So: **viable as a desktop opt-in at 12 GB+ VRAM, not a default here.**
+
+The quality gap is real, though. Same system prompt, refusing the Legate:
+
+> Vettius Calla stands in the center of the governor's hall, his face flushing a
+> deep, mottled red as you flatly deny his request for additional silver. He slams
+> a heavy hand against a cedar table, the wood groaning under the impact, and warns
+> you that the Legate's reports to Pyrgos will reflect a lack of cooperation.
+> Outside, the salt air carries the distant sound of hammers from the docks,
+> indifferent to…
+
+It used the Legate's **name** from the system prompt and followed the style guide's
+concrete-detail rule; E2B never used the named character. That observation is the
+seed for the curated quality tiers in `docs/decisions.md` D12.
+
+Also note the 12B repo ships `mmproj-*.gguf` (it is **multimodal**) and a **256K**
+context vs 128K on E2B/E4B — a different model family, not just a bigger one.
 
 ## Model throughput — `llama-bench`
 
