@@ -28,7 +28,10 @@ Measurements: `docs/benchmarks/milestone1_results.md`. Architecture: `docs/initi
 | **D14** | Optional on-device benchmark; variance is a first-class result | Open |
 | **D15** | MTP drafters: not adopted, measurement untrustworthy | Open |
 | **D16** | Dispatch: inference on another machine (amends the brief) | Open |
+| **D18** | Voice input: abstract the seam now, build at M6 | Open |
 | **D17** | Benchmarking method — how to not fool yourself | Reference |
+
+Roadmap and current status: `docs/plan.md`.
 
 ---
 
@@ -425,6 +428,56 @@ that could never run it.
 
 **Recommendation:** LAN-only first; internet dispatch is a separate decision with
 its own security review. Don't let dispatch delay local inference.
+
+---
+
+## D18 — Voice input: planned. **Abstract the input seam now, build it later.**
+
+**Open** — deferred to M6; the seam is not deferred (2026-07-16)
+
+Speaking suits this game better than typing, especially on a phone: the core
+interaction is free-text conversation.
+
+**Do now, because it is free:** the orchestrator's entry point takes **text from a
+source**, not text from a `LineEdit`. Voice, typing, and (later) a replayed AI trace
+are all just sources. Costs nothing today; a refactor if we skip it.
+
+**Do not build yet.** Voice is an enhancement to an interaction loop that does not
+work — you cannot speak to a game master that cannot answer. The typed path must
+work first (M2, M3).
+
+### Two routes, decided at M6
+
+**whisper.cpp (ggml)** — the likely choice, *because it shares M6's work*. Same
+build system, toolchain, NDK and XCFramework as the `libllama` GDExtension binding,
+so it is largely incremental rather than a second project. Identical behaviour on
+every platform. It also ships **`whisper-server` with an HTTP API**, so it reuses
+M2's client pattern and rides **D16 dispatch for free** — a desktop could transcribe
+for a phone.
+
+**Platform-native STT** — Android `SpeechRecognizer`, iOS `Speech`. Free, already on
+the device, no model download, good Portuguese. But it needs a Godot plugin per
+platform, behaviour and language support differ per OS/vendor, and some
+implementations phone home — which conflicts with the brief's local-first premise.
+
+### Facts established
+
+- **`unsloth/whisper-base` will not run** — it is safetensors (a transformers mirror
+  of `openai/whisper-base`). whisper.cpp needs its own GGML `.bin`. The runnable
+  models are **`ggerganov/whisper.cpp`** (MIT): tiny / base / small / medium /
+  large-v3 / large-v3-turbo.
+- **Size is the risk, and it is the same risk that killed E4B.** base is ~142 MB but
+  weak at pt-BR; `small` (~466 MB) is the realistic floor for quality — stacked on
+  E2B's 2.43 GiB, on a phone that already cannot spare 3.9 GiB (D5). **Voice would
+  compete with the LLM for exactly the constraint that decides the mobile default.**
+  Measure memory, not just accuracy, before committing.
+- Godot can capture the microphone natively (`AudioStreamMicrophone` /
+  `AudioEffectCapture`), so audio input is not the hard part.
+
+**Open questions for M6:** does `small` fit alongside E2B on a real phone? Is
+whisper's pt-BR good enough at a size we can afford? Can we unload the LLM while
+transcribing and reload after (D8's prefix cache makes reload cheap-ish)? Would
+dispatch (D16) let phones use a desktop's whisper instead?
 
 ---
 
