@@ -94,7 +94,7 @@ The quality gap is real, though. Same system prompt, refusing the Legate:
 
 It used the Legate's **name** from the system prompt and followed the style guide's
 concrete-detail rule; E2B never used the named character. That observation is the
-seed for the curated quality tiers in `docs/decisions.md` D12.
+seed for the curated quality tiers in `docs/decisions.md` D11.
 
 Also note the 12B repo ships `mmproj-*.gguf` (it is **multimodal**) and a **256K**
 context vs 128K on E2B/E4B — a different model family, not just a bigger one.
