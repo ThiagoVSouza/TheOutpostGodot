@@ -12,6 +12,13 @@ extends RefCounted
 ##
 ## Keeping this seam abstract is what lets orchestration and gameplay be developed
 ## and tested without loading a real model. Concrete backends override [method generate].
+##
+## Concurrency contract (D22): [method generate] returns an [AiRequest] immediately and
+## must NEVER finish it synchronously inside the call — even a backend with an instant
+## answer (the fake) defers completion, so reentrancy and cancellation bugs surface in
+## tests instead of first appearing against a real model. Backends own their transport
+## (HTTP, worker thread) behind the request's cancel hook; the orchestrator owns
+## timeouts. A real turn takes 0.85–4 s — nothing here may block the main thread.
 
 ## Human-readable id for logging / AI trace (e.g. "fake", "desktop-llama").
 func backend_id() -> String:
@@ -23,12 +30,12 @@ func is_ready() -> bool:
 	return false
 
 
-## Produce a structured response for a request.
+## Start generating a structured response for a request.
 ##
-## [param request] is a Dictionary describing the prompt/context/tools; the return is
-## a Dictionary the orchestrator interprets (e.g. tool calls, narrative text). Kept as
-## plain dictionaries so recorded/replayed responses serialize trivially. Abstract:
-## concrete backends must override.
-func generate(_request: Dictionary) -> Dictionary:
+## [param request] is a Dictionary describing the prompt/context/tools; the eventual
+## response is a Dictionary the orchestrator interprets (e.g. tool calls, narrative
+## text). Kept as plain dictionaries so recorded/replayed responses serialize trivially.
+## Abstract: concrete backends must override and return a live [AiRequest].
+func generate(_request: Dictionary) -> AiRequest:
 	push_error("AiBackend.generate() called on abstract base; use a concrete backend")
-	return {}
+	return AiRequest.make_failed("abstract backend")

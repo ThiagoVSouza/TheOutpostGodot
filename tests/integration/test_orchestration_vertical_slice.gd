@@ -19,7 +19,7 @@ func test_forage_flow_rolls_applies_command_and_narrates() -> void:
 		},
 	])
 
-	var result := kernel.ai_orchestrator.handle_message("I send scouts to forage the hills")
+	var result: Dictionary = await kernel.ai_orchestrator.handle_message("I send scouts to forage the hills")
 
 	assert_true(result["ok"], "the flow should succeed")
 	assert_eq(result["narrative"], "Your scouts return with baskets of food.")
@@ -40,7 +40,7 @@ func test_message_with_no_tools_still_narrates() -> void:
 	var fake := kernel.ai as FakeAiBackend
 	fake.set_response("general", {"narrative": "The outpost is calm."})
 
-	var result := kernel.ai_orchestrator.handle_message("How are the walls holding?")
+	var result: Dictionary = await kernel.ai_orchestrator.handle_message("How are the walls holding?")
 	assert_true(result["ok"])
 	assert_eq(result["narrative"], "The outpost is calm.")
 	assert_eq((result["applied_commands"] as Array).size(), 0)

@@ -10,6 +10,7 @@ extends Control
 var _resource_label: Label
 var _log_label: RichTextLabel
 var _input: LineEdit
+var _send_button: Button
 var _trace_label: RichTextLabel
 
 
@@ -52,10 +53,10 @@ func _build_ui() -> void:
 	_input.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_input.text_submitted.connect(_on_submit)
 	input_row.add_child(_input)
-	var send := Button.new()
-	send.text = "Send"
-	send.pressed.connect(func() -> void: _on_submit(_input.text))
-	input_row.add_child(send)
+	_send_button = Button.new()
+	_send_button.text = "Send"
+	_send_button.pressed.connect(func() -> void: await _on_submit(_input.text))
+	input_row.add_child(_send_button)
 
 	var dev_row := HBoxContainer.new()
 	vbox.add_child(dev_row)
@@ -76,14 +77,18 @@ func _build_ui() -> void:
 	vbox.add_child(_trace_label)
 
 
+## Coroutine: a real backend turn takes 0.85-4 s (D22), so input locks while the game
+## master "thinks" and the reply arrives via await without blocking the frame.
 func _on_submit(text: String) -> void:
 	var message := text.strip_edges()
-	if message.is_empty():
+	if message.is_empty() or Kernel.ai_orchestrator.is_busy():
 		return
 	_append("[color=aqua]You:[/color] %s" % message)
 	_input.clear()
+	_set_busy(true)
 
-	var result: Dictionary = Kernel.ai_orchestrator.handle_message(message)
+	var result: Dictionary = await Kernel.ai_orchestrator.handle_message(message)
+	_set_busy(false)
 	_append("[color=wheat]Game master:[/color] %s" % result.get("narrative", ""))
 	var applied: Array = result.get("applied_commands", [])
 	if not applied.is_empty():
@@ -93,6 +98,13 @@ func _on_submit(text: String) -> void:
 	if trace != null:
 		_trace_label.text = trace.to_text()
 	_refresh_resources()
+
+
+func _set_busy(busy: bool) -> void:
+	_input.editable = not busy
+	_send_button.disabled = busy
+	if not busy:
+		_input.grab_focus()
 
 
 func _on_advance_month() -> void:

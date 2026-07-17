@@ -11,7 +11,7 @@ func test_unknown_tool_and_non_whitelisted_command_are_rejected() -> void:
 		{"commands": [{"name": "delete_everything", "args": {}}], "narrative": "..."},
 	])
 
-	var result := kernel.ai_orchestrator.handle_message("forage for food")
+	var result: Dictionary = await kernel.ai_orchestrator.handle_message("forage for food")
 
 	assert_true(result["ok"], "should degrade gracefully, not crash")
 	assert_eq((result["applied_commands"] as Array).size(), 0, "no unvetted command applied")
@@ -23,7 +23,7 @@ func test_unknown_tool_and_non_whitelisted_command_are_rejected() -> void:
 func test_empty_message_hits_guardrails() -> void:
 	var kernel := GameKernel.new()
 	add_child_autofree(kernel)
-	var result := kernel.ai_orchestrator.handle_message("    ")
+	var result: Dictionary = await kernel.ai_orchestrator.handle_message("    ")
 	assert_false(result["ok"])
 	assert_eq(result["error"], "guardrails")
 
@@ -33,7 +33,7 @@ func test_empty_ai_response_is_handled() -> void:
 	add_child_autofree(kernel)
 	var fake := kernel.ai as FakeAiBackend
 	fake.queue_responses("general", [{}])  # backend returns nothing usable
-	var result := kernel.ai_orchestrator.handle_message("hello there outpost")
+	var result: Dictionary = await kernel.ai_orchestrator.handle_message("hello there outpost")
 	assert_false(result["ok"])
 	assert_eq(result["error"], "empty_response")
 
@@ -46,7 +46,7 @@ func test_garbage_field_types_do_not_crash() -> void:
 	fake.queue_responses("general", [
 		{"tool_calls": "not-an-array", "commands": 42, "narrative": "ok"},
 	])
-	var result := kernel.ai_orchestrator.handle_message("status report please")
+	var result: Dictionary = await kernel.ai_orchestrator.handle_message("status report please")
 	assert_true(result["ok"])
 	assert_eq(result["narrative"], "ok")
 	assert_eq((result["applied_commands"] as Array).size(), 0)
