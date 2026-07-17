@@ -4,9 +4,32 @@
 mid-milestone after a usage-limit cutoff. Follow this file top to bottom.
 Keep it updated as work lands: it is a living checklist, not an archive.
 
-Last updated: 2026-07-17 · State: T1 (async seam) implemented — PR open;
-GATE 0 satisfied for T1 only ("proceed with T1, then re-review"). **T2–T6
-still require the direction re-review before starting.**
+Last updated: 2026-07-17 · State: **T2 complete — PR #8 open, awaiting user merge.**
+T1 is merged as PR #7; the user reviewed and approved T2's scope. **T4 requires
+its own plan review before implementation** (the agreed next order is T4, then T3,
+T5, T6).
+
+## 0. If you are the next agent, start exactly here
+
+1. `git fetch`, then confirm PR #7 is still merged. Start the next task from
+   current `origin/main`, preserving this handover update until it is merged.
+2. **Plan-review T4** with the user before production code. The agreed next
+   order is T4, T3, T5, T6; the user expects a task-specific review before each.
+3. Read §1 (context bootstrap) before touching anything. The T1 lessons in
+   §2a are new since the docs were written — they will save you time.
+4. D21 reminder unchanged: **no trace-related code before the user shares
+   their trace-storage thoughts.** Nothing in T2–T6 touches traces.
+
+### What T1 changed (PR #7, all tests 37/37, verified in-app)
+
+`AiBackend.generate()` now returns an `AiRequest` handle
+(`chunk`/`completed`/`failed`/`finished` signals, `cancel()`, awaitable
+`wait()`); backends must never finish it synchronously in-call.
+`FakeAiBackend` completes deferred. `AiOrchestrator.handle_message()` is a
+coroutine (callers `await` it) with busy guard, `cancel()` + state-change
+fence, and an orchestrator-owned per-call timeout
+(`ai_timeout_seconds`, default 30 s). Chat screen awaits and locks input
+while in flight. New tests: `tests/integration/test_async_orchestration.gd`.
 
 ---
 
@@ -16,16 +39,15 @@ still require the direction re-review before starting.**
 direction in a conversation.** The user has said the plan below may need
 fine-tuning before implementation starts. Specifically:
 
-1. **Open the conversation by asking the user to review the M2 task order
-   below** and adjust anything before you start.
+1. **Open the conversation by asking the user to review the T4–T6 task
+   order below** and adjust anything before starting the selected task. T2 was
+   approved and completed independently; the agreed next order is T4, T3, T5, T6.
 2. **D21 (trace storage) is separately gated:** the user has *additional
    thoughts to share* on trace storage (files vs SQLite). Do not write any
    trace-related code before that conversation happens. (This gates M3
    traces, not M2 — but do not "helpfully" scaffold traces early.)
-3. If the user is unavailable and you were explicitly told to proceed, the
-   only safe starting point is **T1 (async seam)** — it is required under
-   every possible fine-tuning of the plan. Everything after T1 needs the
-   review first.
+3. There is no review-exempt task remaining. **Everything from T4 on needs the
+   task-specific review first.**
 
 ---
 
@@ -71,6 +93,31 @@ Also load the user's memory directory notes if you have access to them
 - PowerShell 5.1: `ConvertTo-Json` mangles long strings; read files with
   `[System.IO.File]::ReadAllText`. Use PowerShell (not Git Bash) for `adb push`.
 
+### 2a. Gotchas learned during T1 (2026-07-17)
+
+- **Godot 4.7 treats an unawaited coroutine call as a parse error.**
+  Deliberate fire-and-forget: assign the call to a lambda and `Callable.call()`
+  it (tests), or make the connected lambda itself `await` (UI signals).
+- **The GUT runner treats the Variant-inference warning as an error** even
+  though `project.godot` shows warning level 1 — e.g. `var wr := weakref(x)`
+  fails to compile under tests. Annotate: `var wr: WeakRef = weakref(x)`.
+- **RefCounted cycles leak, and lambdas capturing `self` create them.** A
+  backend whose request holds a cancel hook capturing that backend is a
+  `backend → request → hook → backend` cycle: 8 leaked ObjectDB instances
+  until `AiRequest` started clearing its hook on finish. If tests print
+  "ObjectDB instances were leaked at exit", suspect a lambda cycle first.
+- **Awaiting an already-completed coroutine hangs forever** (its completion
+  signal already fired). If code may resume a coroutine synchronously (e.g.
+  `cancel()` does), capture the result via a wrapper lambda into a dict and
+  check/`wait_frames` — see `test_async_orchestration.gd` for the pattern.
+- **`chat_screen.gd`'s `var _input` shadows Control's `_input()` virtual** —
+  external typed access resolves to a Callable, not the LineEdit. Pre-existing;
+  rename in a cleanup PR someday. Use `screen.get("_input")` meanwhile.
+- **In-app verification without clicking:** a throwaway `extends SceneTree`
+  script run via `--headless -s res://<tmp>.gd` boots the real autoload
+  kernel; instantiate the real screen, call its submit path, assert on its
+  labels. Delete the script after (never commit it).
+
 ## 3. Where the project stands
 
 **Done:** M1 vertical slice (desktop + physical S26 Ultra), model decisions
@@ -90,31 +137,32 @@ Goal: type into the Godot app, get real E2B prose back. Tasks are ordered;
 each is one branch + PR unless the user says otherwise. **T1 first is
 mandatory; order of T2–T6 may be fine-tuned at GATE 0.**
 
-### T1 — Async seam for `AiBackend` (D22) — *the unavoidable first PR*
+### T1 — Async seam for `AiBackend` (D22) — ✅ **DONE (PR #7)**
 
-- Rework `AiBackend` to return a **request handle** exposing
-  `chunk`/`completed`/`failed` signals + `cancel()`. Orchestrator, chat
-  screen and tests convert to `await`/signal handling.
-- `FakeAiBackend` must complete via `call_deferred` — **never synchronously
-  in the same call** — so reentrancy/cancellation bugs surface in tests.
-- Timeouts: orchestrator-owned (race completion vs `SceneTreeTimer`).
-- **Done when:** all GUT tests green (updated for async); chat screen still
-  round-trips the M1 fake flow; a `cancel()` mid-fake-turn test exists;
-  launching the app and typing a message still works (verify by running it).
+All done-when criteria met: 37/37 GUT tests green (28 converted to async +
+9 new), mid-turn cancel test exists and proves zero state change, and the
+real chat screen was driven headless end-to-end (busy-lock → reply →
+unlock). See "What T1 changed" in §0 and the gotchas in §2a.
 
-### T2 — `RemoteLlamaBackend` (HTTP client to `llama-server`)
+### T2 — `RemoteLlamaBackend` (HTTP client to `llama-server`) — DONE (PR #8)
 
-- POST `/v1/chat/completions`; `temperature`, `max_tokens`, `cache_prompt:
-  true`, per-request `grammar` (string field — spike-proven).
-- Non-blocking transport per D22 (`HTTPRequest` is fine pre-streaming; a
-  polled `HTTPClient` if/when token streaming is wanted).
-- Parse `timings` (prompt_n/prompt_ms/predicted_n/predicted_ms) into the AI
-  trace.
-- Honor `cancel()` (abort the HTTP request) and the orchestrator timeout.
-- **Done when:** with a hand-started server, a real chat turn produces E2B
-  prose in the running app; with no server, requests fail cleanly into T5's
-  fallback path (or a clear error until T5 lands); unit tests cover response
-  parsing + error mapping with canned JSON (no live server in CI tests).
+- `RemoteLlamaBackend` POSTs non-blockingly to `/v1/chat/completions` through
+  `HTTPRequest`; request payloads carry `temperature`, `max_tokens`,
+  `cache_prompt: true`, and optional per-request `grammar`.
+- `LlamaChatCodec` parses `content`, `finish_reason`, and the T2 timing set
+  (`prompt_n`, `prompt_ms`, `predicted_n`, `predicted_ms`) from canned JSON.
+  Timings appear in the existing `ai_response` trace entry; no trace storage or
+  new trace code was added (D21 remains untouched).
+- Explicit `cancel()` and orchestrator-owned timeout both abort and free the
+  HTTP transport. Stable errors cover transport, HTTP status, invalid JSON,
+  invalid response, and empty content.
+- Development selects it with `OUTPOST_AI_BACKEND=remote-llama` plus optional
+  `OUTPOST_AI_ENDPOINT` and `OUTPOST_AI_API_KEY`; `FakeAiBackend` remains the
+  default. T5 still owns visible fallback.
+- Verification: 52/52 GUT tests green, manifest validation green, intentionally
+  closed localhost port gives a clear timed-out-server response, and a real E2B
+  chat-screen turn completed in **1.10 s** with input busy-lock/unlock and timings
+  in its trace. Details: `docs/benchmarks/milestone2_remote_backend.md`.
 
 ### T3 — Local server lifecycle (desktop only)
 

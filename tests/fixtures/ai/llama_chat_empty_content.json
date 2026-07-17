@@ -1,0 +1,12 @@
+{
+  "choices": [
+    {
+      "finish_reason": "length",
+      "message": {
+        "role": "assistant",
+        "content": "",
+        "reasoning_content": "The server was started with reasoning enabled."
+      }
+    }
+  ]
+}

@@ -58,7 +58,7 @@ func boot() -> void:
 	screens = ScreenRegistry.new()
 
 	# 6. AI seam — FakeAiBackend by default; real backends swap in later.
-	ai = FakeAiBackend.new()
+	ai = _create_ai_backend()
 
 	# 7. Calendar + workflow subsystems (scheduler listens on the event bus and runs
 	#    due workflows through the engine).
@@ -81,3 +81,19 @@ func boot() -> void:
 
 func is_booted() -> bool:
 	return _booted
+
+
+func _create_ai_backend() -> AiBackend:
+	var selected := OS.get_environment("OUTPOST_AI_BACKEND").strip_edges().to_lower()
+	if selected.is_empty() or selected == "fake":
+		return FakeAiBackend.new()
+	if selected == "remote-llama":
+		var endpoint := OS.get_environment("OUTPOST_AI_ENDPOINT").strip_edges()
+		if endpoint.is_empty():
+			endpoint = RemoteLlamaBackend.DEFAULT_ENDPOINT
+		var key := OS.get_environment("OUTPOST_AI_API_KEY")
+		log.info("Kernel", "Using remote llama backend at %s" % endpoint)
+		return RemoteLlamaBackend.new(self, endpoint, key)
+
+	log.warn("Kernel", "Unknown OUTPOST_AI_BACKEND '%s'; using fake backend" % selected)
+	return FakeAiBackend.new()
