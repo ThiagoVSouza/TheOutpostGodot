@@ -194,12 +194,18 @@ no `llama-server` process remained.
 - Verification: 58/58 GUT tests and manifest validation green. T3 must still prove
   process lifecycle and that it consumes this configuration at runtime.
 
-### T5 — Graceful fallback (D16's rule)
+### T5 — Visible unavailable state and bounded recovery (D16 amendment)
 
-- Server absent/unreachable/dies mid-session → fall back to `FakeAiBackend`
-  (visible in UI as degraded, not silent), game never breaks.
-- **Done when:** kill the server mid-session in a manual run → next turn
-  degrades gracefully; automated test simulates backend failure.
+- Server absent/unreachable/dies mid-session → block orchestration, show a clear
+  chat-system unavailable message, and apply no game state changes. Never substitute
+  `FakeAiBackend` for a player-facing production turn; it remains test/offline-dev
+  infrastructure only.
+- Make at most **three** bounded automatic recovery attempts for one outage. If all
+  fail, stop retrying and leave a stable unavailable state; a deliberate player retry
+  may start a new three-attempt sequence.
+- **Done when:** kill the server mid-session in a manual run → the active turn fails
+  visibly with zero applied commands, recovery stops after three failed attempts, and
+  an automated test covers the failure/retry cap.
 
 ### T6 — Input-source seam (D18)
 

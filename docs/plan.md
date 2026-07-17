@@ -56,8 +56,9 @@ export/deploy tooling.
 - ~~`RemoteLlamaBackend` — HTTP client to `llama-server`~~ **Done (T2):**
   non-blocking `HTTPRequest` transport, request cancellation/timeout cleanup,
   llama.cpp chat-response/timing parsing, canned-response tests, and an explicit
-  development opt-in (`OUTPOST_AI_BACKEND=remote-llama`). Fake remains the default;
-  automatic visible degradation remains T5.
+  development opt-in (`OUTPOST_AI_BACKEND=remote-llama`). Fake remains the default
+  for tests and intentional offline development; T5 owns the production unavailable
+  state and recovery policy.
 - ~~Local mode: spawn `llama-server` on `127.0.0.1`~~ **Done (T3):**
   `OUTPOST_AI_BACKEND=local-llama` loads the configured desktop profile, probes
   Windows available RAM and CUDA VRAM, starts `llama-server` asynchronously, and
@@ -73,7 +74,12 @@ export/deploy tooling.
   and RAM/VRAM floors. E2B remains an explicit verification profile; Bonsai-27B is
   the configured desktop default (D5). T3 will consume the selected resource to
   launch the server.
-- Graceful fallback to `FakeAiBackend` when the server is absent (D16's rule)
+- **T5 revised:** when the production server is absent, unreachable, or dies
+  mid-turn, block orchestration and show a clear chat-system unavailable message;
+  never fabricate a reply through `FakeAiBackend`. Make at most three bounded
+  automatic recovery attempts per outage, then stop retrying and leave the game in a
+  stable unavailable state. A deliberate player retry may begin a new three-attempt
+  sequence; no game state changes while unavailable.
 - Input seam takes **text from a source**, not from a `LineEdit` (D18)
 
 **Why first:** biggest remaining unknown, and the async change is cheapest now.

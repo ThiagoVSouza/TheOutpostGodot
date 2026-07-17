@@ -423,8 +423,14 @@ engages generic speculative decoding rather than the native MTP path. Retest via
 this server."*
 
 **The amendment:** production must not **require** dispatch, but may **offer** it.
-Local inference stays the default and the fallback. This preserves the brief's real
-intent — never ship a game that is broken without a server.
+Local inference stays the default. This preserves the brief's real intent — never
+make a remote machine the sole source of inference.
+
+**T5 clarification (2026-07-17):** if the selected production inference server is
+unavailable, do not fabricate a player-facing turn with `FakeAiBackend`. Block
+orchestration, show an explicit unavailable message, make at most three bounded
+automatic recovery attempts per outage, then stop. A deliberate player retry may
+begin a new three-attempt sequence; no state changes occur while unavailable.
 
 **Reasoning:** users own uneven hardware. A strong desktop should be able to drive
 the phone build, or a second desktop. The gap is large — ~0.85 s/turn on a desktop
@@ -441,8 +447,9 @@ that could never run it.
 2. **NAT traversal** for the internet case — needs a relay or rendezvous service,
    which contradicts D11's rationale for avoiding a service.
 3. **Discovery + pairing** on LAN (mDNS), and a trust model.
-4. **Graceful degradation.** The server vanishing mid-session must fall back to
-   local, not break the game. This is what "must not require" means in practice.
+4. **Graceful degradation.** The server vanishing mid-session must fail the active
+   turn visibly, preserve state, and enter the bounded T5 recovery policy. This is
+   what "must not require" means in practice without inventing game-master output.
 5. **State authority.** Game state stays on the client. The dispatch server is a
    stateless inference endpoint and must never become a source of truth, or D4's
    command-validation boundary is compromised.
