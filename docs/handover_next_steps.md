@@ -4,17 +4,17 @@
 mid-milestone after a usage-limit cutoff. Follow this file top to bottom.
 Keep it updated as work lands: it is a living checklist, not an archive.
 
-Last updated: 2026-07-17 · State: **T4 complete — PR #9 open, awaiting user merge.**
-T1 and T2 are merged as PRs #7 and #8; the user reviewed and approved T4's scope.
-**T3 requires its own plan review before implementation** (the agreed next order is
-T3, then T5, T6).
+Last updated: 2026-07-17 · State: **T3 complete on `feature/local-server-lifecycle`; PR pending.**
+T1, T2, and T4 are merged as PRs #7, #8, and #9. The user reviewed and approved
+T3's scope. The agreed next order is T5, then T6; each still requires its own plan
+review before implementation.
 
 ## 0. If you are the next agent, start exactly here
 
-1. `git fetch`, then confirm PRs #7 and #8 are still merged. Start the next task from
+1. `git fetch`, then confirm PRs #7, #8, and #9 are still merged. Start the next task from
    current `origin/main`, preserving this handover update until it is merged.
-2. **Plan-review T3** with the user before production code. The agreed next
-   order is T3, T5, T6; the user expects a task-specific review before each.
+2. **Plan-review T5** with the user before production code. The agreed next
+   order is T5, T6; the user expects a task-specific review before each.
 3. Read §1 (context bootstrap) before touching anything. The T1 lessons in
    §2a are new since the docs were written — they will save you time.
 4. D21 reminder unchanged: **no trace-related code before the user shares
@@ -166,13 +166,19 @@ unlock). See "What T1 changed" in §0 and the gotchas in §2a.
 
 ### T3 — Local server lifecycle (desktop only)
 
-- Spawn `llama-server` via `OS.create_process` from a model configuration;
-  poll `/health` until ok; terminate on quit. Desktop-only guard — mobile
-  cannot exec (that is M6's GDExtension work, not this).
-- **Done when:** cold app start → first real turn with no manual server; app
-  quit leaves no orphan process; a stale port / already-running server is
-  detected and reused or reported, not doubled (the 2026-07-17 spike found a
-  leftover server holding 2.8 GB VRAM — detect that case).
+✅ **DONE (T3, PR pending):** `LlamaServerManager` launches the selected
+`ModelProfile` through `OS.create_process`, bounds each `/health` probe, and loads
+asynchronously during kernel boot. `LocalLlamaBackend` queues a turn through the
+existing T2 HTTP transport until the server is ready. Windows RAM and CUDA VRAM are
+measured at the runtime boundary and profile floors fail closed. A healthy server on
+the configured endpoint is reused and never killed; only an app-owned PID is killed
+on shutdown. `OUTPOST_AI_BACKEND=local-llama` enables this path, with Bonsai as the
+catalog default and `OUTPOST_MODEL_PROFILE=gemma_e2b_desktop_cuda` for verification.
+
+Verification: 64/64 GUT tests, including cold launch, reuse, capability rejection,
+timeout cleanup, queued request, and cancellation. In the real main scene, E2B
+completed both a reused-server turn and a clean cold-start turn; after the cold run,
+no `llama-server` process remained.
 
 ### T4 — Model-as-configuration (D6) — DONE (PR #9)
 
