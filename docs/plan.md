@@ -12,7 +12,7 @@ Decisions and their evidence: `docs/decisions.md`. Measurements:
 gates. **GATE 0 there is binding: no production code before a direction review
 with the user.**
 
-Last updated: 2026-07-17 (T2 remote backend)
+Last updated: 2026-07-17 (T4 model configuration)
 
 ---
 
@@ -61,6 +61,11 @@ export/deploy tooling.
 - Local mode: spawn `llama-server` on `127.0.0.1`
 - Model-as-configuration (D6): backend, `-rea off` (D7), `--cache-reuse` (D8), ctx,
   threads, RAM floor — never a bare GGUF path
+- **T4 done:** `ModelProfile` + `ModelCatalog` resources carry backend, executable
+  and weights paths, `-rea off` (D7), `--cache-reuse` (D8), ctx, slots, threads,
+  and RAM/VRAM floors. E2B remains an explicit verification profile; Bonsai-27B is
+  the configured desktop default (D5). T3 will consume the selected resource to
+  launch the server.
 - Graceful fallback to `FakeAiBackend` when the server is absent (D16's rule)
 - Input seam takes **text from a source**, not from a `LineEdit` (D18)
 

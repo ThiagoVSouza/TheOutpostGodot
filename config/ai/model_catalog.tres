@@ -1,0 +1,45 @@
+[gd_resource type="Resource" script_class="ModelCatalog" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://core/ai/model_catalog.gd" id="1_catalog"]
+[ext_resource type="Script" path="res://core/ai/model_profile.gd" id="2_profile"]
+
+[sub_resource type="Resource" id="ModelProfile_e2b"]
+script = ExtResource("2_profile")
+profile_id = "gemma_e2b_desktop_cuda"
+display_name = "Gemma 4 E2B (desktop CUDA)"
+platform = "Windows"
+backend = "cuda"
+server_executable_path = "C:/Tools/llama.cpp/b10042/llama-server.exe"
+weights_path = "C:/Models/gemma-4/gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf"
+gpu_layers = 99
+context_total = 16384
+parallel_slots = 4
+routing_family_count = 4
+cache_reuse_tokens = 256
+reasoning_enabled = false
+threads = 8
+required_available_ram_mib = 4096
+required_available_vram_mib = 4096
+
+[sub_resource type="Resource" id="ModelProfile_bonsai"]
+script = ExtResource("2_profile")
+profile_id = "bonsai_27b_desktop_cuda"
+display_name = "Bonsai 27B Q1_0 (desktop CUDA)"
+platform = "Windows"
+backend = "cuda"
+server_executable_path = "C:/Tools/llama.cpp/b10042/llama-server.exe"
+weights_path = "C:/Models/bonsai/Bonsai-27B-Q1_0.gguf"
+gpu_layers = 99
+context_total = 16384
+parallel_slots = 4
+routing_family_count = 4
+cache_reuse_tokens = 256
+reasoning_enabled = false
+threads = 8
+required_available_ram_mib = 6144
+required_available_vram_mib = 6144
+
+[resource]
+script = ExtResource("1_catalog")
+desktop_default_profile_id = "bonsai_27b_desktop_cuda"
+profiles = [SubResource("ModelProfile_e2b"), SubResource("ModelProfile_bonsai")]
