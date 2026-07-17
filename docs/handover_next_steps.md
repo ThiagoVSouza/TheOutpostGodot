@@ -4,7 +4,7 @@
 mid-milestone after a usage-limit cutoff. Follow this file top to bottom.
 Keep it updated as work lands: it is a living checklist, not an archive.
 
-Last updated: 2026-07-17 · State: **T3 complete on `feature/local-server-lifecycle`; PR pending.**
+Last updated: 2026-07-17 · State: **T3 complete — PR #10 open, ready for user merge.**
 T1, T2, and T4 are merged as PRs #7, #8, and #9. The user reviewed and approved
 T3's scope. The agreed next order is T5, then T6; each still requires its own plan
 review before implementation.
@@ -166,7 +166,7 @@ unlock). See "What T1 changed" in §0 and the gotchas in §2a.
 
 ### T3 — Local server lifecycle (desktop only)
 
-✅ **DONE (T3, PR pending):** `LlamaServerManager` launches the selected
+✅ **DONE (T3, PR #10):** `LlamaServerManager` launches the selected
 `ModelProfile` through `OS.create_process`, bounds each `/health` probe, and loads
 asynchronously during kernel boot. `LocalLlamaBackend` queues a turn through the
 existing T2 HTTP transport until the server is ready. Windows RAM and CUDA VRAM are
