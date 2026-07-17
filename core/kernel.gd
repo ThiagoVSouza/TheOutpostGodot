@@ -19,6 +19,7 @@ var tools: ToolRegistry
 var modules: ModuleRegistry
 var screens: ScreenRegistry
 var ai: AiBackend
+var llama_server_manager: LlamaServerManager
 var ai_orchestrator: AiOrchestrator
 var clock: GameClock
 var scheduler: Scheduler
@@ -83,6 +84,11 @@ func is_booted() -> bool:
 	return _booted
 
 
+func _exit_tree() -> void:
+	if is_instance_valid(llama_server_manager):
+		llama_server_manager.shutdown()
+
+
 func _create_ai_backend() -> AiBackend:
 	var selected := OS.get_environment("OUTPOST_AI_BACKEND").strip_edges().to_lower()
 	if selected.is_empty() or selected == "fake":
@@ -94,6 +100,33 @@ func _create_ai_backend() -> AiBackend:
 		var key := OS.get_environment("OUTPOST_AI_API_KEY")
 		log.info("Kernel", "Using remote llama backend at %s" % endpoint)
 		return RemoteLlamaBackend.new(self, endpoint, key)
+	if selected == "local-llama":
+		return _create_local_llama_backend()
 
 	log.warn("Kernel", "Unknown OUTPOST_AI_BACKEND '%s'; using fake backend" % selected)
 	return FakeAiBackend.new()
+
+
+func _create_local_llama_backend() -> AiBackend:
+	const MODEL_CATALOG_PATH := "res://config/ai/model_catalog.tres"
+	var catalog := load(MODEL_CATALOG_PATH) as ModelCatalog
+	var requested_profile := OS.get_environment("OUTPOST_MODEL_PROFILE").strip_edges()
+	var profile: ModelProfile = null
+	if catalog != null:
+		profile = catalog.profile(requested_profile) if not requested_profile.is_empty() else catalog.desktop_default()
+	if profile == null:
+		log.error("Kernel", "Local llama profile '%s' could not be loaded" % requested_profile)
+	else:
+		log.info("Kernel", "Using local llama profile %s" % profile.profile_id)
+	var endpoint := OS.get_environment("OUTPOST_AI_ENDPOINT").strip_edges()
+	if endpoint.is_empty():
+		endpoint = RemoteLlamaBackend.DEFAULT_ENDPOINT
+	var endpoint_base := endpoint.trim_suffix("/v1/chat/completions")
+	llama_server_manager = LlamaServerManager.new(profile, endpoint_base)
+	add_child(llama_server_manager)
+	# Begin loading during kernel boot so a player who reaches the chat screen after a
+	# cold launch is not also paying for process startup on their first submission.
+	llama_server_manager.ensure_started()
+	var key := OS.get_environment("OUTPOST_AI_API_KEY")
+	var remote := RemoteLlamaBackend.new(self, endpoint, key)
+	return LocalLlamaBackend.new(llama_server_manager, remote)

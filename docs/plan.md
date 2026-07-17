@@ -12,7 +12,7 @@ Decisions and their evidence: `docs/decisions.md`. Measurements:
 gates. **GATE 0 there is binding: no production code before a direction review
 with the user.**
 
-Last updated: 2026-07-17 (T4 model configuration)
+Last updated: 2026-07-17 (T3 local server lifecycle)
 
 ---
 
@@ -58,7 +58,14 @@ export/deploy tooling.
   llama.cpp chat-response/timing parsing, canned-response tests, and an explicit
   development opt-in (`OUTPOST_AI_BACKEND=remote-llama`). Fake remains the default;
   automatic visible degradation remains T5.
-- Local mode: spawn `llama-server` on `127.0.0.1`
+- ~~Local mode: spawn `llama-server` on `127.0.0.1`~~ **Done (T3):**
+  `OUTPOST_AI_BACKEND=local-llama` loads the configured desktop profile, probes
+  Windows available RAM and CUDA VRAM, starts `llama-server` asynchronously, and
+  polls `/health`. A healthy existing server is reused; only a process owned by the
+  app is terminated on exit. Bonsai remains the default and
+  `OUTPOST_MODEL_PROFILE=gemma_e2b_desktop_cuda` selects the E2B verification
+  profile. The local backend preserves the `AiRequest` contract while startup is in
+  progress, then delegates requests to the T2 HTTP transport.
 - Model-as-configuration (D6): backend, `-rea off` (D7), `--cache-reuse` (D8), ctx,
   threads, RAM floor — never a bare GGUF path
 - **T4 done:** `ModelProfile` + `ModelCatalog` resources carry backend, executable
