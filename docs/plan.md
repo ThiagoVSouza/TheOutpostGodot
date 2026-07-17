@@ -84,9 +84,12 @@ message -> classify intent (AI proposes from enum; code validates — D4 amended
 **Spec:** `docs/Orchestration_brainstorm.md` (reviewed 2026-07-17; its status
 header separates M3 scope from target-architecture reference).
 
-- **Phase 0 spikes first** — either could invalidate the design: D23 (N warm
-  prompt-family slots on one `llama-server` — per-slot RAM, slot routing,
-  warm-turn times) and D19 (pipe grammar + `-rea off` together on E2B)
+- ~~**Phase 0 spikes first**~~ **Done (2026-07-17), both passed** —
+  `docs/benchmarks/orchestration_spikes.md`. D19: grammar + `-rea off` +
+  prefix cache all coexist; no-grammar control misformatted on its first try.
+  D23: ~36 MiB per warm 4K slot, automatic LCP slot routing (no pinning),
+  warm routing calls ~36 ms. The micro-prompt design stands. Phone re-measure
+  deferred to M6.
 - **Walking skeleton:** grammar-constrained intent classification (real E2B)
   → one deterministic workflow (existing dice + `grant_resource`) → bounded
   narration → file-based trace (D21 — **revisit before building traces**)
@@ -186,5 +189,5 @@ elsewhere claim up to 3x.
 | Whisper `small` alongside E2B on a real phone — does it fit? | D18 | M6 |
 | Where do rules end and narration begin for uncovered requests? | D4 | M3 |
 | Trace storage files vs SQLite — additional thoughts to review together | D21 | M3 traces |
-| Warm-slot spike: per-family RAM + slot routing on `llama-server` | D23 | M3 |
-| Grammar spike: pipe GBNF + `-rea off` on E2B; M6 sampler API parity | D19 | M3 |
+| Warm-slot behavior on the phone (desktop-verified 2026-07-17) | D23 | M6 |
+| Grammar via the in-process sampler API (source-verified, never run) | D19 | M6 |

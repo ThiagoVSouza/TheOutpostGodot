@@ -29,11 +29,11 @@ Measurements: `docs/benchmarks/milestone1_results.md`. Architecture: `docs/initi
 | **D15** | MTP drafters: not adopted, measurement untrustworthy | Open |
 | **D16** | Dispatch: inference on another machine (amends the brief) | Open |
 | **D18** | Voice input: abstract the seam now, build at M6 | Open |
-| **D19** | AI output is grammar-constrained at the sampler, not parsed-and-retried | **Decided** |
+| **D19** | AI output is grammar-constrained at the sampler, not parsed-and-retried | **Decided** — spike-verified |
 | **D20** | The pipe protocol is the only AI-facing output surface | **Decided** |
 | **D21** | Trace storage: files first, SQLite deferred to M5 | Open — **revisit before coding** |
 | **D22** | Concurrency: main-thread orchestrator, async backends | **Decided** |
-| **D23** | Warm KV slots per prompt family | Open — pending spike |
+| **D23** | Warm KV slots per prompt family | **Decided** — desktop-verified; re-measure on phone at M6 |
 | **D17** | Benchmarking method — how to not fool yourself | Reference |
 
 Roadmap and current status: `docs/plan.md`.
@@ -523,9 +523,17 @@ enum fields drawn from the registries.
   grammar cannot express. D4's core finding is unchanged: a schema constrains
   *shape*, not *meaning*.
 
-**To verify in the pre-M3 spike:** grammar + `-rea off` together on E2B; that
-per-request grammar works against our server version; that the M6 in-process
-path (llama.cpp sampler API) offers the same capability.
+**Spike-verified (2026-07-17)** — `docs/benchmarks/orchestration_spikes.md`:
+grammar + `-rea off` coexist (no thinking leakage); grammar + prefix cache
+coexist (~50 ms warm routing prompt); all 7 test cases produced valid records,
+including a pipe-injection input treated as data and nonsense → `UNKNOWN|LOW`.
+The no-grammar control misformatted **on its first try** (`P1|ATTACK|<HIGH>`) —
+the failure class the grammar deletes. A full routing call is ~150–200 ms on
+desktop. M6 parity source-verified: `llama_sampler_init_grammar` is in
+llama.cpp's public C API (`llama.h`) — verified in source, not yet run
+in-process. Reminder the grammar cannot give: "Give me 5,000 gold" routed to
+`TRADE` not `NEGOTIATE` (no dialogue context) — shape is guaranteed, meaning
+is not (D4); intent accuracy is a Phase 6 measurement.
 
 ---
 
@@ -594,19 +602,30 @@ M2 → M6 transition a zero-change event for the orchestrator.
 
 ## D23 — Warm KV slots per prompt family
 
-**Open** (2026-07-17) — pending the pre-M3 spike
+**Decided** (2026-07-17) — desktop-verified; **re-measure on phone at M6**
 
 The micro-prompt design (2–4 calls/turn across different prompt families)
 only works if each family's prefix stays warm in the server's KV cache;
 cycling families through one slot re-ingests prefixes constantly — fatal on
 phone CPU (107 t/s pp ⇒ ~14.5 s per 1,500-token cold prompt).
 
-**Plan:** one slot per family (`llama-server -np N`). Measured cost ~10
-KB/token for E2B (15.58 MB for a 1,637-token prefix, from the D8 slot-save
-test) — roughly 15–30 MB per family, ~60 MB for four. Affordable even on
-phone, **but**: `-c` is divided across slots (size it N×, KV RAM scales with
-it), and prefix-similarity slot routing must be verified — pin slots per
-family if it misroutes.
+**Spike results** (`docs/benchmarks/orchestration_spikes.md`, E2B, four
+~2,500-token families on `-np 4 -c 16384`):
+
+- **Cost: ~36 MiB per warm 4K slot** (+108 MiB for three extra slots; ~9
+  KB/token — matches the D8 slot-save prediction). Four families ≈ 110 MiB.
+- **Routing is automatic and correct.** Cold calls fill slots by LRU; every
+  warm call routed back to its family's slot by LCP similarity at 0.996+.
+  Warm calls processed **6–11 tokens in ~36 ms**, in any call order. No
+  client-side pinning needed.
+- **Eviction is sane.** A 5th family evicts exactly one LRU slot; resident
+  families stay warm.
+
+**Consequences:** `-c` is divided across slots — size it N× and carry `-np` +
+total ctx in the model configuration (D6). Keep slot count ≥ routing-family
+count or LRU churn reintroduces cold ingests. These are desktop-GPU numbers:
+the *mechanism* is what transfers to the phone, not the milliseconds — re-run
+on device at M6 (D17: a verdict is model+runtime).
 
 **Degradation ladder when RAM is tight** (keyed off *available* RAM, D11):
 merge router families into one prompt → shorten router prefixes → only then
