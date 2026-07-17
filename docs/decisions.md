@@ -29,6 +29,11 @@ Measurements: `docs/benchmarks/milestone1_results.md`. Architecture: `docs/initi
 | **D15** | MTP drafters: not adopted, measurement untrustworthy | Open |
 | **D16** | Dispatch: inference on another machine (amends the brief) | Open |
 | **D18** | Voice input: abstract the seam now, build at M6 | Open |
+| **D19** | AI output is grammar-constrained at the sampler, not parsed-and-retried | **Decided** |
+| **D20** | The pipe protocol is the only AI-facing output surface | **Decided** |
+| **D21** | Trace storage: files first, SQLite deferred to M5 | Open — **revisit before coding** |
+| **D22** | Concurrency: main-thread orchestrator, async backends | **Decided** |
+| **D23** | Warm KV slots per prompt family | Open — pending spike |
 | **D17** | Benchmarking method — how to not fool yourself | Reference |
 
 Roadmap and current status: `docs/plan.md`.
@@ -129,13 +134,23 @@ narratives were consistently decent even when its arithmetic was nonsense.
   exactly.
 - **This is what makes the cross-family ladder in D5 safe.** Narrative variety
   between models becomes a feature; balance stays fixed.
-- The `tool_calls` path is not deleted — it stays for open-ended use where no
-  balance is at stake. **No game rule may depend on it.**
+- ~~The `tool_calls` path is not deleted — it stays for open-ended use where no
+  balance is at stake.~~ **Superseded by D20 (2026-07-17):** the pipe protocol
+  is the only AI-facing output surface; `tool_calls` is retired as an output
+  path.
 - Cost: less emergent AI-driven mechanics than the brief imagined. Worth it.
 
 **Residual risk:** narration can still misdescribe a correct outcome, and memory
 read/write is not risk-free. Smaller surface, not zero — to be remediated in the
 orchestration design.
+
+**Amended (2026-07-17) — intent classification.** The pipeline above labels
+`classify intent` as `(code)`. Code cannot classify free text ("hit him"); what
+code owns is the *enum*. Corrected reading: the model proposes one intent from
+a fixed registry-defined set (grammar-constrained, D19) and code validates and
+routes. The boundary that matters — the model can never expand the set of
+possible intents — is unchanged. The orchestration spec
+(`docs/Orchestration_brainstorm.md`) is written against this reading.
 
 ---
 
@@ -247,6 +262,12 @@ t/s) — **the win is token count, not throughput.**
 
 **Open:** thinking may help genuinely hard adjudication — but under D4 the model
 doesn't adjudicate, so this is likely moot.
+
+**Addendum (2026-07-17):** the orchestration spec's "Enhanced mode" (thinking
+on, extra verification calls) is **deferred indefinitely** — no identified job
+for thinking under D4, and a second mode doubles the test matrix. Leaning
+*removed* rather than *later*: it may add noise for the player with no real
+gain. Revisit only if a concrete need appears.
 
 ---
 
@@ -478,6 +499,118 @@ implementations phone home — which conflicts with the brief's local-first prem
 whisper's pt-BR good enough at a size we can afford? Can we unload the LLM while
 transcribing and reload after (D8's prefix cache makes reload cheap-ish)? Would
 dispatch (D16) let phones use a desktop's whisper instead?
+
+---
+
+## D19 — AI output is grammar-constrained at the sampler, not parsed-and-retried
+
+**Decided** (2026-07-17)
+
+`llama-server` supports per-request GBNF grammars and JSON-schema constrained
+sampling: the sampler can only emit tokens the grammar allows, so malformed
+output is **impossible**, not merely detected. The pipe protocol (D20) is
+trivially expressible as a grammar — fixed record types, fixed field counts,
+enum fields drawn from the registries.
+
+**Consequences:**
+- The grammar is **generated from the registries** (intents, tools, workflows,
+  memory categories), so an out-of-registry name is unsampleable rather than
+  rejected after the fact.
+- The retry-with-correction loop is demoted to a rare fallback. That deletes a
+  full extra model call from the failure path — 2 s+ on a phone, and with a 2B
+  model format errors would otherwise be routine.
+- The validator **stays** — defense in depth, and semantic validation, which a
+  grammar cannot express. D4's core finding is unchanged: a schema constrains
+  *shape*, not *meaning*.
+
+**To verify in the pre-M3 spike:** grammar + `-rea off` together on E2B; that
+per-request grammar works against our server version; that the M6 in-process
+path (llama.cpp sampler API) offers the same capability.
+
+---
+
+## D20 — The pipe protocol is the only AI-facing output surface — **amends D4**
+
+**Decided** (2026-07-17)
+
+One protocol for everything the model emits: intent, workflow selection,
+memory query, guardrail, tool records. The `tool_calls` path — which D4 had
+kept "for open-ended use" — is **retired as an AI output path**. If an
+open-ended path is ever needed, it becomes a new pipe record type, not a
+second protocol.
+
+**Why pipe over JSON:** with D19 both are equally *safe*, so the tiebreaker is
+token count — an intent result is ~8 tokens as pipe vs ~25 as JSON, at 29.5
+t/s phone generation across 2–4 calls per turn. That is real latency.
+
+**Boundary:** internal code-to-code contracts (workflow requests/responses,
+traces, tool schemas) stay typed Dictionaries/JSON — that boundary is not
+token-priced. One AI surface, one internal convention.
+
+---
+
+## D21 — Trace storage: files first; SQLite deferred to M5
+
+**Open** (2026-07-17) — direction accepted, **revisit before coding** (user
+has additional thoughts to review together before implementation; do not
+start trace code before that conversation)
+
+**Recommendation on record:** traces as **JSONL files** (one per
+orchestration) plus the human-readable Markdown export, for the walking
+skeleton. SQLite means the godot-sqlite GDExtension — a native dependency on
+**every export target**, which is a D3-class risk surface (desktop tests
+cannot catch export-only breakage). Its indexes only earn their keep with the
+M5 memory store; decide then, for both stores at once.
+
+---
+
+## D22 — Concurrency: main-thread orchestrator; concurrency confined inside `AiBackend`
+
+**Decided** (2026-07-17)
+
+The orchestrator state machine, cancellation, idempotency and progress pacing
+run on the **main thread**, advancing via signals/`await`. The `AiBackend`
+interface becomes async — a request handle exposing `chunk` / `completed` /
+`failed` signals plus `cancel()` — and each implementation hides its own
+transport:
+
+- `RemoteLlamaBackend` (M2): non-blocking HTTP; manually polled `HTTPClient`
+  if token streaming is wanted (`HTTPRequest` cannot stream SSE).
+- In-process mobile backend (M6): wraps `libllama` in a worker thread
+  internally — a blocking generate call must never reach the main thread.
+- `FakeAiBackend`: completes via `call_deferred`, **never synchronously** — a
+  synchronous fake would let reentrancy and cancellation bugs pass every test.
+
+Timeouts are orchestrator-owned (race the completion signal against a
+`SceneTreeTimer`), uniform across backends.
+
+**Rejected:** orchestrator on worker threads (marshaling tax and thread-safety
+discipline on logic that is 95% cheap and deterministic); everything on the
+main thread (dies at M6 — in-process inference blocks). This split keeps all
+complex logic single-threaded and testable against the fake, and makes the
+M2 → M6 transition a zero-change event for the orchestrator.
+
+---
+
+## D23 — Warm KV slots per prompt family
+
+**Open** (2026-07-17) — pending the pre-M3 spike
+
+The micro-prompt design (2–4 calls/turn across different prompt families)
+only works if each family's prefix stays warm in the server's KV cache;
+cycling families through one slot re-ingests prefixes constantly — fatal on
+phone CPU (107 t/s pp ⇒ ~14.5 s per 1,500-token cold prompt).
+
+**Plan:** one slot per family (`llama-server -np N`). Measured cost ~10
+KB/token for E2B (15.58 MB for a 1,637-token prefix, from the D8 slot-save
+test) — roughly 15–30 MB per family, ~60 MB for four. Affordable even on
+phone, **but**: `-c` is divided across slots (size it N×, KV RAM scales with
+it), and prefix-similarity slot routing must be verified — pin slots per
+family if it misroutes.
+
+**Degradation ladder when RAM is tight** (keyed off *available* RAM, D11):
+merge router families into one prompt → shorten router prefixes → only then
+cold. **Cold-per-turn is never the plan.**
 
 ---
 

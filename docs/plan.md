@@ -8,7 +8,7 @@ Decisions and their evidence: `docs/decisions.md`. Measurements:
 `docs/benchmarks/milestone1_results.md`. Original brief: `docs/initial_briefing.md`
 (no longer authoritative on every point — see the note at its head).
 
-Last updated: 2026-07-16
+Last updated: 2026-07-17
 
 ---
 
@@ -25,6 +25,11 @@ export/deploy tooling.
 **What does not exist yet:** any real inference in-game, deterministic adjudication
 (D4 is a document, not code), save/load, memory/retrieval, the map, the economy.
 
+**The orchestration design is reviewed and adopted** (2026-07-17):
+`docs/Orchestration_brainstorm.md`, reconciled with this log — D4 amended
+(intent classification, `tool_calls`), D19–D23 added, Enhanced mode deferred
+(D7 addendum). Its first pass is the M3 walking skeleton below.
+
 **Two things gate the next step:**
 
 1. `AiBackend.generate()` is **synchronous**. Fine for an instant fake; a real turn
@@ -40,7 +45,10 @@ export/deploy tooling.
 
 **Goal:** type into the Godot app, get real E2B prose back.
 
-- Async seam for `AiBackend` (blocks everything else; do it first)
+- Async seam for `AiBackend` (blocks everything else; do it first) — design
+  decided, D22: main-thread orchestrator; request-handle interface
+  (`chunk`/`completed`/`failed` + `cancel()`); the fake must complete
+  deferred, never synchronously
 - `RemoteLlamaBackend` — HTTP client to `llama-server`
 - Local mode: spawn `llama-server` on `127.0.0.1`
 - Model-as-configuration (D6): backend, `-rea off` (D7), `--cache-reuse` (D8), ctx,
@@ -65,13 +73,24 @@ desktop-and-dev capability that happens to also be a shipped feature (dispatch).
 **Goal:** the same action produces the same economy regardless of model or language.
 
 ```
-message -> classify intent (code) -> recall memories (AI)
+message -> classify intent (AI proposes from enum; code validates — D4 amended)
+        -> recall memories (AI)
         -> decide roll (code, rules) -> roll (code, seeded)
         -> compute outcome + reward (code, rules)
         -> build/validate/apply command (code, whitelist)
         -> narrate the decided outcome (AI) -> write back memories (AI)
 ```
 
+**Spec:** `docs/Orchestration_brainstorm.md` (reviewed 2026-07-17; its status
+header separates M3 scope from target-architecture reference).
+
+- **Phase 0 spikes first** — either could invalidate the design: D23 (N warm
+  prompt-family slots on one `llama-server` — per-slot RAM, slot routing,
+  warm-turn times) and D19 (pipe grammar + `-rea off` together on E2B)
+- **Walking skeleton:** grammar-constrained intent classification (real E2B)
+  → one deterministic workflow (existing dice + `grant_resource`) → bounded
+  narration → file-based trace (D21 — **revisit before building traces**)
+- AI output only via the pipe protocol (D20); `tool_calls` retired
 - Rules own every number. The AI never emits a `grant_resource` amount.
 - Rework `AiOrchestrator`: it currently does the brief's model-driven tool calling,
   which D4 removed.
@@ -166,3 +185,6 @@ elsewhere claim up to 3x.
 | Internet dispatch needs a rendezvous — service, Tailscale, or document-and-defer? | D16 | post-M2 |
 | Whisper `small` alongside E2B on a real phone — does it fit? | D18 | M6 |
 | Where do rules end and narration begin for uncovered requests? | D4 | M3 |
+| Trace storage files vs SQLite — additional thoughts to review together | D21 | M3 traces |
+| Warm-slot spike: per-family RAM + slot routing on `llama-server` | D23 | M3 |
+| Grammar spike: pipe GBNF + `-rea off` on E2B; M6 sampler API parity | D19 | M3 |
