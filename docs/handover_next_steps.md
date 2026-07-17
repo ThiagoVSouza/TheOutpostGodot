@@ -4,9 +4,34 @@
 mid-milestone after a usage-limit cutoff. Follow this file top to bottom.
 Keep it updated as work lands: it is a living checklist, not an archive.
 
-Last updated: 2026-07-17 · State: T1 (async seam) implemented — PR open;
-GATE 0 satisfied for T1 only ("proceed with T1, then re-review"). **T2–T6
-still require the direction re-review before starting.**
+Last updated: 2026-07-17 · State: **T1 complete — PR #7 open, awaiting user
+merge.** GATE 0 was satisfied for T1 only (user chose "proceed with T1, then
+re-review"). **T2–T6 require a direction re-review with the user before
+starting.**
+
+## 0. If you are the next agent, start exactly here
+
+1. `git fetch`, then check PR #7 (`feature/async-ai-seam`, the T1 async
+   seam): merged, or awaiting review? If open, ask the user — do not build
+   on top of an unmerged T1 unless they tell you to stack branches.
+2. **Conduct the GATE 0 re-review** (below) for T2–T6 with the user before
+   any further production code. The user expects to fine-tune; open by
+   asking what they want to adjust in the T2–T6 order/scope.
+3. Read §1 (context bootstrap) before touching anything. The T1 lessons in
+   §2a are new since the docs were written — they will save you time.
+4. D21 reminder unchanged: **no trace-related code before the user shares
+   their trace-storage thoughts.** Nothing in T2–T6 touches traces.
+
+### What T1 changed (PR #7, all tests 37/37, verified in-app)
+
+`AiBackend.generate()` now returns an `AiRequest` handle
+(`chunk`/`completed`/`failed`/`finished` signals, `cancel()`, awaitable
+`wait()`); backends must never finish it synchronously in-call.
+`FakeAiBackend` completes deferred. `AiOrchestrator.handle_message()` is a
+coroutine (callers `await` it) with busy guard, `cancel()` + state-change
+fence, and an orchestrator-owned per-call timeout
+(`ai_timeout_seconds`, default 30 s). Chat screen awaits and locks input
+while in flight. New tests: `tests/integration/test_async_orchestration.gd`.
 
 ---
 
@@ -16,16 +41,16 @@ still require the direction re-review before starting.**
 direction in a conversation.** The user has said the plan below may need
 fine-tuning before implementation starts. Specifically:
 
-1. **Open the conversation by asking the user to review the M2 task order
-   below** and adjust anything before you start.
+1. **Open the conversation by asking the user to review the T2–T6 task
+   order below** and adjust anything before you start. (T1 is done — the
+   user's standing instruction was "proceed with T1 only, then re-review";
+   that re-review has NOT happened yet.)
 2. **D21 (trace storage) is separately gated:** the user has *additional
    thoughts to share* on trace storage (files vs SQLite). Do not write any
    trace-related code before that conversation happens. (This gates M3
    traces, not M2 — but do not "helpfully" scaffold traces early.)
-3. If the user is unavailable and you were explicitly told to proceed, the
-   only safe starting point is **T1 (async seam)** — it is required under
-   every possible fine-tuning of the plan. Everything after T1 needs the
-   review first.
+3. There is no longer a review-exempt task: T1 was the only one, and it is
+   merged/PR'd. **Everything from T2 on needs the review first.**
 
 ---
 
@@ -71,6 +96,31 @@ Also load the user's memory directory notes if you have access to them
 - PowerShell 5.1: `ConvertTo-Json` mangles long strings; read files with
   `[System.IO.File]::ReadAllText`. Use PowerShell (not Git Bash) for `adb push`.
 
+### 2a. Gotchas learned during T1 (2026-07-17)
+
+- **Godot 4.7 treats an unawaited coroutine call as a parse error.**
+  Deliberate fire-and-forget: assign the call to a lambda and `Callable.call()`
+  it (tests), or make the connected lambda itself `await` (UI signals).
+- **The GUT runner treats the Variant-inference warning as an error** even
+  though `project.godot` shows warning level 1 — e.g. `var wr := weakref(x)`
+  fails to compile under tests. Annotate: `var wr: WeakRef = weakref(x)`.
+- **RefCounted cycles leak, and lambdas capturing `self` create them.** A
+  backend whose request holds a cancel hook capturing that backend is a
+  `backend → request → hook → backend` cycle: 8 leaked ObjectDB instances
+  until `AiRequest` started clearing its hook on finish. If tests print
+  "ObjectDB instances were leaked at exit", suspect a lambda cycle first.
+- **Awaiting an already-completed coroutine hangs forever** (its completion
+  signal already fired). If code may resume a coroutine synchronously (e.g.
+  `cancel()` does), capture the result via a wrapper lambda into a dict and
+  check/`wait_frames` — see `test_async_orchestration.gd` for the pattern.
+- **`chat_screen.gd`'s `var _input` shadows Control's `_input()` virtual** —
+  external typed access resolves to a Callable, not the LineEdit. Pre-existing;
+  rename in a cleanup PR someday. Use `screen.get("_input")` meanwhile.
+- **In-app verification without clicking:** a throwaway `extends SceneTree`
+  script run via `--headless -s res://<tmp>.gd` boots the real autoload
+  kernel; instantiate the real screen, call its submit path, assert on its
+  labels. Delete the script after (never commit it).
+
 ## 3. Where the project stands
 
 **Done:** M1 vertical slice (desktop + physical S26 Ultra), model decisions
@@ -90,17 +140,12 @@ Goal: type into the Godot app, get real E2B prose back. Tasks are ordered;
 each is one branch + PR unless the user says otherwise. **T1 first is
 mandatory; order of T2–T6 may be fine-tuned at GATE 0.**
 
-### T1 — Async seam for `AiBackend` (D22) — *the unavoidable first PR*
+### T1 — Async seam for `AiBackend` (D22) — ✅ **DONE (PR #7)**
 
-- Rework `AiBackend` to return a **request handle** exposing
-  `chunk`/`completed`/`failed` signals + `cancel()`. Orchestrator, chat
-  screen and tests convert to `await`/signal handling.
-- `FakeAiBackend` must complete via `call_deferred` — **never synchronously
-  in the same call** — so reentrancy/cancellation bugs surface in tests.
-- Timeouts: orchestrator-owned (race completion vs `SceneTreeTimer`).
-- **Done when:** all GUT tests green (updated for async); chat screen still
-  round-trips the M1 fake flow; a `cancel()` mid-fake-turn test exists;
-  launching the app and typing a message still works (verify by running it).
+All done-when criteria met: 37/37 GUT tests green (28 converted to async +
+9 new), mid-turn cancel test exists and proves zero state change, and the
+real chat screen was driven headless end-to-end (busy-lock → reply →
+unlock). See "What T1 changed" in §0 and the gotchas in §2a.
 
 ### T2 — `RemoteLlamaBackend` (HTTP client to `llama-server`)
 
