@@ -31,7 +31,17 @@ func queue_responses(key: String, responses: Array) -> void:
 	_queues[key] = responses.duplicate(true)
 
 
-func generate(request: Dictionary) -> Dictionary:
+## Deferred completion per the D22 contract: the response is decided synchronously
+## (deterministic for tests) but delivered on the next main-loop iteration, so the
+## fake exercises the same await/cancel paths a real backend does.
+func generate(request: Dictionary) -> AiRequest:
+	var req := AiRequest.new()
+	var response := _build_response(request)
+	(func() -> void: req.complete(response)).call_deferred()
+	return req
+
+
+func _build_response(request: Dictionary) -> Dictionary:
 	var key := String(request.get("intent", ""))
 	# Queued sequence takes precedence so scripted multi-turn exchanges play in order.
 	var queue: Array = _queues.get(key, [])

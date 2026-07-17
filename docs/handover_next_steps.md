@@ -4,7 +4,9 @@
 mid-milestone after a usage-limit cutoff. Follow this file top to bottom.
 Keep it updated as work lands: it is a living checklist, not an archive.
 
-Last updated: 2026-07-17 · State as of: PR #5 merged (Phase 0 spikes passed)
+Last updated: 2026-07-17 · State: T1 (async seam) implemented — PR open;
+GATE 0 satisfied for T1 only ("proceed with T1, then re-review"). **T2–T6
+still require the direction re-review before starting.**
 
 ---
 

@@ -12,21 +12,58 @@ extends RefCounted
 ## Safety: the AI never runs code and never mutates state directly. It only names tools
 ## and commands; unknown/non-whitelisted names are rejected and recorded in the [AiTrace].
 ##
+## Concurrency (D22): [method handle_message] is a coroutine — callers await it. The
+## orchestration logic itself stays on the main thread; only the backend is concurrent,
+## behind [AiRequest]. One orchestration at a time (busy guard); [method cancel] aborts
+## the in-flight backend request and stops the pipeline before any further state change.
+## The orchestrator owns the timeout, uniformly across backends.
+##
 ## Request  -> backend: { message, intent, scope, context, tools[], tool_results[]? }
 ## Response <- backend: { narrative, tool_calls[], commands[], schedule[]? }
 
 const MAX_MESSAGE_LEN: int = 2000
 
+## Per-model-call timeout. <= 0 disables. Tests lower this to exercise the path.
+var ai_timeout_seconds: float = 30.0
+
 var _kernel: GameKernel
+var _busy: bool = false
+var _cancel_requested: bool = false
+var _active_request: AiRequest = null
 
 
 func _init(kernel: GameKernel) -> void:
 	_kernel = kernel
 
 
-## Handle one player message. Returns:
+func is_busy() -> bool:
+	return _busy
+
+
+## Cancel the in-flight orchestration: aborts the current backend request and prevents
+## any further tool runs, state changes or scheduling. No-op when idle.
+func cancel() -> void:
+	if not _busy:
+		return
+	_cancel_requested = true
+	if _active_request != null:
+		_active_request.cancel()
+
+
+## Handle one player message (coroutine — await it). Returns:
 ##   { ok: bool, narrative: String, trace: AiTrace, applied_commands: Array, error: String }
 func handle_message(message: String, context: Dictionary = {}) -> Dictionary:
+	if _busy:
+		return _result(false, "The game master is still thinking.", AiTrace.new(), [], "busy")
+	_busy = true
+	_cancel_requested = false
+	var result: Dictionary = await _run_pipeline(message, context)
+	_active_request = null
+	_busy = false
+	return result
+
+
+func _run_pipeline(message: String, context: Dictionary) -> Dictionary:
 	var trace := AiTrace.new()
 	var applied: Array = []
 
@@ -51,19 +88,28 @@ func handle_message(message: String, context: Dictionary = {}) -> Dictionary:
 	trace.add("build_request", {"tools": _kernel.tools.tool_names()})
 
 	# 4. Turn 1.
-	var response := _kernel.ai.generate(request)
-	trace.add("ai_response", {"turn": 1, "response": response})
-	if typeof(response) != TYPE_DICTIONARY or response.is_empty():
+	var outcome: Dictionary = await _generate(request, trace, 1)
+	if not bool(outcome.get("ok", false)):
+		return _backend_failure(outcome, trace, applied)
+	var response: Dictionary = _as_dict(outcome.get("response", {}))
+	if response.is_empty():
 		return _result(false, "The game master is silent.", trace, applied, "empty_response")
 
 	# 5. If the AI requested tools, run them and take a second turn with the results.
 	var tool_calls: Array = _as_array(response.get("tool_calls", []))
 	if not tool_calls.is_empty():
 		request["tool_results"] = _run_tools(tool_calls, trace)
-		response = _kernel.ai.generate(request)
-		trace.add("ai_response", {"turn": 2, "response": response})
-		if typeof(response) != TYPE_DICTIONARY:
-			return _result(false, "The game master faltered.", trace, applied, "malformed_response")
+		if _cancel_requested:
+			return _cancelled_result(trace, applied)
+		outcome = await _generate(request, trace, 2)
+		if not bool(outcome.get("ok", false)):
+			return _backend_failure(outcome, trace, applied)
+		response = _as_dict(outcome.get("response", {}))
+
+	# The cancellation fence: nothing below may run after a cancel — steps 6-7 are
+	# where state changes happen.
+	if _cancel_requested:
+		return _cancelled_result(trace, applied)
 
 	# 6. Apply any commands through the whitelist + command bus.
 	for c in _as_array(response.get("commands", [])):
@@ -81,6 +127,51 @@ func handle_message(message: String, context: Dictionary = {}) -> Dictionary:
 	trace.add("narrative", {"text": narrative})
 
 	return _result(true, narrative, trace, applied, "")
+
+
+## One backend call: start it, arm the orchestrator-owned timeout, await the outcome.
+func _generate(request: Dictionary, trace: AiTrace, turn: int) -> Dictionary:
+	var req := _kernel.ai.generate(request)
+	_active_request = req
+	_arm_timeout(req)
+	var outcome: Dictionary = await req.wait()
+	_active_request = null
+	if bool(outcome.get("ok", false)):
+		trace.add("ai_response", {"turn": turn, "response": outcome.get("response", {})})
+	else:
+		trace.add("ai_failed", {"turn": turn, "error": String(outcome.get("error", ""))})
+	return outcome
+
+
+## Orchestrator-owned timeout (D22): race the request against a SceneTreeTimer. A late
+## timer firing after completion is harmless — AiRequest.fail() is a no-op once finished.
+## The timer holds only a weakref so a pending timeout never extends a finished
+## request's lifetime.
+func _arm_timeout(req: AiRequest) -> void:
+	if ai_timeout_seconds <= 0.0:
+		return
+	var tree := Engine.get_main_loop() as SceneTree
+	if tree == null:
+		return
+	var wr: WeakRef = weakref(req)
+	tree.create_timer(ai_timeout_seconds).timeout.connect(func() -> void:
+		var live: AiRequest = wr.get_ref()
+		if live != null:
+			live.fail("timeout"))
+
+
+func _backend_failure(outcome: Dictionary, trace: AiTrace, applied: Array) -> Dictionary:
+	if bool(outcome.get("cancelled", false)) or _cancel_requested:
+		return _cancelled_result(trace, applied)
+	var error := String(outcome.get("error", ""))
+	if error == "timeout":
+		return _result(false, "The game master does not answer.", trace, applied, "timeout")
+	return _result(false, "The game master is silent.", trace, applied, "backend_error")
+
+
+func _cancelled_result(trace: AiTrace, applied: Array) -> Dictionary:
+	trace.add("cancelled", {})
+	return _result(false, "(The action was cancelled.)", trace, applied, "cancelled")
 
 
 # --- pipeline helpers ---
