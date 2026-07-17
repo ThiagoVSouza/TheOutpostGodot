@@ -8,6 +8,10 @@ Decisions and their evidence: `docs/decisions.md`. Measurements:
 `docs/benchmarks/milestone1_results.md`. Original brief: `docs/initial_briefing.md`
 (no longer authoritative on every point — see the note at its head).
 
+**Agent handover:** `docs/handover_next_steps.md` — task-level next steps with
+gates. **GATE 0 there is binding: no production code before a direction review
+with the user.**
+
 Last updated: 2026-07-17
 
 ---
