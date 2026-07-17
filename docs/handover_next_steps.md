@@ -4,19 +4,17 @@
 mid-milestone after a usage-limit cutoff. Follow this file top to bottom.
 Keep it updated as work lands: it is a living checklist, not an archive.
 
-Last updated: 2026-07-17 · State: **T1 complete — PR #7 open, awaiting user
-merge.** GATE 0 was satisfied for T1 only (user chose "proceed with T1, then
-re-review"). **T2–T6 require a direction re-review with the user before
-starting.**
+Last updated: 2026-07-17 · State: **T2 complete — PR #8 open, awaiting user merge.**
+T1 is merged as PR #7; the user reviewed and approved T2's scope. **T4 requires
+its own plan review before implementation** (the agreed next order is T4, then T3,
+T5, T6).
 
 ## 0. If you are the next agent, start exactly here
 
-1. `git fetch`, then check PR #7 (`feature/async-ai-seam`, the T1 async
-   seam): merged, or awaiting review? If open, ask the user — do not build
-   on top of an unmerged T1 unless they tell you to stack branches.
-2. **Conduct the GATE 0 re-review** (below) for T2–T6 with the user before
-   any further production code. The user expects to fine-tune; open by
-   asking what they want to adjust in the T2–T6 order/scope.
+1. `git fetch`, then confirm PR #7 is still merged. Start the next task from
+   current `origin/main`, preserving this handover update until it is merged.
+2. **Plan-review T4** with the user before production code. The agreed next
+   order is T4, T3, T5, T6; the user expects a task-specific review before each.
 3. Read §1 (context bootstrap) before touching anything. The T1 lessons in
    §2a are new since the docs were written — they will save you time.
 4. D21 reminder unchanged: **no trace-related code before the user shares
@@ -41,16 +39,15 @@ while in flight. New tests: `tests/integration/test_async_orchestration.gd`.
 direction in a conversation.** The user has said the plan below may need
 fine-tuning before implementation starts. Specifically:
 
-1. **Open the conversation by asking the user to review the T2–T6 task
-   order below** and adjust anything before you start. (T1 is done — the
-   user's standing instruction was "proceed with T1 only, then re-review";
-   that re-review has NOT happened yet.)
+1. **Open the conversation by asking the user to review the T4–T6 task
+   order below** and adjust anything before starting the selected task. T2 was
+   approved and completed independently; the agreed next order is T4, T3, T5, T6.
 2. **D21 (trace storage) is separately gated:** the user has *additional
    thoughts to share* on trace storage (files vs SQLite). Do not write any
    trace-related code before that conversation happens. (This gates M3
    traces, not M2 — but do not "helpfully" scaffold traces early.)
-3. There is no longer a review-exempt task: T1 was the only one, and it is
-   merged/PR'd. **Everything from T2 on needs the review first.**
+3. There is no review-exempt task remaining. **Everything from T4 on needs the
+   task-specific review first.**
 
 ---
 
@@ -147,19 +144,25 @@ All done-when criteria met: 37/37 GUT tests green (28 converted to async +
 real chat screen was driven headless end-to-end (busy-lock → reply →
 unlock). See "What T1 changed" in §0 and the gotchas in §2a.
 
-### T2 — `RemoteLlamaBackend` (HTTP client to `llama-server`)
+### T2 — `RemoteLlamaBackend` (HTTP client to `llama-server`) — DONE (PR #8)
 
-- POST `/v1/chat/completions`; `temperature`, `max_tokens`, `cache_prompt:
-  true`, per-request `grammar` (string field — spike-proven).
-- Non-blocking transport per D22 (`HTTPRequest` is fine pre-streaming; a
-  polled `HTTPClient` if/when token streaming is wanted).
-- Parse `timings` (prompt_n/prompt_ms/predicted_n/predicted_ms) into the AI
-  trace.
-- Honor `cancel()` (abort the HTTP request) and the orchestrator timeout.
-- **Done when:** with a hand-started server, a real chat turn produces E2B
-  prose in the running app; with no server, requests fail cleanly into T5's
-  fallback path (or a clear error until T5 lands); unit tests cover response
-  parsing + error mapping with canned JSON (no live server in CI tests).
+- `RemoteLlamaBackend` POSTs non-blockingly to `/v1/chat/completions` through
+  `HTTPRequest`; request payloads carry `temperature`, `max_tokens`,
+  `cache_prompt: true`, and optional per-request `grammar`.
+- `LlamaChatCodec` parses `content`, `finish_reason`, and the T2 timing set
+  (`prompt_n`, `prompt_ms`, `predicted_n`, `predicted_ms`) from canned JSON.
+  Timings appear in the existing `ai_response` trace entry; no trace storage or
+  new trace code was added (D21 remains untouched).
+- Explicit `cancel()` and orchestrator-owned timeout both abort and free the
+  HTTP transport. Stable errors cover transport, HTTP status, invalid JSON,
+  invalid response, and empty content.
+- Development selects it with `OUTPOST_AI_BACKEND=remote-llama` plus optional
+  `OUTPOST_AI_ENDPOINT` and `OUTPOST_AI_API_KEY`; `FakeAiBackend` remains the
+  default. T5 still owns visible fallback.
+- Verification: 52/52 GUT tests green, manifest validation green, intentionally
+  closed localhost port gives a clear timed-out-server response, and a real E2B
+  chat-screen turn completed in **1.10 s** with input busy-lock/unlock and timings
+  in its trace. Details: `docs/benchmarks/milestone2_remote_backend.md`.
 
 ### T3 — Local server lifecycle (desktop only)
 

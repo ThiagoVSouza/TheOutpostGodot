@@ -1,0 +1,18 @@
+{
+  "choices": [
+    {
+      "finish_reason": "stop",
+      "message": {
+        "role": "assistant",
+        "content": "Salt wind crosses the outpost as the watch changes at dusk."
+      }
+    }
+  ],
+  "timings": {
+    "prompt_n": 37,
+    "prompt_ms": 12.5,
+    "predicted_n": 15,
+    "predicted_ms": 145.75,
+    "predicted_per_second": 102.9
+  }
+}

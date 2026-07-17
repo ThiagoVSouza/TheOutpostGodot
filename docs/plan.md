@@ -12,7 +12,7 @@ Decisions and their evidence: `docs/decisions.md`. Measurements:
 gates. **GATE 0 there is binding: no production code before a direction review
 with the user.**
 
-Last updated: 2026-07-17
+Last updated: 2026-07-17 (T2 remote backend)
 
 ---
 
@@ -53,7 +53,11 @@ export/deploy tooling.
   decided, D22: main-thread orchestrator; request-handle interface
   (`chunk`/`completed`/`failed` + `cancel()`); the fake must complete
   deferred, never synchronously
-- `RemoteLlamaBackend` — HTTP client to `llama-server`
+- ~~`RemoteLlamaBackend` — HTTP client to `llama-server`~~ **Done (T2):**
+  non-blocking `HTTPRequest` transport, request cancellation/timeout cleanup,
+  llama.cpp chat-response/timing parsing, canned-response tests, and an explicit
+  development opt-in (`OUTPOST_AI_BACKEND=remote-llama`). Fake remains the default;
+  automatic visible degradation remains T5.
 - Local mode: spawn `llama-server` on `127.0.0.1`
 - Model-as-configuration (D6): backend, `-rea off` (D7), `--cache-reuse` (D8), ctx,
   threads, RAM floor — never a bare GGUF path

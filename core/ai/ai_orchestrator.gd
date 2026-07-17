@@ -22,6 +22,10 @@ extends RefCounted
 ## Response <- backend: { narrative, tool_calls[], commands[], schedule[]? }
 
 const MAX_MESSAGE_LEN: int = 2000
+const M2_SYSTEM_PROMPT := "You are the game master of The Outpost, a Greco-Roman " \
+	+ "fantasy settlement game. Reply with one to three concise sentences of vivid " \
+	+ "narrative prose. Do not resolve game mechanics, claim resources changed, or " \
+	+ "invent numerical outcomes."
 
 ## Per-model-call timeout. <= 0 disables. Tests lower this to exercise the path.
 var ai_timeout_seconds: float = 30.0
@@ -80,6 +84,10 @@ func _run_pipeline(message: String, context: Dictionary) -> Dictionary:
 	# 3. Build the request for the backend.
 	var request := {
 		"message": message,
+		"messages": [
+			{"role": "system", "content": M2_SYSTEM_PROMPT},
+			{"role": "user", "content": message},
+		],
 		"intent": intent,
 		"scope": _as_dict(context.get("scope", {})),
 		"context": _as_dict(context.get("context", {})),
@@ -165,8 +173,20 @@ func _backend_failure(outcome: Dictionary, trace: AiTrace, applied: Array) -> Di
 		return _cancelled_result(trace, applied)
 	var error := String(outcome.get("error", ""))
 	if error == "timeout":
-		return _result(false, "The game master does not answer.", trace, applied, "timeout")
-	return _result(false, "The game master is silent.", trace, applied, "backend_error")
+		return _result(
+			false,
+			"The AI server did not answer before the timeout.",
+			trace,
+			applied,
+			"timeout"
+		)
+	return _result(
+		false,
+		"The game master is unavailable. Check the AI server connection.",
+		trace,
+		applied,
+		"backend_error"
+	)
 
 
 func _cancelled_result(trace: AiTrace, applied: Array) -> Dictionary:
