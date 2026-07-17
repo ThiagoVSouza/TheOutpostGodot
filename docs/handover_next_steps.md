@@ -4,17 +4,17 @@
 mid-milestone after a usage-limit cutoff. Follow this file top to bottom.
 Keep it updated as work lands: it is a living checklist, not an archive.
 
-Last updated: 2026-07-17 · State: **T2 complete — PR #8 open, awaiting user merge.**
-T1 is merged as PR #7; the user reviewed and approved T2's scope. **T4 requires
-its own plan review before implementation** (the agreed next order is T4, then T3,
-T5, T6).
+Last updated: 2026-07-17 · State: **T4 complete — PR #9 open, awaiting user merge.**
+T1 and T2 are merged as PRs #7 and #8; the user reviewed and approved T4's scope.
+**T3 requires its own plan review before implementation** (the agreed next order is
+T3, then T5, T6).
 
 ## 0. If you are the next agent, start exactly here
 
-1. `git fetch`, then confirm PR #7 is still merged. Start the next task from
+1. `git fetch`, then confirm PRs #7 and #8 are still merged. Start the next task from
    current `origin/main`, preserving this handover update until it is merged.
-2. **Plan-review T4** with the user before production code. The agreed next
-   order is T4, T3, T5, T6; the user expects a task-specific review before each.
+2. **Plan-review T3** with the user before production code. The agreed next
+   order is T3, T5, T6; the user expects a task-specific review before each.
 3. Read §1 (context bootstrap) before touching anything. The T1 lessons in
    §2a are new since the docs were written — they will save you time.
 4. D21 reminder unchanged: **no trace-related code before the user shares
@@ -39,14 +39,14 @@ while in flight. New tests: `tests/integration/test_async_orchestration.gd`.
 direction in a conversation.** The user has said the plan below may need
 fine-tuning before implementation starts. Specifically:
 
-1. **Open the conversation by asking the user to review the T4–T6 task
-   order below** and adjust anything before starting the selected task. T2 was
-   approved and completed independently; the agreed next order is T4, T3, T5, T6.
+1. **Open the conversation by asking the user to review the T3, T5, and T6 task
+   order below** and adjust anything before starting the selected task. T4 was
+   approved and completed independently; the agreed next order is T3, T5, T6.
 2. **D21 (trace storage) is separately gated:** the user has *additional
    thoughts to share* on trace storage (files vs SQLite). Do not write any
    trace-related code before that conversation happens. (This gates M3
    traces, not M2 — but do not "helpfully" scaffold traces early.)
-3. There is no review-exempt task remaining. **Everything from T4 on needs the
+3. There is no review-exempt task remaining. **Everything from T3 on needs the
    task-specific review first.**
 
 ---
@@ -174,15 +174,19 @@ unlock). See "What T1 changed" in §0 and the gotchas in §2a.
   detected and reused or reported, not doubled (the 2026-07-17 spike found a
   leftover server holding 2.8 GB VRAM — detect that case).
 
-### T4 — Model-as-configuration (D6)
+### T4 — Model-as-configuration (D6) — DONE (PR #9)
 
-- A model entry is a **configuration resource**, never a bare GGUF path:
-  weights path, backend, `-ngl`, ctx total, `-np` (slot count ≥ routing
-  family count, D23), `--cache-reuse`, `-rea off` (D7), threads, RAM/VRAM
-  floor that gates it (D11).
-- **Done when:** T3 spawns entirely from a config resource; swapping E2B ↔
-  Bonsai-27B is a config change, no code change; tests validate config
-  parsing + floor gating.
+- `ModelProfile` and `ModelCatalog` resources replace bare model paths. Every
+  profile captures the server executable and weights paths, platform/backend,
+  `-ngl`, total ctx, `-np`, routing-family count, `--cache-reuse`, reasoning off,
+  threads, and available-RAM/VRAM floors.
+- `ModelCapabilities` keeps gating deterministic: insufficient or unknown required
+  RAM/VRAM fails closed, without pretending a platform-specific probe already exists.
+- The catalog supplies E2B as an explicit desktop verification profile and Bonsai-27B
+  Q1_0 as the D5 desktop default. `server_arguments()` makes T3's server launch a
+  direct projection of the selected resource; no E2B/Bonsai code branch is needed.
+- Verification: 58/58 GUT tests and manifest validation green. T3 must still prove
+  process lifecycle and that it consumes this configuration at runtime.
 
 ### T5 — Graceful fallback (D16's rule)
 
