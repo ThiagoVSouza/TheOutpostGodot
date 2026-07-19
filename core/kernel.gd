@@ -19,6 +19,7 @@ var tools: ToolRegistry
 var modules: ModuleRegistry
 var screens: ScreenRegistry
 var ai: AiBackend
+var ai_availability: AiAvailability
 var llama_server_manager: LlamaServerManager
 var ai_orchestrator: AiOrchestrator
 var clock: GameClock
@@ -58,8 +59,11 @@ func boot() -> void:
 	modules = ModuleRegistry.new(log)
 	screens = ScreenRegistry.new()
 
-	# 6. AI seam — FakeAiBackend by default; real backends swap in later.
+	# 6. AI seam — FakeAiBackend by default; real backends swap in later. Availability
+	#    implements the T5 outage policy (D16 amendment); a provider closure keeps it
+	#    correct across backend swaps.
 	ai = _create_ai_backend()
+	ai_availability = AiAvailability.new(events, func() -> AiBackend: return ai)
 
 	# 7. Calendar + workflow subsystems (scheduler listens on the event bus and runs
 	#    due workflows through the engine).

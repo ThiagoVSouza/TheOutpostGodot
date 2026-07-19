@@ -75,6 +75,42 @@ func generate(request: Dictionary) -> AiRequest:
 	return ai_request
 
 
+## T5 recovery probe: GET the server's /health endpoint. A 200 restores availability;
+## anything else counts as a failed attempt. Reuses the [method _start_http_request]
+## seam so tests drive it without a socket.
+func attempt_recovery(_attempt: int) -> AiRequest:
+	var probe := AiRequest.new()
+	if not is_ready():
+		_defer_failure(probe, "backend_not_ready")
+		return probe
+	var http_request := HTTPRequest.new()
+	http_request.timeout = 3.0
+	_host.add_child(http_request)
+	http_request.request_completed.connect(
+		func(result: int, response_code: int, _headers: PackedStringArray, _body: PackedByteArray) -> void:
+			_free_http_request(http_request)
+			if probe.is_finished():
+				return
+			if result == HTTPRequest.RESULT_SUCCESS and response_code == 200:
+				probe.complete({})
+			else:
+				probe.fail("health_check_failed"),
+		CONNECT_ONE_SHOT
+	)
+	probe.set_cancel_hook(func() -> void: _cancel_and_free(http_request))
+	var start_error := _start_http_request(
+		http_request, health_url(), PackedStringArray(), HTTPClient.METHOD_GET, ""
+	)
+	if start_error != OK:
+		_free_http_request(http_request)
+		_defer_failure(probe, "transport_start_error:%d" % start_error)
+	return probe
+
+
+func health_url() -> String:
+	return endpoint_url.trim_suffix("/v1/chat/completions").rstrip("/") + "/health"
+
+
 ## Overridable seams used by tests to drive completion and observe cancellation without
 ## opening a socket. Production always delegates to HTTPRequest.
 func _start_http_request(

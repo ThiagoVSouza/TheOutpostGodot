@@ -57,6 +57,19 @@ func cancel() -> void:
 ## Handle one player message (coroutine — await it). Returns:
 ##   { ok: bool, narrative: String, trace: AiTrace, applied_commands: Array, error: String }
 func handle_message(message: String, context: Dictionary = {}) -> Dictionary:
+	# T5 gate: while the backend is in an outage, refuse before anything runs — no
+	# backend call, no tools, no state change, and never a fabricated fake reply.
+	var availability := _kernel.ai_availability
+	if availability != null and availability.is_blocked():
+		var trace := AiTrace.new()
+		trace.add("unavailable", {
+			"state": availability.state_name(),
+			"attempt": availability.attempt(),
+		})
+		var message_text := "The game master is unavailable. Use Retry to reconnect."
+		if availability.state() == AiAvailability.State.RECOVERING:
+			message_text = "The game master is reconnecting. Please wait."
+		return _result(false, message_text, trace, [], "unavailable")
 	if _busy:
 		return _result(false, "The game master is still thinking.", AiTrace.new(), [], "busy")
 	_busy = true
@@ -172,6 +185,10 @@ func _backend_failure(outcome: Dictionary, trace: AiTrace, applied: Array) -> Di
 	if bool(outcome.get("cancelled", false)) or _cancel_requested:
 		return _cancelled_result(trace, applied)
 	var error := String(outcome.get("error", ""))
+	# A real backend failure (never a cancellation) opens a T5 outage: availability
+	# blocks further orchestration and runs the bounded recovery sequence.
+	if _kernel.ai_availability != null:
+		_kernel.ai_availability.report_failure(error)
 	if error == "timeout":
 		return _result(
 			false,

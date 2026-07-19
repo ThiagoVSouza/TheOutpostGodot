@@ -38,6 +38,12 @@ func was_cancelled() -> bool:
 	return _cancelled
 
 
+## The terminal outcome once [method is_finished] is true; empty before then.
+## Non-coroutine accessor for signal-driven callers that must not await.
+func outcome() -> Dictionary:
+	return _outcome
+
+
 ## Await the terminal outcome:
 ##   { ok: bool, response: Dictionary, error: String, cancelled: bool }
 ## Returns immediately if the request already finished, so late awaiters never hang.

@@ -58,6 +58,15 @@ func shutdown() -> void:
 		state = State.STOPPED
 
 
+## T5 recovery: tear down and run the full startup sequence again. The health probe
+## in startup reuses a healthy external server and relaunches a dead owned one, so
+## this is safe to call from any state — including READY with a silently dead process.
+func restart() -> void:
+	shutdown()
+	state = State.STOPPED
+	ensure_started()
+
+
 func _exit_tree() -> void:
 	shutdown()
 

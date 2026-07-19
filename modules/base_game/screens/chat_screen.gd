@@ -11,6 +11,7 @@ var _resource_label: Label
 var _log_label: RichTextLabel
 var _input: LineEdit
 var _send_button: Button
+var _retry_button: Button
 var _trace_label: RichTextLabel
 
 
@@ -20,6 +21,8 @@ func _ready() -> void:
 	_build_ui()
 	# Surface workflow narration (e.g. the end-of-month report) in the conversation log.
 	Kernel.events.subscribe("workflow_narrative", _on_workflow_narrative)
+	# T5: reflect AI outage/recovery state as system messages + the Retry control.
+	Kernel.events.subscribe(AiAvailability.EVENT_NAME, _on_ai_availability_changed)
 	_append("[b]The Outpost[/b] — the game master awaits. Describe what you do.")
 	_refresh_resources()
 
@@ -57,6 +60,11 @@ func _build_ui() -> void:
 	_send_button.text = "Send"
 	_send_button.pressed.connect(func() -> void: await _on_submit(_input.text))
 	input_row.add_child(_send_button)
+	_retry_button = Button.new()
+	_retry_button.text = "Retry connection"
+	_retry_button.visible = false
+	_retry_button.pressed.connect(func() -> void: Kernel.ai_availability.retry())
+	input_row.add_child(_retry_button)
 
 	var dev_row := HBoxContainer.new()
 	vbox.add_child(dev_row)
@@ -115,6 +123,25 @@ func _on_advance_month() -> void:
 
 func _on_workflow_narrative(payload: Dictionary) -> void:
 	_append("[color=gray]Chronicle:[/color] %s" % payload.get("text", ""))
+
+
+func _on_ai_availability_changed(payload: Dictionary) -> void:
+	var state := String(payload.get("state", ""))
+	var attempt := int(payload.get("attempt", 0))
+	match state:
+		"recovering":
+			if attempt == 0:
+				_append("[color=orange]System:[/color] Game master connection lost — attempting to recover.")
+			else:
+				_append("[color=orange]System:[/color] Reconnecting (attempt %d/%d)…" % [attempt, AiAvailability.MAX_ATTEMPTS])
+			_retry_button.visible = false
+		"unavailable":
+			_append("[color=orange]System:[/color] The game master is unavailable. Press Retry to reconnect.")
+			_retry_button.visible = true
+		"available":
+			if int(payload.get("attempts_used", 0)) > 0:
+				_append("[color=orange]System:[/color] Game master connection restored.")
+			_retry_button.visible = false
 
 
 func _refresh_resources() -> void:
