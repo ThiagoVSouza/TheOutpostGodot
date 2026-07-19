@@ -9,7 +9,7 @@
 > Relationship to other docs: `docs/Orchestration_brainstorm.md` §10–§11 defines
 > the workflow *contract* this DSL implements and the mechanic-authoring flow it
 > anticipates; `docs/decisions.md` wins on any conflict. Candidate decisions
-> below (§12) are **proposed** — promote to `docs/decisions.md` after review.
+> below (§13) are **proposed** — promote to `docs/decisions.md` after review.
 > Per the plan's GATE 0 discipline: review together before production code.
 
 ---
@@ -141,7 +141,7 @@ migrate there: fail-fast stands by default.
 - **Canonical form:** JSON. Every node `{"op": "...", ...}` — explicit op key.
 - **References (sigils, in string positions):** `"@name"` = workflow param,
   `"$$name"` = instance local. Literal strings starting with `@`/`$$` need an
-  escape — exact escape rule is an open detail (§11).
+  escape — exact escape rule is an open detail (§12).
 - **Expressions:** fully parenthesized triples `[left, "op", right]`, unary
   `["op", operand]`, or op objects (`fn`, `table_get`, `read_state`). No
   precedence in the canonical form, ever.
@@ -484,7 +484,72 @@ second keeps both honest.
 
 ---
 
-## 10. Staging against the milestones
+## 10. Authoring toolchain
+
+Adopted direction (user, 2026-07-19): content volume — rules, workflows, and
+especially events/mechanics — will outgrow hand-edited JSON. Three authoring
+front-ends were proposed; the architectural point is that **all three are thin
+clients over one authoring backend** that the kernel already requires: the
+registries (vocabulary), the validator (correctness), and the simulator
+(meaning). Build the backend headless-accessible and first-class; front-ends
+become cheap.
+
+### 10.1 Headless validator/simulator CLI (prerequisite — build with the kernel)
+
+`godot --headless -s tools/dsl_validate.gd` (same pattern GUT uses): validate
+definitions and run `dsl.simulate` dry-runs against fixture state without
+launching the game. Tests want this anyway; every front-end below sits on it.
+
+### 10.2 Human editor
+
+- **Schema-driven, not hand-built:** op forms, command pickers, event and
+  table dropdowns are generated from the registries — the same source the D19
+  grammar generation reads. A new complex component's vocabulary appears in
+  the editor automatically, with zero editor code.
+- Likely shape: a Godot editor plugin (dock under `addons/`), validate-on-save
+  with inline diagnostics, and a "simulate" button showing the dry-run trace
+  against fixture state.
+- The deferred v3-style human-readable text front-end (compiling to canonical
+  JSON, §3.1) re-enters here as the editor's text mode.
+
+### 10.3 Local AI authoring assistant (Bonsai-27B)
+
+Spec §11's AI-directed mechanic authoring, repositioned as a **developer
+tool** — which relaxes the constraints favorably: runs on the desktop tier
+(D5), every output is human-reviewed, activation is gated by the developer.
+
+- At dev time, **whole-document generation under a registry-generated GBNF
+  grammar** is simpler than the in-game incremental AST tools; out-of-registry
+  ops are unsampleable (D19), and Bonsai-27B passed the D4 protocol tests.
+- The honest boundary stands: grammar guarantees shape, not meaning (D4). The
+  pipeline is *idea → grammar-constrained draft → validator → simulate against
+  fixtures → human accepts → registered*. The validator and simulator are the
+  gates; the model is a drafting accelerant.
+- The in-game player-facing path (spec §11's tool-driven flow, activation
+  policies) stays separate and stricter.
+- Open trade-off, decide when built: for LLM authoring the text front-end is
+  token-cheaper than JSON, but grammar-constraining text generation is more
+  work than grammar-constraining JSON. Does not affect the kernel.
+
+### 10.4 MCP / agentic integration
+
+Content is data, so any agent can already edit the JSON files; the value-add
+of an MCP server is **validation and simulation without launching the game** —
+a thin wrapper over the §10.1 CLI exposing `list_registry`, `get_definition`,
+`validate`, `simulate`, `write_definition`. This also enables agent sessions
+(e.g. Claude Code) to author and verify events end-to-end. Trust model is
+unchanged: agent-authored content passes the same validator, capability
+profiles and activation gates as any other origin.
+
+### 10.5 Staging
+
+The headless CLI ships with the kernel (M3). Editor, assistant and MCP server
+are pulled in by content volume when it arrives (M7-ish), not scheduled
+speculatively.
+
+---
+
+## 11. Staging against the milestones
 
 - **M3 (now):** the language kernel — expression layer, mechanics-profile ops,
   resumable instance model, registration-time validation. This is what the
@@ -500,7 +565,7 @@ second keeps both honest.
 
 ---
 
-## 11. Open details (small, decide at implementation)
+## 12. Open details (small, decide at implementation)
 
 - Sigil escaping for literal strings beginning with `@` / `$$`.
 - Exact expression op set (comparison/boolean/arith list; `in`/`contains`?).
@@ -516,7 +581,7 @@ second keeps both honest.
 
 ---
 
-## 12. Candidate decisions for `docs/decisions.md` (after review)
+## 13. Candidate decisions for `docs/decisions.md` (after review)
 
 - **D24 (candidate)** — Workflow DSL: JSON op-tree canonical form; explicit
   `op`; fully parenthesized expressions; self-contained conditionals;
@@ -531,3 +596,8 @@ second keeps both honest.
 - **D27 (candidate)** — Complex components: engine capabilities behind
   registry facades (schemas/queries/commands/events); vocabulary-not-grammar;
   events spawn instances. (§9.)
+- **D28 (candidate)** — Authoring toolchain: one headless authoring backend
+  (registries + validator + simulator, CLI-accessible from the kernel
+  onward); editor, local AI assistant (Bonsai-27B, grammar-constrained,
+  human-gated) and MCP/agent integration are thin front-ends over it, pulled
+  in by content volume. (§10.)
