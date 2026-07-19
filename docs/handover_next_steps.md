@@ -4,17 +4,19 @@
 mid-milestone after a usage-limit cutoff. Follow this file top to bottom.
 Keep it updated as work lands: it is a living checklist, not an archive.
 
-Last updated: 2026-07-17 · State: **T3 complete — PR #10 open, ready for user merge.**
-T1, T2, and T4 are merged as PRs #7, #8, and #9. The user reviewed and approved
-T3's scope. The agreed next order is T5, then T6; each still requires its own plan
-review before implementation.
+Last updated: 2026-07-17 · State: **T1–T4 merged (PRs #7, #8, #9, #10). 64/64
+tests green on main.** The T5 *policy* was revised (this PR's docs change —
+visible unavailable state + bounded recovery, never a fake fallback in
+production) but **T5 code is not implemented yet.** The agreed next order is
+T5, then T6; each still requires its own plan review before implementation.
 
 ## 0. If you are the next agent, start exactly here
 
-1. `git fetch`, then confirm PRs #7, #8, and #9 are still merged. Start the next task from
-   current `origin/main`, preserving this handover update until it is merged.
+1. `git fetch`, then confirm PRs #7–#10 are merged and this docs PR (revised
+   T5 policy) has landed. Start the next task from current `origin/main`.
 2. **Plan-review T5** with the user before production code. The agreed next
    order is T5, T6; the user expects a task-specific review before each.
+   T5's revised scope is in §4 below and in D16's amendment note.
 3. Read §1 (context bootstrap) before touching anything. The T1 lessons in
    §2a are new since the docs were written — they will save you time.
 4. D21 reminder unchanged: **no trace-related code before the user shares
@@ -194,12 +196,18 @@ no `llama-server` process remained.
 - Verification: 58/58 GUT tests and manifest validation green. T3 must still prove
   process lifecycle and that it consumes this configuration at runtime.
 
-### T5 — Graceful fallback (D16's rule)
+### T5 — Visible unavailable state and bounded recovery (D16 amendment)
 
-- Server absent/unreachable/dies mid-session → fall back to `FakeAiBackend`
-  (visible in UI as degraded, not silent), game never breaks.
-- **Done when:** kill the server mid-session in a manual run → next turn
-  degrades gracefully; automated test simulates backend failure.
+- Server absent/unreachable/dies mid-session → block orchestration, show a clear
+  chat-system unavailable message, and apply no game state changes. Never substitute
+  `FakeAiBackend` for a player-facing production turn; it remains test/offline-dev
+  infrastructure only.
+- Make at most **three** bounded automatic recovery attempts for one outage. If all
+  fail, stop retrying and leave a stable unavailable state; a deliberate player retry
+  may start a new three-attempt sequence.
+- **Done when:** kill the server mid-session in a manual run → the active turn fails
+  visibly with zero applied commands, recovery stops after three failed attempts, and
+  an automated test covers the failure/retry cap.
 
 ### T6 — Input-source seam (D18)
 
