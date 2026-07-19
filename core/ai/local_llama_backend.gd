@@ -104,5 +104,37 @@ func generate(request: Dictionary) -> AiRequest:
 	return outer
 
 
+## T5 recovery: the first attempt of an outage runs a full manager restart cycle —
+## shutdown (killing only a process we own) then the normal startup sequence, which
+## reuses a healthy external server or relaunches a dead owned one. This is the
+## "one process restart per outage" bound: later attempts only re-probe health.
+func attempt_recovery(attempt: int) -> AiRequest:
+	if not is_instance_valid(server_manager) or not is_instance_valid(remote_backend):
+		var probe := AiRequest.new()
+		_defer_failure(probe, "local_server_manager_unavailable")
+		return probe
+	if attempt == 1:
+		return _recover_via_manager()
+	return remote_backend.attempt_recovery(attempt)
+
+
+func _recover_via_manager() -> AiRequest:
+	var probe := AiRequest.new()
+	server_manager.server_ready.connect(
+		func(_reused_existing: bool) -> void:
+			if not probe.is_finished():
+				probe.complete({}),
+		CONNECT_ONE_SHOT
+	)
+	server_manager.server_failed.connect(
+		func(reason: String) -> void:
+			if not probe.is_finished():
+				probe.fail(reason),
+		CONNECT_ONE_SHOT
+	)
+	server_manager.restart()
+	return probe
+
+
 func _defer_failure(request: AiRequest, error: String) -> void:
 	(func() -> void: request.fail(error)).call_deferred()

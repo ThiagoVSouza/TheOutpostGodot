@@ -74,12 +74,14 @@ export/deploy tooling.
   and RAM/VRAM floors. E2B remains an explicit verification profile; Bonsai-27B is
   the configured desktop default (D5). T3 will consume the selected resource to
   launch the server.
-- **T5 revised:** when the production server is absent, unreachable, or dies
-  mid-turn, block orchestration and show a clear chat-system unavailable message;
-  never fabricate a reply through `FakeAiBackend`. Make at most three bounded
-  automatic recovery attempts per outage, then stop retrying and leave the game in a
-  stable unavailable state. A deliberate player retry may begin a new three-attempt
-  sequence; no game state changes while unavailable.
+- ~~T5 revised~~ **Done (T5):** kernel-owned `AiAvailability` implements the
+  policy — a backend failure (never a cancellation) blocks orchestration with a
+  visible outage state on the event bus; at most three automatic recovery probes
+  per outage (2 s/5 s/10 s backoff; `local-llama`'s first attempt is a bounded
+  manager restart, `remote-llama` probes `/health`); a stable UNAVAILABLE state
+  with a chat Retry control that starts a new sequence; zero backend calls and
+  zero state changes while blocked. The kernel placement matters: the workflow
+  DSL runtime (PR #12 §8) becomes this state's second consumer.
 - Input seam takes **text from a source**, not from a `LineEdit` (D18)
 
 **Why first:** biggest remaining unknown, and the async change is cheapest now.

@@ -4,19 +4,19 @@
 mid-milestone after a usage-limit cutoff. Follow this file top to bottom.
 Keep it updated as work lands: it is a living checklist, not an archive.
 
-Last updated: 2026-07-17 · State: **T1–T4 merged (PRs #7, #8, #9, #10). 64/64
-tests green on main.** The T5 *policy* was revised (this PR's docs change —
-visible unavailable state + bounded recovery, never a fake fallback in
-production) but **T5 code is not implemented yet.** The agreed next order is
-T5, then T6; each still requires its own plan review before implementation.
+Last updated: 2026-07-19 · State: **T5 complete — PR open. T1–T4 merged (PRs
+#7–#10), T5 policy docs merged (PR #11), workflow DSL brainstorm merged
+(PR #12).** 72/72 tests green. **Only T6 (input-source seam) remains in M2**,
+and it requires its own plan review with the user before implementation.
 
 ## 0. If you are the next agent, start exactly here
 
-1. `git fetch`, then confirm PRs #7–#10 are merged and this docs PR (revised
-   T5 policy) has landed. Start the next task from current `origin/main`.
-2. **Plan-review T5** with the user before production code. The agreed next
-   order is T5, T6; the user expects a task-specific review before each.
-   T5's revised scope is in §4 below and in D16's amendment note.
+1. `git fetch`, then confirm the T5 PR is merged. Start from `origin/main`.
+2. **Plan-review T6** (input-source seam, D18) with the user before any
+   production code. After T6, M2 closes and M3 begins — M3 additionally
+   requires the D21 trace-storage conversation and now has the workflow DSL
+   design (`docs/workflow_dsl_brainstorm.md`, candidate decisions D24–D28
+   awaiting promotion) to fold into its planning.
 3. Read §1 (context bootstrap) before touching anything. The T1 lessons in
    §2a are new since the docs were written — they will save you time.
 4. D21 reminder unchanged: **no trace-related code before the user shares
@@ -196,18 +196,22 @@ no `llama-server` process remained.
 - Verification: 58/58 GUT tests and manifest validation green. T3 must still prove
   process lifecycle and that it consumes this configuration at runtime.
 
-### T5 — Visible unavailable state and bounded recovery (D16 amendment)
+### T5 — Visible unavailable state and bounded recovery — ✅ **DONE**
 
-- Server absent/unreachable/dies mid-session → block orchestration, show a clear
-  chat-system unavailable message, and apply no game state changes. Never substitute
-  `FakeAiBackend` for a player-facing production turn; it remains test/offline-dev
-  infrastructure only.
-- Make at most **three** bounded automatic recovery attempts for one outage. If all
-  fail, stop retrying and leave a stable unavailable state; a deliberate player retry
-  may start a new three-attempt sequence.
-- **Done when:** kill the server mid-session in a manual run → the active turn fails
-  visibly with zero applied commands, recovery stops after three failed attempts, and
-  an automated test covers the failure/retry cap.
+Implemented as kernel-owned `core/ai/ai_availability.gd` (AVAILABLE →
+RECOVERING → UNAVAILABLE; announces `ai_availability_changed` on the event
+bus). Orchestrator refuses with error `unavailable` while blocked — no backend
+call, no state change, never a fake reply. Backend recovery hooks:
+`AiBackend.attempt_recovery(attempt)` — base/fake always healthy;
+`remote-llama` GETs `/health`; `local-llama` attempt 1 is a bounded
+`LlamaServerManager.restart()` (the one-process-restart-per-outage rule),
+attempts 2–3 re-probe. Chat shows system messages + a Retry button that calls
+`AiAvailability.retry()` (new three-attempt sequence, first probe immediate).
+`AiAvailability` is deliberately signal-driven (zero coroutines) so timers can
+drive it under 4.7's unawaited-coroutine parse rule; `AiRequest` gained a
+non-coroutine `outcome()` accessor for that. 8 tests in
+`tests/integration/test_ai_availability.gd`; full outage→retry→restore cycle
+verified against the real chat screen headless.
 
 ### T6 — Input-source seam (D18)
 

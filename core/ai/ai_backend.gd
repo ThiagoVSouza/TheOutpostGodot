@@ -39,3 +39,13 @@ func is_ready() -> bool:
 func generate(_request: Dictionary) -> AiRequest:
 	push_error("AiBackend.generate() called on abstract base; use a concrete backend")
 	return AiRequest.make_failed("abstract backend")
+
+
+## One recovery probe for the T5 availability policy. [param attempt] is 1-based
+## within one outage; [AiAvailability] calls this at most three times per outage.
+## Same async rule as [method generate]: never finish the request in-call. The base
+## implementation reports healthy — correct for [FakeAiBackend], which cannot fail.
+func attempt_recovery(_attempt: int) -> AiRequest:
+	var probe := AiRequest.new()
+	(func() -> void: probe.complete({})).call_deferred()
+	return probe
