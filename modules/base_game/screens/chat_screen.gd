@@ -107,6 +107,11 @@ func _on_submit(text: String) -> void:
 ## replayed turn belongs in the conversation log just like a typed one.
 func _on_turn_completed(payload: Dictionary) -> void:
 	_set_busy(false)
+	# Only our own submits pass through _on_submit, which echoes the player's text
+	# immediately. A turn from any other source (future voice, trace replay) never
+	# did, so echo it here — a reply with no record of what was said is unreadable.
+	if String(payload.get("source_id", "")) != _source.id():
+		_append("[color=aqua]You:[/color] %s" % String(payload.get("text", "")))
 	var result: Dictionary = payload.get("result", {})
 	_append("[color=wheat]Game master:[/color] %s" % result.get("narrative", ""))
 	var applied: Array = result.get("applied_commands", [])

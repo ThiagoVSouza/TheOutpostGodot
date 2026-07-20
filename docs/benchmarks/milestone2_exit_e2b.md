@@ -66,7 +66,16 @@ The chat log rendered four `Game master:` lines and **no `You:` lines**. The
 harness submitted through its own `AiInputSource` rather than the screen's
 `_on_submit`, and the player-text echo lives only in `_on_submit` — so a turn
 originating from any source other than the screen's own text field produces a
-reply with no record of what was said. Reply rendering is source-agnostic;
-the prompt echo is not. This matters at M6, when voice becomes exactly such a
-source. The `ai_turn_completed` payload already carries `text`, so the fix is
-local to the screen. Tracked as an M2 follow-up.
+reply with no record of what was said. Reply rendering was source-agnostic;
+the prompt echo was not. This would have surfaced at M6, when voice becomes
+exactly such a source.
+
+**Fixed in the same PR:** `_on_turn_completed` now echoes the payload's `text`
+when the turn came from a source other than the screen's own, so the typed path
+still echoes immediately (no waiting ~0.85 s to see your own words) while every
+other source gets both halves logged. Two tests cover it, including a guard
+against the typed path double-echoing.
+
+This is the argument for the repo's verify-in-the-running-app rule: 75 passing
+tests, including three written specifically for this seam, all missed it. Only
+rendering a real conversation showed one half of it was absent.

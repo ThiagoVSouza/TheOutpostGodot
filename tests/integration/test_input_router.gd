@@ -62,6 +62,51 @@ func test_busy_collision_between_two_sources() -> void:
 	assert_eq(String(second["error"]), "busy")
 
 
+# --- chat screen as one source among others ---
+#
+# These use the *autoload* Kernel, not a fresh GameKernel: chat_screen.gd talks to the
+# autoload, so a locally constructed kernel would not be the one it subscribes to.
+
+func _make_chat_screen() -> Control:
+	var screen: Control = Kernel.screens.instantiate(Kernel.screens.start_screen_id())
+	add_child_autofree(screen)
+	return screen
+
+
+func _screen_log(screen: Control) -> String:
+	# append_text() does not update .text — the parsed text is the rendered content.
+	return (screen.get("_log_label") as RichTextLabel).get_parsed_text()
+
+
+func test_screen_echoes_player_text_from_a_foreign_source() -> void:
+	var screen := _make_chat_screen()
+	await wait_frames(2)
+
+	var scripted := Kernel.input_router.create_source("scripted")
+	scripted.submit("hello there outpost")
+	await wait_frames(10)
+
+	var text := _screen_log(screen)
+	assert_string_contains(text, "You: hello there outpost")
+	assert_string_contains(text, "Game master:")
+
+
+func test_typed_submit_echoes_exactly_once() -> void:
+	var screen := _make_chat_screen()
+	await wait_frames(2)
+
+	screen.call("_on_submit", "hello there outpost")
+	await wait_frames(10)
+
+	var text := _screen_log(screen)
+	assert_eq(
+		text.count("You: hello there outpost"),
+		1,
+		"the screen's own submit already echoed — the turn event must not echo again"
+	)
+	assert_string_contains(text, "Game master:")
+
+
 func test_source_id_is_recorded_in_the_trace() -> void:
 	var kernel := _make_kernel()
 	var turns: Array = []
