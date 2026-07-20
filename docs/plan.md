@@ -12,7 +12,7 @@ Decisions and their evidence: `docs/decisions.md`. Measurements:
 gates. **GATE 0 there is binding: no production code before a direction review
 with the user.**
 
-Last updated: 2026-07-17 (T3 local server lifecycle)
+Last updated: 2026-07-20 (T6 input-source seam — M2 tasks T1–T6 all complete)
 
 ---
 
@@ -82,7 +82,15 @@ export/deploy tooling.
   with a chat Retry control that starts a new sequence; zero backend calls and
   zero state changes while blocked. The kernel placement matters: the workflow
   DSL runtime (PR #12 §8) becomes this state's second consumer.
-- Input seam takes **text from a source**, not from a `LineEdit` (D18)
+- ~~Input seam takes **text from a source**, not from a `LineEdit` (D18)~~
+  **Done (T6):** kernel-owned `AiInputRouter` is the only path from player text to
+  the orchestrator. Sources (`AiInputSource`) submit by id and never hold a result:
+  every turn — success, busy rejection, or failure — is broadcast as
+  `ai_turn_completed` on the event bus, tagged with its originating source. The chat
+  screen is now just the `typed` source; it renders whatever turn completes,
+  whichever source produced it, so future voice (M6) and trace replay (M4) plug in
+  without touching it. The source id rides in the orchestrator context and lands in
+  the `build_request` trace stage.
 
 **Why first:** biggest remaining unknown, and the async change is cheapest now.
 

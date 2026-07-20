@@ -2,11 +2,14 @@ extends Control
 
 ## The vertical-slice screen: a free-text conversation with the AI game master.
 ##
-## Sends the player's message through [member GameKernel.ai_orchestrator], shows the
-## narrative reply, reflects resource changes, and (for development) exposes the AI trace
-## and a button to advance the calendar so the month-end workflow can be observed.
+## Sends the player's message through the input-source seam (D18): the screen is just
+## the "typed" [AiInputSource] — it submits text via [member GameKernel.input_router]
+## and renders whatever turn completes on the event bus, whichever source produced it.
+## Also reflects resource changes and (for development) exposes the AI trace and a
+## button to advance the calendar so the month-end workflow can be observed.
 ## The UI is built in code to keep the scene file trivial.
 
+var _source: AiInputSource
 var _resource_label: Label
 var _log_label: RichTextLabel
 var _input: LineEdit
@@ -19,6 +22,9 @@ func _ready() -> void:
 	if Engine.is_editor_hint():
 		return
 	_build_ui()
+	_source = Kernel.input_router.create_source("typed")
+	# Replies arrive via the event bus (D18), not as a return value of the submit call.
+	Kernel.events.subscribe(AiInputRouter.EVENT_TURN_COMPLETED, _on_turn_completed)
 	# Surface workflow narration (e.g. the end-of-month report) in the conversation log.
 	Kernel.events.subscribe("workflow_narrative", _on_workflow_narrative)
 	# T5: reflect AI outage/recovery state as system messages + the Retry control.
@@ -58,7 +64,7 @@ func _build_ui() -> void:
 	input_row.add_child(_input)
 	_send_button = Button.new()
 	_send_button.text = "Send"
-	_send_button.pressed.connect(func() -> void: await _on_submit(_input.text))
+	_send_button.pressed.connect(func() -> void: _on_submit(_input.text))
 	input_row.add_child(_send_button)
 	_retry_button = Button.new()
 	_retry_button.text = "Retry connection"
@@ -85,8 +91,8 @@ func _build_ui() -> void:
 	vbox.add_child(_trace_label)
 
 
-## Coroutine: a real backend turn takes 0.85-4 s (D22), so input locks while the game
-## master "thinks" and the reply arrives via await without blocking the frame.
+## The typed source's submit path: a real backend turn takes 0.85-4 s (D22), so input
+## locks here and unlocks when the turn's completion event arrives — no frame blocking.
 func _on_submit(text: String) -> void:
 	var message := text.strip_edges()
 	if message.is_empty() or Kernel.ai_orchestrator.is_busy():
@@ -94,9 +100,14 @@ func _on_submit(text: String) -> void:
 	_append("[color=aqua]You:[/color] %s" % message)
 	_input.clear()
 	_set_busy(true)
+	_source.submit(message)
 
-	var result: Dictionary = await Kernel.ai_orchestrator.handle_message(message)
+
+## Renders any completed turn, whichever source produced it — a future voice or
+## replayed turn belongs in the conversation log just like a typed one.
+func _on_turn_completed(payload: Dictionary) -> void:
 	_set_busy(false)
+	var result: Dictionary = payload.get("result", {})
 	_append("[color=wheat]Game master:[/color] %s" % result.get("narrative", ""))
 	var applied: Array = result.get("applied_commands", [])
 	if not applied.is_empty():

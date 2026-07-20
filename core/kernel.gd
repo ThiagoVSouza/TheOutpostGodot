@@ -22,6 +22,7 @@ var ai: AiBackend
 var ai_availability: AiAvailability
 var llama_server_manager: LlamaServerManager
 var ai_orchestrator: AiOrchestrator
+var input_router: AiInputRouter
 var clock: GameClock
 var scheduler: Scheduler
 var saves: SaveManager
@@ -75,6 +76,10 @@ func boot() -> void:
 	# 8. AI orchestrator ties the above together (needs tools, command_registry, ai,
 	#    commands, workflows, scheduler, events).
 	ai_orchestrator = AiOrchestrator.new(self)
+
+	# 8b. Input-source seam (D18): all player text — typed, voice, replay — reaches
+	#     the orchestrator through this router, never directly from a control.
+	input_router = AiInputRouter.new(self)
 
 	# 9. Discover + load modules; each registers its content through the seams above.
 	modules.load_all(self)
