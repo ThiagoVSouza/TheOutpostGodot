@@ -133,8 +133,13 @@ and traces a human can read to verify an orchestration behaved correctly.
   `OUTPOST_TEST_RUN` (set by `tools/test.ps1`) so the suite never writes unbounded
   files into a real dev's `user://` — no retention policy yet (M4). Verified by a
   human reading one real trace end to end, the stated reason traces exist at all.
-- **DSL core** (D24): op registry, expression layer, registration-time strict
-  validator. JSON canonical form only — **no text parser** (deferred to D28).
+- **DSL core** (D24) — **done (A2)**: `core/workflow/dsl/` — op registry (vocabulary
+  + purity flags), sigil resolution, expression evaluator, registration-time strict
+  validator. JSON canonical form only — **no text parser** (deferred to D28). A
+  collaborative syntax review settled the open §12 details: atomic sigils + explicit
+  `get` (no dotted access), lowercase operators, computed keys allowed, and a new
+  **global-variable scope (D31)**. Validator accepts the two worked examples and
+  rejects every purity/structure violation; 36 new tests.
 - **Resumable instances** (D25): checkpointing, snapshot contract,
   `resume_require`.
 - **Migrate off v0**: `Scheduler`, `AiOrchestrator._handle_schedule`, the month-end

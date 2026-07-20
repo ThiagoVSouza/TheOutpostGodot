@@ -327,7 +327,7 @@ their own pointed at a scratch dir (`tests/unit/test_ai_trace_writer.gd`,
 `AiTraceWriter` `class_name`, run `--import` once** or dependent scripts fail to
 parse (the standing global-class-cache gotcha).
 
-### A2 — DSL core (D24)
+### A2 — DSL core (D24) — **DONE**
 
 Op registry with a `pure: true/false` flag per op, expression layer (fully
 parenthesized, no precedence anywhere in canonical form), and the
@@ -335,8 +335,25 @@ parenthesized, no precedence anywhere in canonical form), and the
 statement-level structurally, and D19's grammar generation later reads the same
 `pure` flag — one source of truth.
 
-**Watch for:** §12's open details land here — sigil escaping, the exact expression
-op set, rule-table format and lookup semantics.
+**Landed as:** `core/workflow/dsl/` — `op_registry.gd` (vocabulary + purity flags;
+grammar keywords like `if`/`let` are NOT registry ops, D27), `dsl_ref.gd` (sigil
+rule shared by validator + evaluator), `dsl_eval_context.gd` (read-only seam),
+`expression_evaluator.gd`, `workflow_validator.gd`. 36 tests across
+`test_op_registry.gd`, `test_dsl_expression_evaluator.gd`, `test_workflow_validator.gd`.
+
+**§12 details settled in a syntax review with the user (see brainstorm §4/§12):**
+atomic sigils + explicit `get` op (no dotted access); lowercase operators
+(`== != < <= > >=`, `+ - * / %`, `and`/`or`/`not`, `in`/`contains`, `+` concatenates);
+computed keys allowed but discouraged; flat per-instance `$$` scope; and a new
+**global-variable scope — D31** (`get_global`/`set_global`, non-authoritative,
+persisted, capability-gated, traced; amends D4). Rule-table range-rows deferred to
+M3b. **Gotchas:** JSON parses `1` as a **float** (no int type) — integer-valued
+fields must accept integral floats (bit the validator; will bite the A3 executor);
+GDScript Variant `==` **raises** on String-vs-number rather than returning false
+(guard cross-type equality). Run `--import` after adding the new `class_name`s.
+
+**Not built here (A3's job):** execution, `$$`/global binding at runtime, suspension
+& checkpointing, the real kernel-backed `DslEvalContext`, `set_global` effect + trace.
 
 ### A3 — Resumable instances (D25)
 

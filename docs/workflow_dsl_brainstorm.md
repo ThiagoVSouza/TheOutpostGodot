@@ -138,13 +138,27 @@ migrate there: fail-fast stands by default.
 
 ## 4. Language core
 
+> **A2 syntax review (2026-07-20) settled several details below.** Sigils are
+> **atomic** (no dotted access — nested access is an explicit `get` op); operator
+> keywords are **lowercase**; computed keys are allowed (an operation inside the
+> operation) though discouraged; **global variables now exist** (D31), so the old
+> "no globals" line is superseded. The escape rule and expression op set are fixed.
+> The §6 examples below are rewritten to match. JSON numbers parse as floats (JSON
+> has no int type), so integer-valued fields legitimately arrive as `1.0`.
+
 - **Canonical form:** JSON. Every node `{"op": "...", ...}` — explicit op key.
 - **References (sigils, in string positions):** `"@name"` = workflow param,
-  `"$$name"` = instance local. Literal strings starting with `@`/`$$` need an
-  escape — exact escape rule is an open detail (§12).
+  `"$$name"` = instance local — **atomic names**, no `.` path inside them. A
+  leading backslash escapes a literal (`"\@x"` is the literal `@x`; `"\\x"` is
+  `\x`). Nested access into a value is the explicit `{"op":"get","from":…,"key":…}`
+  op, never a dotted sigil (A2 — keeps any path-parser out of strings and every
+  traversal visible to the validator).
 - **Expressions:** fully parenthesized triples `[left, "op", right]`, unary
-  `["op", operand]`, or op objects (`fn`, `table_get`, `read_state`). No
-  precedence in the canonical form, ever.
+  `["op", operand]`, or op objects (`fn`, `table_get`, `read_state`, `get`,
+  `get_global`). One operator per array, **no precedence, ever**. Operators are
+  lowercase: comparison `== != < <= > >=`, arithmetic `+ - * / %` (`+` concatenates
+  when a side is a string), boolean `and`/`or`/`not`, membership `in`/`contains`.
+  A `key`/`from` may itself be a computed expression (e.g. `["soldier_","+","$$i"]`).
 - **Conditionals:** self-contained
   `{"op":"if", "cond":…, "then":[…], "elif":[{cond,then}…], "else":[…]}`.
 - **Loops:** `foreach` (finite validated source, scoped item/index) and `for`
@@ -162,9 +176,14 @@ migrate there: fail-fast stands by default.
   suspend and persist a snapshot; the AI-invocation op is effectful but
   awaited in memory and never itself a suspension point (D30) — §5 covers the
   distinction.
-- **Scoping:** params (`@`) and instance locals (`$$`) only. Game state is
-  read through `read_state`/component query ops and written only via
-  `run_command`. No global variables exist.
+- **Scoping:** three tiers. Params (`@`, caller-set, read-only) and instance
+  locals (`$$`, set by `let`/`roll`, **flat per instance** — a local set in any
+  block is visible everywhere in that instance, except a `foreach` item/index which
+  is loop-scoped). Game state is read through `read_state`/component query ops and
+  written only via `run_command`. **Global variables (D31)** are a third tier:
+  non-authoritative shared scratch, read with `get_global`, written with
+  `set_global` — capability-gated, traced, and never the source of an authoritative
+  game number (that stays behind `run_command`, so D4 holds).
 - **Failure:** `require` steps carry `fail_code` (from spec §25's enum) +
   `fail_msg` (message key). Any failure halts the instance fail-fast.
 - **Numbers:** every gameplay number comes from a rule table (`table_get`), a
@@ -308,16 +327,19 @@ two frames.
      "value": {"op": "fn", "name": "travel.calculate_route",
                "args": {"from": "@actor_id", "to": "@destination_id"}}},
 
-    {"op": "require", "cond": ["$$route.found", "==", true],
+    {"op": "require",
+     "cond": [{"op": "get", "from": "$$route", "key": "found"}, "==", true],
      "fail_code": "missing_resource", "fail_msg": "travel.no_route"},
 
     {"op": "run_command", "name": "start_travel",
      "args": {"actor": "@actor_id", "route": "$$route"}},
 
     {"op": "emit", "msg": "travel.departed",
-     "values": {"mode": "$$route.mode", "days": "$$route.duration_days"}},
+     "values": {"mode": {"op": "get", "from": "$$route", "key": "mode"},
+                "days": {"op": "get", "from": "$$route", "key": "duration_days"}}},
 
-    {"op": "wait_game_time", "until_day": "$$route.arrival_day",
+    {"op": "wait_game_time",
+     "until_day": {"op": "get", "from": "$$route", "key": "arrival_day"},
      "resume_require": [
         {"cond": {"op": "fn", "name": "travel.still_en_route", "args": {"actor": "@actor_id"}},
          "fail_code": "stale_context"}
@@ -352,12 +374,14 @@ teleporting a prisoner.
 
     {"op": "confirm",
      "msg": "settlement.confirm_destroy",
-     "values": {"name": "$$impact.name", "residents": "$$impact.residents"},
+     "values": {"name":      {"op": "get", "from": "$$impact", "key": "name"},
+                "residents": {"op": "get", "from": "$$impact", "key": "residents"}},
      "scope": {"action": "destroy_settlement", "target": "@settlement_id"},
      "expires_days": 1},
 
     {"op": "run_command", "name": "destroy_settlement", "args": {"id": "@settlement_id"}},
-    {"op": "emit", "msg": "settlement.destroyed", "values": {"name": "$$impact.name"}}
+    {"op": "emit", "msg": "settlement.destroyed",
+     "values": {"name": {"op": "get", "from": "$$impact", "key": "name"}}}
   ]
 }
 ```
@@ -576,10 +600,16 @@ speculatively.
 
 ## 12. Open details (small, decide at implementation)
 
-- Sigil escaping for literal strings beginning with `@` / `$$`.
-- Exact expression op set (comparison/boolean/arith list; `in`/`contains`?).
+- ~~Sigil escaping for literal strings beginning with `@` / `$$`.~~ **Settled (A2,
+  2026-07-20):** leading backslash escapes; sigils are atomic; nested access is the
+  explicit `get` op. See §4.
+- ~~Exact expression op set (comparison/boolean/arith list; `in`/`contains`?).~~
+  **Settled (A2):** lowercase `== != < <= > >=`, `+ - * / %`, `and`/`or`/`not`,
+  `in`/`contains`; `+` concatenates on strings. See §4. Implemented in
+  `core/workflow/dsl/expression_evaluator.gd`.
 - Rule-table file format and lookup semantics (single key vs composite; range
-  rows for e.g. dice outcome bands?).
+  rows for e.g. dice outcome bands?). **A2 note:** `table_get` does single-key
+  lookup now; range-row bands land when M3b builds the difficulty tables.
 - `pc_stack` encoding for `elif` branches and loop iteration indices.
 - Instance-file naming/layout inside the save folder; relation to trace files
   (D21 — trace storage itself still open, revisit before coding).
