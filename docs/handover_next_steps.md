@@ -4,30 +4,31 @@
 mid-milestone after a usage-limit cutoff. Follow this file top to bottom.
 Keep it updated as work lands: it is a living checklist, not an archive.
 
-Last updated: 2026-07-20 · State: **All M2 tasks T1–T6 are implemented.** T1–T5
-merged (PRs #7–#11, #13); T6 (input-source seam) is complete on
-`feature/t6-input-source-seam` with a PR open. 75/75 tests green.
+Last updated: 2026-07-20 · State: **M2 is COMPLETE and verified** (PRs #7–#16).
+77/77 tests green. Real E2B in the running app at 0.80–0.85 s warm —
+`docs/benchmarks/milestone2_exit_e2b.md`. **M3a (workflow DSL kernel + traces) is
+the current milestone and is cleared to start.**
 
-**M2's exit criteria are not all met yet** — see §4's exit list. The tasks are
-done; the milestone still needs its end-to-end confirmation pass with a real
-model (the sub-second `-rea off` + prefix-cache turn was measured at T2/T3, but
-not re-confirmed after T5/T6 changed the path into the orchestrator).
+**Every M3a gate is open.** D21 was settled 2026-07-20 (files, not SQLite) so trace
+code is unblocked. D24–D28 are promoted, D29 is new, and D4 gained a substantial
+amendment. **GATE 0 was satisfied by the planning conversation of 2026-07-20** — no
+further direction review is needed to begin M3a. GATE 0 *does* apply again at M3b.
 
 ## 0. If you are the next agent, start exactly here
 
-1. `git fetch`, then confirm the T6 PR is merged. Start from `origin/main`.
-2. **Close out M2 first:** re-run one real E2B turn through the running app
-   (`OUTPOST_AI_BACKEND=local-llama`, `OUTPOST_MODEL_PROFILE=gemma_e2b_desktop_cuda`)
-   now that input flows through `AiInputRouter`, and record it in
-   `docs/benchmarks/`. Then M3 begins — it requires the GATE 0 review again, the
-   D21 trace-storage conversation, and folds in the workflow DSL design
-   (`docs/workflow_dsl_brainstorm.md`, candidate decisions D24–D28 awaiting
-   promotion).
-3. Read §1 (context bootstrap) before touching anything. The T1 lessons in
-   §2a and the T6 harness gotchas in §4's T6 entry will save you time.
-4. D21 reminder unchanged: **no trace-related code before the user shares
-   their trace-storage thoughts.** Nothing in T2–T6 touched traces (T6 only
-   added a `source` field to an existing `build_request` stage).
+1. `git fetch` and start from `origin/main`.
+2. **Read `docs/decisions.md` D4's amendment and D24–D29 first.** They are new, they
+   are the whole basis of M3a, and D4's amendment changes the pipeline shape you may
+   remember from the older sketch: orchestration is **authored workflow content**,
+   not fixed orchestrator code.
+3. **Work M3a in the order in §7** — traces first. That ordering is deliberate:
+   the trace writer is what makes every later step manually verifiable, which is the
+   entire reason the user wanted traces (D21).
+4. Scope discipline: **JSON canonical form only, no text parser.** The `nortrix`
+   text syntax in `docs/reference_dsl/` is *reference*, not this milestone's target
+   (D24, D28). Building a parser now roughly doubles M3a.
+5. Read §1 (context bootstrap). The T1 lessons in §2a and the T6 harness gotchas in
+   §4's T6 entry will save you real time.
 
 ### What T1 changed (PR #7, all tests 37/37, verified in-app)
 
@@ -291,3 +292,64 @@ branches on it). Rework `AiOrchestrator` off the M1 model-driven tool-calling
    runtime before declaring a model unfit for a device.
 6. When you stop mid-task, update **this file** (state line at top, tick or
    annotate the task you were in) so the next agent lands on its feet.
+
+---
+
+## 7. M3a — the workflow DSL kernel + traces (current milestone)
+
+Decisions: **D24** (canonical form), **D25** (resumable instances), **D21**
+(traces), **D4 amendment** (narration contract, difficulty classification),
+**D29** (English reasoning). Design detail lives in
+`docs/workflow_dsl_brainstorm.md` — §4 language core, §5 execution model, §6
+worked examples, §12 the nine open details to settle during implementation.
+
+Each step is one branch + PR.
+
+### A1 — Trace writer (D21) — do this first
+
+JSONL per orchestration under `user://traces/`, one stage entry per line, plus a
+Markdown export. On by default in dev builds. No retention policy (M4's problem).
+`AiTrace` already collects the stages; this gives it a sink.
+
+**Done when:** a real orchestration writes a file you can read start to finish and
+confirm the run behaved correctly. That is the acceptance test — a human reading
+one trace — not a line-coverage number.
+
+### A2 — DSL core (D24)
+
+Op registry with a `pure: true/false` flag per op, expression layer (fully
+parenthesized, no precedence anywhere in canonical form), and the
+**registration-time strict validator**. The validator enforces effectful-ops-at-
+statement-level structurally, and D19's grammar generation later reads the same
+`pure` flag — one source of truth.
+
+**Watch for:** §12's open details land here — sigil escaping, the exact expression
+op set, rule-table format and lookup semantics.
+
+### A3 — Resumable instances (D25)
+
+Checkpoint at suspension points, the instance snapshot as save contract,
+`resume_require` on every suspension, `pc_stack` encoding.
+
+**Done when:** a suspended instance survives an app restart and resumes correctly —
+and re-validates rather than trusting the world it left.
+
+### A4 — Migrate off v0 `WorkflowEngine`
+
+Consumers: `Scheduler`, `AiOrchestrator._handle_schedule`, base_game's month-end
+workflow, `test_workflow_engine.gd`, `test_scheduler.gd`. **Delete v0 in its own
+PR** so the migration reviews separately from the build.
+
+### A5 — Narration contract (D4 amendment)
+
+The `narrate` op: instruction, context, verbosity, output language. Instructions
+narrow enough that high verbosity decorates rather than invents. Expected to be too
+tight — widen from real scenarios, not speculation.
+
+**M3a exit:** month-end workflow runs on the new kernel with v0 deleted; a suspended
+instance survives restart; one trace reads end to end.
+
+**Then M3b** — deterministic orchestration. **GATE 0 applies again there**, and its
+first real task is measuring difficulty-classification stability across models,
+phrasings and input languages (D17). That measurement is the one that says whether
+the D4-amendment approach actually works.

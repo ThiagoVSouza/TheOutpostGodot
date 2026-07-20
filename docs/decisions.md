@@ -31,9 +31,15 @@ Measurements: `docs/benchmarks/milestone1_results.md`. Architecture: `docs/initi
 | **D18** | Voice input: abstract the seam now, build at M6 | Open |
 | **D19** | AI output is grammar-constrained at the sampler, not parsed-and-retried | **Decided** — spike-verified |
 | **D20** | The pipe protocol is the only AI-facing output surface | **Decided** |
-| **D21** | Trace storage: files first, SQLite deferred to M5 | Open — **revisit before coding** |
+| **D21** | Trace storage: files first, SQLite deferred to M5 | **Decided** |
 | **D22** | Concurrency: main-thread orchestrator, async backends | **Decided** |
 | **D23** | Warm KV slots per prompt family | **Decided** — desktop-verified; re-measure on phone at M6 |
+| **D24** | Workflow DSL: JSON op-tree canonical form | **Decided** |
+| **D25** | Resumable instances, checkpointed at suspension points | **Decided** |
+| **D26** | One language, capability profiles, data-only DLC | **Decided** |
+| **D27** | Complex components: engine capabilities behind registry facades | **Decided** |
+| **D28** | Authoring toolchain: one headless authoring backend | **Decided** |
+| **D29** | Orchestration reasons in English; only narration is localized | **Decided** |
 | **D17** | Benchmarking method — how to not fool yourself | Reference |
 
 Roadmap and current status: `docs/plan.md`.
@@ -143,6 +149,56 @@ narratives were consistently decent even when its arithmetic was nonsense.
 **Residual risk:** narration can still misdescribe a correct outcome, and memory
 read/write is not risk-free. Smaller surface, not zero — to be remediated in the
 orchestration design.
+
+### Amendment (2026-07-20) — how the AI participates without deciding numbers
+
+Three refinements settled while planning M3. None weakens the rule; they say
+precisely where the AI's judgment enters and what bounds it.
+
+**1. The AI may classify into a closed enum; code owns every number.** Rather than
+emitting a reward, the model answers a bounded question — *"given conditions A, B
+and C, how hard is this?"* → `low | medium | hard`. Code maps that verdict onto a
+threshold band, and the band lives in a **rule table** (`table_get`, D24), not in
+code, so it is tunable without a rebuild. This is the same shape as intent
+classification: the model proposes from a fixed set, code owns the arithmetic, and
+D19 constrains the enum at the sampler.
+
+**This is a real transfer of judgment and must be treated as one.** The
+classification is now the AI-decided input that drives every downstream number. A
+three-value enum is far more stable than a free number — but "medium" in one run
+and "hard" in another for identical conditions produces different outcomes, just in
+coarser steps. **The mitigation stack is deliberate, not incidental:** determinism
+(everything numeric in the DSL), D29 (one reasoning language), prompt design,
+possibly LoRA later, and model quality (Bonsai-27B is expected to classify far more
+stably than E2B). None of these is a proof. **Classification stability must be
+measured across models and phrasings at M3b, per D17, before it is trusted** — the
+measurement that produced the +17/+20/+15 table is exactly the one to repeat here.
+If it lands poorly, the approach gets rethought rather than patched.
+
+**2. Whether a roll happens at all is workflow shape, not a universal gate.** The
+pipeline sketch above reads as one fixed sequence with a roll in the middle. It is
+not: the orchestration for an action is an **authored DSL workflow**, and workflows
+differ. "I sing to the goats" checks that goats exist, that the character can sing,
+how well, and whether any contest or event modifies it — and may end without a roll
+at all. This retires D4's long-open question ("where does the line sit for requests
+the rules do not cover") without needing a `narrate_only` escape value in the
+difficulty enum: an action with no mechanical stake is simply a workflow whose only
+effect is narration.
+
+**3. Narration is the last step of the orchestration, and its inputs are fixed.**
+The `narrate` op receives: an **instruction** on what to narrate, the **context** it
+may draw on, a **verbosity level**, and an **output language** (D29). Instructions
+are deliberately narrow, so that raising verbosity *decorates* the decided outcome
+rather than inventing new facts. This scope is known to be tight and expected to
+fall short once real scenarios exist — an accepted, recorded risk, to be widened
+from evidence rather than pre-emptively.
+
+**Guardrail for later:** the idea of letting the model *suggest what a critical
+success or failure means* is fine **as narration** and forbidden **as mechanics**.
+If such a suggestion ever becomes an effect, it must arrive as a whitelisted
+command with code-owned numbers — otherwise it is D4 reintroduced through the back
+door. Critical bands and their consequences start deliberately basic and get
+amended from play.
 
 **Amended (2026-07-17) — intent classification.** The pipeline above labels
 `classify intent` as `(code)`. Code cannot classify free text ("hit him"); what
@@ -569,16 +625,22 @@ token-priced. One AI surface, one internal convention.
 
 ## D21 — Trace storage: files first; SQLite deferred to M5
 
-**Open** (2026-07-17) — direction accepted, **revisit before coding** (user
-has additional thoughts to review together before implementation; do not
-start trace code before that conversation)
+**Decided** (2026-07-20) — the gating conversation happened; the recommendation
+below was accepted as written. Trace code is unblocked.
 
-**Recommendation on record:** traces as **JSONL files** (one per
-orchestration) plus the human-readable Markdown export, for the walking
-skeleton. SQLite means the godot-sqlite GDExtension — a native dependency on
-**every export target**, which is a D3-class risk surface (desktop tests
-cannot catch export-only breakage). Its indexes only earn their keep with the
-M5 memory store; decide then, for both stores at once.
+**The purpose is manual verification.** The reason traces exist right now is so a
+human can read one orchestration end to end and confirm it behaved correctly.
+Every format choice follows from that, not from query performance.
+
+**The shape:** one **JSONL file per orchestration** (`user://traces/`), one stage
+entry per line, plus a **human-readable Markdown export**. On by default in dev
+builds. No retention policy yet — that is M4's problem, alongside save/load.
+
+**Why not SQLite now:** it means the godot-sqlite GDExtension — a native
+dependency on **every export target**, which is a D3-class risk surface (desktop
+tests cannot catch export-only breakage). Its indexes only earn their keep with
+the M5 memory store; **decide then, for both stores at once.** Nothing here
+forecloses that: JSONL rows import into a table trivially if the answer changes.
 
 ---
 
@@ -640,6 +702,111 @@ on device at M6 (D17: a verdict is model+runtime).
 **Degradation ladder when RAM is tight** (keyed off *available* RAM, D11):
 merge router families into one prompt → shorten router prefixes → only then
 cold. **Cold-per-turn is never the plan.**
+
+---
+
+## D24 — Workflow DSL: JSON op-tree canonical form
+
+**Decided** (2026-07-20) — promoted from candidate after review.
+Full design and reasoning: `docs/workflow_dsl_brainstorm.md` §3–§4.
+
+Canonical form is **JSON**, every node carrying an explicit `"op"` key. Expressions
+are **fully parenthesized** (`[left, "op", right]`) so operator precedence never
+exists inside the canonical format. Conditionals are self-contained nodes.
+`foreach` over finite validated collections and `for` with constant bounds are the
+only loops — **no `while`**, because an iteration cap is a tourniquet, not a
+termination proof. No globals: params (`@`) and instance locals (`$$`) only; game
+state is read through ops and written only via whitelisted commands. Effectful ops
+appear at statement level only, so a resume point is always a stack of array
+indices. Failure is **fail-fast** with a typed code. Validation is strict and
+happens **once at registration**, keeping the runtime lean enough for a phone.
+
+Every gameplay number comes from a rule table, a registered pure function, or a
+seeded roll — never from free authoring, never from the model (D4).
+
+**Derived from Nortrix v1/v3** (the user's prior production JSON instruction
+language, reference copy in `docs/reference_dsl/`), with execution semantics
+replaced: Nortrix optimizes for resilient UI rendering, this needs transactional
+determinism. §3.2 records what was declined and why.
+
+**Text syntax is deferred.** The two-layer split (human text *compiles to* canonical
+JSON) is adopted, but only the JSON layer is built now; the runtime, validator and
+D19 grammar all see one form. A text front-end is authoring-toolchain work (D28),
+pulled in when content volume justifies it.
+
+---
+
+## D25 — Resumable instances, checkpointed at suspension points
+
+**Decided** (2026-07-20) — promoted from candidate. Design: brainstorm §5.
+
+Workflow instances suspend and resume across sessions. The model is **"store the
+plan, derive the state"**: checkpoints are taken at suspension points, and the
+**instance snapshot is the save contract** (§5.2) — which is why M4's save/load
+gets instance persistence largely for free. Every suspension carries a
+`resume_require` so a resumed instance re-validates its preconditions instead of
+trusting a world that may have changed underneath it.
+
+---
+
+## D26 — Long-term: one language, capability profiles, data-only DLC
+
+**Decided** (2026-07-20) — promoted from candidate. Design: brainstorm §8.
+
+One language across gameplay, mechanics and (eventually) UI, separated by
+**capability profiles** — per-origin op allowlists — rather than by dialect. The
+target is **data-only DLC**: content ships as definitions, mutation vocabulary
+ships as code. Definition versioning is mandatory. The dogfood rule applies
+continuously: the game's own content is authored through the same surface a DLC
+author would use.
+
+---
+
+## D27 — Complex components: engine capabilities behind registry facades
+
+**Decided** (2026-07-20) — promoted from candidate. Design: brainstorm §9.
+
+Engine capabilities are exposed through registry facades — schemas, queries,
+commands, events — giving authors **vocabulary, not grammar**. Events spawn
+instances. This is what keeps the language small while the surface it can reach
+grows.
+
+---
+
+## D28 — Authoring toolchain: one headless authoring backend
+
+**Decided** (2026-07-20) — promoted from candidate. Design: brainstorm §10.
+
+One headless authoring backend — registries, validator, simulator — CLI-accessible
+from the kernel onward. The editor, the local AI authoring assistant
+(Bonsai-27B, grammar-constrained, **human-gated**) and any MCP/agent integration are
+**thin front-ends over that same backend**, pulled in by content volume rather than
+scheduled. Building the validator/simulator early is a prerequisite, not a luxury:
+it is what makes authored content verifiable without launching the game.
+
+---
+
+## D29 — Orchestration reasons in English; only narration is localized
+
+**Decided** (2026-07-20)
+
+**The evidence:** Bonsai-4B produced three different outcomes for the same action in
+Portuguese, Spanish and French (D4). Language was changing mechanics.
+
+**The decision:** the orchestration pipeline — intent classification, difficulty
+classification, all internal reasoning — runs in **English regardless of what the
+player typed**. Only the final `narrate` step receives an output language and emits
+player-facing prose in it.
+
+**Why it works:** it removes one whole axis of variance from the part that touches
+numbers, and confines localization to the one step where model variation is a
+feature rather than a bug (D5's ladder makes narrative variety desirable). It does
+not make classification deterministic — see D4's amendment — but it removes
+language as a source of divergence.
+
+**Consequence:** player input in any language reaches an English-reasoning
+pipeline, so classification quality on non-English input is a thing to measure, not
+assume. i18n discipline (emit keys + vars, never baked strings) stays as D24 requires.
 
 ---
 

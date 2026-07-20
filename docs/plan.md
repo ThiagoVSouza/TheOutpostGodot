@@ -12,7 +12,7 @@ Decisions and their evidence: `docs/decisions.md`. Measurements:
 gates. **GATE 0 there is binding: no production code before a direction review
 with the user.**
 
-Last updated: 2026-07-20 (T6 input-source seam — M2 tasks T1–T6 all complete)
+Last updated: 2026-07-20 (M2 complete and verified; M3 split into M3a/M3b)
 
 ---
 
@@ -34,14 +34,17 @@ export/deploy tooling.
 (intent classification, `tool_calls`), D19–D23 added, Enhanced mode deferred
 (D7 addendum). Its first pass is the M3 walking skeleton below.
 
-**Two things gate the next step:**
+~~**Two things gate the next step:**~~ **Both resolved.** The async seam shipped in
+T1 (D22), and D4-makes-most-of-this-code remains the standing gift: nearly all of
+M3a is deterministic and testable against `FakeAiBackend` with no model at all.
 
-1. `AiBackend.generate()` is **synchronous**. Fine for an instant fake; a real turn
-   takes 0.85–4 s and would freeze Godot's main thread. Fixing it ripples through
-   the orchestrator, chat screen and tests — so it goes before more orchestrator
-   code, not after.
-2. **D4 makes most of the orchestrator code, not AI** — deterministic, and therefore
-   testable against `FakeAiBackend` with no model. That is a gift; use it.
+**Milestone 2 is complete** (2026-07-20). Real E2B prose in the running app, warm
+turns at 0.80–0.85 s with the prefix cache visibly working — measured through the
+finished T5/T6 path, not an earlier one. See `docs/benchmarks/milestone2_exit_e2b.md`.
+
+**Gates now:** none blocking. D21 was settled 2026-07-20 and trace code is
+unblocked; D24–D29 are promoted. GATE 0 for M3a was satisfied by the planning
+conversation on 2026-07-20.
 
 ---
 
@@ -104,18 +107,62 @@ desktop-and-dev capability that happens to also be a shipped feature (dispatch).
 
 ---
 
-## M3 — Deterministic orchestration (D4)
+## M3 — split into two phases (decided 2026-07-20)
+
+M3 now has two phases, run in order. **Downstream milestones keep their numbers** —
+M4 is still save/load, M6 is still mobile+voice. That is deliberate: renumbering
+would invalidate 16 milestone references in `decisions.md` alone (13 of them to M6),
+and brainstorm §11 already assumed the DSL lands inside M3.
+
+**Why the DSL goes first:** M3b's deterministic workflows need a workflow runtime
+worth building on, and D4's difficulty bands live in DSL rule tables. Building the
+pipeline on the v0 engine would mean building it twice. The cost is that the
++17/+20/+15 problem stays unfixed one phase longer — accepted knowingly.
+
+---
+
+## M3a — The workflow DSL kernel + traces (current)
+
+**Goal:** an authored workflow language the game's mechanics can actually live in,
+and traces a human can read to verify an orchestration behaved correctly.
+
+- **Traces first** (D21): JSONL per orchestration + Markdown export. Small,
+  self-contained, and it makes every later step manually verifiable — which is the
+  stated reason traces exist at all.
+- **DSL core** (D24): op registry, expression layer, registration-time strict
+  validator. JSON canonical form only — **no text parser** (deferred to D28).
+- **Resumable instances** (D25): checkpointing, snapshot contract,
+  `resume_require`.
+- **Migrate off v0**: `Scheduler`, `AiOrchestrator._handle_schedule`, the month-end
+  workflow and its tests move to the new kernel; delete `WorkflowEngine` in its own
+  PR so the migration reviews separately from the build.
+- **Narration contract** (D4 amendment): the `narrate` op — instruction, context,
+  verbosity, output language.
+
+**Exit:** the month-end workflow runs on the new kernel with v0 deleted; a
+suspended instance survives a restart; a trace of one orchestration is readable
+end to end.
+
+---
+
+## M3b — Deterministic orchestration (D4)
 
 **Goal:** the same action produces the same economy regardless of model or language.
 
 ```
 message -> classify intent (AI proposes from enum; code validates — D4 amended)
-        -> recall memories (AI)
-        -> decide roll (code, rules) -> roll (code, seeded)
-        -> compute outcome + reward (code, rules)
+        -> select + run the authored DSL workflow for that intent (M3a kernel)
+             the workflow's own shape decides what happens: preconditions,
+             modifiers, difficulty classification (AI, closed enum), a seeded
+             roll if the action warrants one — or none at all
         -> build/validate/apply command (code, whitelist)
-        -> narrate the decided outcome (AI) -> write back memories (AI)
+        -> narrate the decided outcome (AI: instruction + context + verbosity
+             + language) -> write back memories (AI)
 ```
+
+**Note the change from the original sketch:** "decide roll → roll → compute
+outcome" is no longer fixed orchestrator code. It is authored workflow content, so
+the orchestrator shrinks to: guardrails → classify → run instance → narrate.
 
 **Spec:** `docs/Orchestration_brainstorm.md` (reviewed 2026-07-17; its status
 header separates M3 scope from target-architecture reference).
@@ -127,8 +174,12 @@ header separates M3 scope from target-architecture reference).
   warm routing calls ~36 ms. The micro-prompt design stands. Phone re-measure
   deferred to M6.
 - **Walking skeleton:** grammar-constrained intent classification (real E2B)
-  → one deterministic workflow (existing dice + `grant_resource`) → bounded
-  narration → file-based trace (D21 — **revisit before building traces**)
+  → one deterministic workflow on the M3a kernel → bounded narration → trace
+  (D21 settled; the writer ships in M3a)
+- **Measure classification stability** (D17) across models, phrasings and input
+  languages before trusting the difficulty enum. This is the +17/+20/+15
+  measurement repeated on the new design — the one number that says whether the
+  approach works. If it lands poorly, rethink rather than patch.
 - AI output only via the pipe protocol (D20); `tool_calls` retired
 - Rules own every number. The AI never emits a `grant_resource` amount.
 - Rework `AiOrchestrator`: it currently does the brief's model-driven tool calling,
@@ -139,8 +190,11 @@ header separates M3 scope from target-architecture reference).
 across three models, and Bonsai-4B gave three different outcomes for one action in
 pt/es/fr. Every system built before this is built on the wrong foundation.
 
-**Open (D4):** where the line sits for requests the rules do not cover ("I sing to
-the goats"). Probably: narrate, no state change.
+~~**Open (D4):** where the line sits for requests the rules do not cover ("I sing to
+the goats").~~ **Closed 2026-07-20** (D4 amendment): there is no universal roll
+gate. Such an action is simply a workflow whose only effect is narration — the
+question dissolves once orchestration shape is authored per intent rather than
+fixed in code.
 
 ---
 
