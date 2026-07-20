@@ -152,12 +152,16 @@ migrate there: fail-fast stands by default.
 - **Sub-workflows:** `{"op":"run", "workflow":"id@ver", "args":{…}}` — params
   declared `{type, required, default}`; call graph acyclic; depth bounded.
 - **Purity discipline:** effectful ops (`run_command`, `roll`, `wait_*`,
-  `confirm`, `emit`) appear **only at statement level** (entries of a
-  `steps`/`then`/`ops` array). Expression positions accept pure ops only. Each
-  op declares `pure: true/false` in the op registry; the validator enforces
-  placement structurally; D19 grammar generation reads the same flag.
-  Consequence: the resume point is always a stack of array indices, and
-  expressions evaluate atomically between checkpoints.
+  `confirm`, `emit`, and an AI-invocation op — D30) appear **only at statement
+  level** (entries of a `steps`/`then`/`ops` array). Expression positions
+  accept pure ops only. Each op declares `pure: true/false` in the op
+  registry; the validator enforces placement structurally; D19 grammar
+  generation reads the same flag. Consequence: the resume point is always a
+  stack of array indices, and expressions evaluate atomically between
+  checkpoints. **Not every effectful op is a checkpoint:** `wait_*`/`confirm`
+  suspend and persist a snapshot; the AI-invocation op is effectful but
+  awaited in memory and never itself a suspension point (D30) — §5 covers the
+  distinction.
 - **Scoping:** params (`@`) and instance locals (`$$`) only. Game state is
   read through `read_state`/component query ops and written only via
   `run_command`. No global variables exist.
@@ -413,12 +417,17 @@ data with no executables.
   the platform problems (safe area, fonts, keyboard) the engine layer should
   fix once. This mirrors what Nortrix itself did: a fixed element vocabulary,
   freely parametrized.
-- **Async and AI calls:** the suspension model *is* the async story — a
-  backend call or AI call is one more suspension point with a wake condition
-  (D22 keeps transport concurrency inside `AiBackend`). **No free-form
-  `ai_call` op**: workflows invoke *registered prompt families* with bounded
-  facts (§17.1 shape), so content authors get narration/routing without
-  becoming a prompt-injection surface (D19/D20 applied to content authors).
+- **Async and AI calls — corrected by D30:** an AI call is *not* a suspension
+  point. It is an effectful, statement-level op (transport concurrency stays
+  inside `AiBackend`, D22) that the instance **awaits in memory** and can
+  cancel per D22 — it does not persist a checkpoint, unlike `wait_*`/`confirm`.
+  Only game time and player confirmation are true suspension points; an AI
+  call is 0.8–4s and nothing meaningful survives past the current process
+  while it's in flight, so checkpointing it would just be several extra disk
+  writes per turn for no resume benefit. **No free-form `ai_call` op**:
+  workflows invoke *registered prompt families* with bounded facts (§17.1
+  shape), so content authors get narration/routing without becoming a
+  prompt-injection surface (D19/D20 applied to content authors).
 - **The honest ceiling — the mutation vocabulary:** commands are code and stay
   code (a generic `set_state` would dissolve the D4 boundary). A DLC can
   recombine existing primitives into genuinely new modes; a mode needing a

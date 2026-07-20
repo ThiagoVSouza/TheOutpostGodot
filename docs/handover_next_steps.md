@@ -305,7 +305,7 @@ worked examples, §12 the nine open details to settle during implementation.
 
 Each step is one branch + PR.
 
-### A1 — Trace writer (D21) — do this first
+### A1 — Trace writer (D21) — **DONE**
 
 JSONL per orchestration under `user://traces/`, one stage entry per line, plus a
 Markdown export. On by default in dev builds. No retention policy (M4's problem).
@@ -314,6 +314,18 @@ Markdown export. On by default in dev builds. No retention policy (M4's problem)
 **Done when:** a real orchestration writes a file you can read start to finish and
 confirm the run behaved correctly. That is the acceptance test — a human reading
 one trace — not a line-coverage number.
+
+**Landed as:** `core/ai/ai_trace_writer.gd` (`AiTraceWriter`), constructed in
+`GameKernel.boot()` as `trace_writer` and called from `AiOrchestrator._result()`
+(the single funnel every return path passes through). `AiTrace` gained `id` and
+`to_markdown()`. Acceptance met by reading one real dev-mode trace end to end.
+**Watch:** the dev-build default would otherwise write unbounded trace files into
+the real `user://` on every automated test run — `tools/test.ps1` sets
+`OUTPOST_TEST_RUN=1` to opt the suite out; tests that exercise the writer build
+their own pointed at a scratch dir (`tests/unit/test_ai_trace_writer.gd`,
+`tests/integration/test_ai_trace_end_to_end.gd`). **After adding the new
+`AiTraceWriter` `class_name`, run `--import` once** or dependent scripts fail to
+parse (the standing global-class-cache gotcha).
 
 ### A2 — DSL core (D24)
 

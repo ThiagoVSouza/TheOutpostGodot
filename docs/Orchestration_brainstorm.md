@@ -15,6 +15,12 @@
 > - The concurrency model is decided (D22 — see §3.1).
 > - Warm prefix slots per prompt family are **pending a spike** (D23 — see §7.5).
 > - **Enhanced mode is deferred indefinitely** (D7 addendum).
+> - **The pipeline below is a fixed sequence with guardrails/classification as
+>   orchestrator-code stages and narration as a final code step. D30 corrects
+>   this: guardrails, classification and narration are authored workflows, not
+>   orchestrator code — the orchestrator holds exactly one hardcoded id, the
+>   entry workflow. Read this spec's stage descriptions as the *content* those
+>   authored steps must produce, not as code the orchestrator itself runs.**
 >
 > **Scope:** this spec covers more than one milestone. The first implementation
 > pass is the **M3 walking skeleton** in `docs/plan.md`; sections marked

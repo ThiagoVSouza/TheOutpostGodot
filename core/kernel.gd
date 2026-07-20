@@ -22,6 +22,7 @@ var ai: AiBackend
 var ai_availability: AiAvailability
 var llama_server_manager: LlamaServerManager
 var ai_orchestrator: AiOrchestrator
+var trace_writer: AiTraceWriter
 var input_router: AiInputRouter
 var clock: GameClock
 var scheduler: Scheduler
@@ -46,6 +47,15 @@ func boot() -> void:
 	# 1. Diagnostics first so everything after can log.
 	log = GameLog.new()
 	log.info("Kernel", "Booting The Outpost kernel")
+
+	# 1b. Trace sink (A1, D21): JSONL + Markdown per orchestration, on by default in
+	#     dev builds. No retention policy yet — that is M4's problem, which is exactly
+	#     why the automated suite opts itself out (tools/test.ps1 sets OUTPOST_TEST_RUN)
+	#     instead of writing unbounded files into a real dev's user:// on every run.
+	#     Tests that exercise the writer itself construct their own, pointed at a
+	#     scratch directory, same as ModuleRegistry's `root` override.
+	var is_test_run := OS.get_environment("OUTPOST_TEST_RUN") == "1"
+	trace_writer = AiTraceWriter.new("user://traces", OS.is_debug_build() and not is_test_run)
 
 	# 2-3. Communication + state.
 	events = EventBus.new()
