@@ -4,23 +4,30 @@
 mid-milestone after a usage-limit cutoff. Follow this file top to bottom.
 Keep it updated as work lands: it is a living checklist, not an archive.
 
-Last updated: 2026-07-19 · State: **T5 complete — PR open. T1–T4 merged (PRs
-#7–#10), T5 policy docs merged (PR #11), workflow DSL brainstorm merged
-(PR #12).** 72/72 tests green. **Only T6 (input-source seam) remains in M2**,
-and it requires its own plan review with the user before implementation.
+Last updated: 2026-07-20 · State: **All M2 tasks T1–T6 are implemented.** T1–T5
+merged (PRs #7–#11, #13); T6 (input-source seam) is complete on
+`feature/t6-input-source-seam` with a PR open. 75/75 tests green.
+
+**M2's exit criteria are not all met yet** — see §4's exit list. The tasks are
+done; the milestone still needs its end-to-end confirmation pass with a real
+model (the sub-second `-rea off` + prefix-cache turn was measured at T2/T3, but
+not re-confirmed after T5/T6 changed the path into the orchestrator).
 
 ## 0. If you are the next agent, start exactly here
 
-1. `git fetch`, then confirm the T5 PR is merged. Start from `origin/main`.
-2. **Plan-review T6** (input-source seam, D18) with the user before any
-   production code. After T6, M2 closes and M3 begins — M3 additionally
-   requires the D21 trace-storage conversation and now has the workflow DSL
-   design (`docs/workflow_dsl_brainstorm.md`, candidate decisions D24–D28
-   awaiting promotion) to fold into its planning.
+1. `git fetch`, then confirm the T6 PR is merged. Start from `origin/main`.
+2. **Close out M2 first:** re-run one real E2B turn through the running app
+   (`OUTPOST_AI_BACKEND=local-llama`, `OUTPOST_MODEL_PROFILE=gemma_e2b_desktop_cuda`)
+   now that input flows through `AiInputRouter`, and record it in
+   `docs/benchmarks/`. Then M3 begins — it requires the GATE 0 review again, the
+   D21 trace-storage conversation, and folds in the workflow DSL design
+   (`docs/workflow_dsl_brainstorm.md`, candidate decisions D24–D28 awaiting
+   promotion).
 3. Read §1 (context bootstrap) before touching anything. The T1 lessons in
-   §2a are new since the docs were written — they will save you time.
+   §2a and the T6 harness gotchas in §4's T6 entry will save you time.
 4. D21 reminder unchanged: **no trace-related code before the user shares
-   their trace-storage thoughts.** Nothing in T2–T6 touches traces.
+   their trace-storage thoughts.** Nothing in T2–T6 touched traces (T6 only
+   added a `source` field to an existing `build_request` stage).
 
 ### What T1 changed (PR #7, all tests 37/37, verified in-app)
 
@@ -213,12 +220,33 @@ non-coroutine `outcome()` accessor for that. 8 tests in
 `tests/integration/test_ai_availability.gd`; full outage→retry→restore cycle
 verified against the real chat screen headless.
 
-### T6 — Input-source seam (D18)
+### T6 — Input-source seam (D18) — ✅ **DONE**
 
-- Orchestrator entry point takes **text from a source** (typed / future
-  voice / future trace replay), not a `LineEdit`.
-- **Done when:** chat screen is just one source; a test feeds text through a
-  second source.
+Kernel-owned `core/ai/input_router.gd` (`AiInputRouter`) is the only path from
+player text to the orchestrator; `core/ai/input_source.gd` (`AiInputSource`) is a
+named handle obtained via `create_source(id)`. `submit()` is fire-and-forget — the
+turn's outcome (success, `busy` rejection, or failure) is broadcast on the event
+bus as `AiInputRouter.EVENT_TURN_COMPLETED` (`ai_turn_completed`) carrying
+`{source_id, text, result}`. The chat screen is now just the `typed` source: it
+submits and renders turns from the event, so it no longer awaits the orchestrator
+and no longer owns the reply path. The source id travels in the orchestrator
+context and is recorded in the `build_request` trace stage.
+
+Ownership note: the source references the router, the router holds no sources —
+deliberately, so the T1 lambda/RefCounted cycle class of leak cannot recur here.
+
+Verification: 75/75 GUT tests green (3 new in
+`tests/integration/test_input_router.gd`: second-source end-to-end, two-source
+busy collision where both sources hear back, source id in the trace) plus manifest
+validation. Driven headless against the real chat screen: a typed submit produced
+"You: …" → "Game master: …" with input unlocking on completion, and a scripted
+source that never touches the `LineEdit` completed its own turn on the bus.
+
+**Two harness gotchas cost time here — they are verification artifacts, not bugs:**
+`RichTextLabel.append_text()` does **not** update the `.text` property (read
+`get_parsed_text()` instead), and **GDScript lambdas capture locals by copy**, so
+a `var flag := false` set inside a subscribed lambda never updates outside it —
+use a dict holder, the same pattern the T1 notes recommend for coroutines.
 
 **M2 exit criteria:** real E2B turn in the running app; `-rea off` +
 prefix-cache behavior confirmed in-app (~sub-second desktop turn per D7/D8);

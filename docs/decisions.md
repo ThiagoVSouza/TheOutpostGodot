@@ -461,7 +461,10 @@ its own security review. Don't let dispatch delay local inference.
 
 ## D18 — Voice input: planned. **Abstract the input seam now, build it later.**
 
-**Open** — deferred to M6; the seam is not deferred (2026-07-16)
+**Open** — deferred to M6; the seam is not deferred (2026-07-16).
+**The seam is built (T6, 2026-07-20):** `AiInputRouter` + `AiInputSource`, replies
+broadcast as `ai_turn_completed` on the event bus. Voice becomes a new source id;
+no orchestrator or chat-screen change. Voice itself remains M6.
 
 Speaking suits this game better than typing, especially on a phone: the core
 interaction is free-text conversation.

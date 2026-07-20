@@ -106,7 +106,10 @@ func _run_pipeline(message: String, context: Dictionary) -> Dictionary:
 		"context": _as_dict(context.get("context", {})),
 		"tools": _kernel.tools.schemas(),
 	}
-	trace.add("build_request", {"tools": _kernel.tools.tool_names()})
+	trace.add("build_request", {
+		"tools": _kernel.tools.tool_names(),
+		"source": String(context.get("source", "")),
+	})
 
 	# 4. Turn 1.
 	var outcome: Dictionary = await _generate(request, trace, 1)
