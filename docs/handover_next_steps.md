@@ -235,12 +235,20 @@ context and is recorded in the `build_request` trace stage.
 Ownership note: the source references the router, the router holds no sources —
 deliberately, so the T1 lambda/RefCounted cycle class of leak cannot recur here.
 
-Verification: 75/75 GUT tests green (3 new in
+The screen echoes player text in `_on_submit` for its own submits (immediately, so
+you see your words before the model answers) and in `_on_turn_completed` for turns
+from any other source. Both halves of a conversation are logged whatever the source.
+
+Verification: 77/77 GUT tests green (5 new in
 `tests/integration/test_input_router.gd`: second-source end-to-end, two-source
-busy collision where both sources hear back, source id in the trace) plus manifest
-validation. Driven headless against the real chat screen: a typed submit produced
-"You: …" → "Game master: …" with input unlocking on completion, and a scripted
-source that never touches the `LineEdit` completed its own turn on the bus.
+busy collision where both sources hear back, source id in the trace, foreign-source
+echo, and a no-double-echo guard on the typed path) plus manifest validation.
+Driven headless against the real chat screen, and against **real E2B** for the M2
+exit measurement — see `docs/benchmarks/milestone2_exit_e2b.md`.
+
+**The echo gap was found by the real run, not by the tests** — 75 passing tests,
+three of them written for this exact seam, all missed that the log showed replies
+with no record of what was said. Rule 4 in §6 earned its place again.
 
 **Two harness gotchas cost time here — they are verification artifacts, not bugs:**
 `RichTextLabel.append_text()` does **not** update the `.text` property (read
