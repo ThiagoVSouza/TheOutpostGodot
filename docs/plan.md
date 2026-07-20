@@ -126,9 +126,13 @@ pipeline on the v0 engine would mean building it twice. The cost is that the
 **Goal:** an authored workflow language the game's mechanics can actually live in,
 and traces a human can read to verify an orchestration behaved correctly.
 
-- **Traces first** (D21): JSONL per orchestration + Markdown export. Small,
-  self-contained, and it makes every later step manually verifiable — which is the
-  stated reason traces exist at all.
+- **Traces first** (D21) — **done (A1)**: `AiTraceWriter` writes JSONL per
+  orchestration (one stage per line) + a Markdown export under `user://traces/`,
+  on by default in dev builds. `AiTrace` gained an `id` and `to_markdown()`; the
+  writer is the sink it was missing. On-by-default is opt-out under
+  `OUTPOST_TEST_RUN` (set by `tools/test.ps1`) so the suite never writes unbounded
+  files into a real dev's `user://` — no retention policy yet (M4). Verified by a
+  human reading one real trace end to end, the stated reason traces exist at all.
 - **DSL core** (D24): op registry, expression layer, registration-time strict
   validator. JSON canonical form only — **no text parser** (deferred to D28).
 - **Resumable instances** (D25): checkpointing, snapshot contract,
@@ -150,19 +154,33 @@ end to end.
 **Goal:** the same action produces the same economy regardless of model or language.
 
 ```
-message -> classify intent (AI proposes from enum; code validates — D4 amended)
-        -> select + run the authored DSL workflow for that intent (M3a kernel)
-             the workflow's own shape decides what happens: preconditions,
-             modifiers, difficulty classification (AI, closed enum), a seeded
-             roll if the action warrants one — or none at all
-        -> build/validate/apply command (code, whitelist)
-        -> narrate the decided outcome (AI: instruction + context + verbosity
-             + language) -> write back memories (AI)
+orchestrator (code): holds exactly one hardcoded thing — the entry workflow's id
+
+entry workflow (authored): context-fetch, memory read, guardrails,
+  classify intent (AI proposes from a registry-defined enum; code validates
+  — D4 amended), dispatch to the workflow that intent selects
+
+selected workflow (authored, M3a kernel): its own shape decides what happens —
+  preconditions, modifiers, difficulty classification (AI, closed enum), a
+  seeded roll if the action warrants one, or none at all — then
+  build/validate/apply command (code: CommandRegistry + CommandBus, the
+  whitelist), narrate the decided outcome (AI: instruction + context +
+  verbosity + language, itself just an op a workflow invokes), write back
+  memories (AI)
 ```
 
 **Note the change from the original sketch:** "decide roll → roll → compute
-outcome" is no longer fixed orchestrator code. It is authored workflow content, so
-the orchestrator shrinks to: guardrails → classify → run instance → narrate.
+outcome" was never fixed orchestrator code (D4 amendment). Neither are guardrails,
+classification, or narration (D30) — those are authored workflows too, not
+orchestrator stages. The orchestrator does not own a sequence at all; it executes
+whatever workflow is loaded, and workflows call other workflows. The DNA is the
+workflow; the orchestrator is the ribosome — fixed, trusted machinery that
+executes but never decides what to build. The one fixed point is the entry
+workflow's id, hardcoded in the orchestrator to break the bootstrap circularity of
+"classification picks the workflow, but classification is itself a workflow." See
+D30 for the full model, the capability-profile trust boundary this puts on
+guardrails-as-content, and why AI calls are in-memory awaits rather than
+checkpointed suspension points.
 
 **Spec:** `docs/Orchestration_brainstorm.md` (reviewed 2026-07-17; its status
 header separates M3 scope from target-architecture reference).
@@ -277,7 +295,5 @@ elsewhere claim up to 3x.
 | Per-store distribution: Play Asset Delivery / iOS ODR size limits vs 2.43 GiB | D13 | shipping |
 | Internet dispatch needs a rendezvous — service, Tailscale, or document-and-defer? | D16 | post-M2 |
 | Whisper `small` alongside E2B on a real phone — does it fit? | D18 | M6 |
-| Where do rules end and narration begin for uncovered requests? | D4 | M3 |
-| Trace storage files vs SQLite — additional thoughts to review together | D21 | M3 traces |
 | Warm-slot behavior on the phone (desktop-verified 2026-07-17) | D23 | M6 |
 | Grammar via the in-process sampler API (source-verified, never run) | D19 | M6 |

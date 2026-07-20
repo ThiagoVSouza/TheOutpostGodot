@@ -40,6 +40,7 @@ Measurements: `docs/benchmarks/milestone1_results.md`. Architecture: `docs/initi
 | **D27** | Complex components: engine capabilities behind registry facades | **Decided** |
 | **D28** | Authoring toolchain: one headless authoring backend | **Decided** |
 | **D29** | Orchestration reasons in English; only narration is localized | **Decided** |
+| **D30** | The orchestrator is a fixed executor; guardrails, classification and narration are workflows (the "ribosome" model) | **Decided** |
 | **D17** | Benchmarking method — how to not fool yourself | Reference |
 
 Roadmap and current status: `docs/plan.md`.
@@ -807,6 +808,106 @@ language as a source of divergence.
 **Consequence:** player input in any language reaches an English-reasoning
 pipeline, so classification quality on non-English input is a thing to measure, not
 assume. i18n discipline (emit keys + vars, never baked strings) stays as D24 requires.
+
+---
+
+## D30 — The orchestrator is a fixed executor; guardrails, classification and narration are workflows (the "ribosome" model)
+
+**Decided** (2026-07-20) — corrects M3b's original sketch
+
+**What was wrong.** Every earlier sketch of M3b, including the D4 amendment above,
+still described a fixed pipeline with an authored middle: guardrails and intent
+classification were orchestrator *code*, the DSL workflow ran in the gap between
+them, and narration was a code step bolted on at the end. That is a smaller
+version of the same mistake D4 corrected once already — it just moved up a level,
+from "the model decides the mechanics" to "code decides the shape."
+
+**The model.** There is no fixed pipeline. Guardrails are a workflow.
+Classification is a workflow. Narration is not a code step — it is something a
+workflow asks for, at a point an author chose, via a bounded `narrate` op (D4
+amendment #3). The orchestrator does not own a sequence; it executes whatever the
+loaded workflow says, and workflows call other workflows (`run`, D24 §4).
+
+**The DNA/ribosome metaphor, precisely:** the workflow is DNA — authored,
+swappable, the thing that actually encodes behavior. The orchestrator is the
+ribosome — fixed, trusted machinery that reads and executes but never decides
+*what* to build. The ribosome is also the only thing that can execute at all, and
+every safety guarantee in this system lives in that one fact.
+
+**What stays in the ribosome — vocabulary, never grammar (D27).** Regardless of
+how much moves into authored content, these remain code:
+
+- The **command whitelist** — D4's original enforcement point. A workflow *names*
+  a command; `CommandRegistry` decides whether it exists and `CommandBus` is the
+  only thing that applies it.
+- **Seeded RNG** — `roll` is a DSL op with a code implementation. Authors invoke
+  it; they do not implement it.
+- The **op registry and the registration-time strict validator** (D24/A2) — the
+  thing that decides what is expressible in the language at all.
+- The **AI backend layer** — `AiRequest`, timeout, cancel (D22).
+
+The AI is called by authored steps, at points an author chose, with inputs an
+author bounded — it is never the thing deciding what happens next. That is D27's
+"vocabulary, not grammar" applied one level up, to orchestration shape itself and
+not just to game mechanics.
+
+**The one fixed point: the entry-workflow bootstrap.** If classification picks the
+workflow to run, and classification is itself a workflow, something has to break
+the circularity. The resolution: the orchestrator holds exactly **one** hardcoded
+thing — the id of the entry workflow. That workflow does context-fetch, memory
+read, guardrails, classification, and dispatch to whatever workflow classification
+selects. Everything downstream of it is authored. One id in code; that is the
+entire fixed surface.
+
+**Guardrails as authored content is a trust boundary, not just a refactor.**
+`_check_guardrails` moving from code to a workflow is a real transfer, not a
+relabeling — D28 anticipates AI-assisted authoring later, and a guardrail
+expressed as content is content that later tooling might generate or edit. The
+mitigation is D26/D27's **capability profiles**: the entry orchestration runs
+under a privileged origin profile; DLC and any (eventually AI-assisted) generated
+content run under a lesser one. Profile enforcement is what stops authored content
+from weakening its own guardrail — a workflow outside the privileged profile
+cannot author its way past the check just because guardrails are now expressed in
+the same language it's written in.
+
+**AI calls are not suspension points.** D25's checkpoint model ("store the plan,
+derive the state") was designed against Brainstorm §4's effectful-op list
+(`run_command`, `roll`, `wait_*`, `confirm`, `emit`) — a list with no AI op,
+because it predates AI steps living inside workflows. Now that guardrails,
+classification and narration are all workflow-authored AI calls, the question of
+whether they checkpoint has to be answered directly: **they don't.** An AI call is
+an **in-memory await** inside the instance, not a disk checkpoint — only game-time
+waits (`wait_game_time`) and player confirmations (`confirm`) are true suspension
+points that persist an instance snapshot. Reasons:
+
+- An AI call is 0.8–4s; checkpointing every one of them means several disk writes
+  per turn for a wait that never survives past the current process anyway (unlike
+  a multi-day journey, nothing meaningful happens while it's in flight).
+- It keeps D25's `pc_stack` simple: the resume point is still only ever a wait or
+  a confirmation, not "resume after an in-flight model call" with its own
+  half-finished-request handling.
+- AI ops stay **cancellable per D22** — cancellation of an in-memory await is
+  ordinary async plumbing; cancellation of a checkpointed-and-persisted call would
+  need its own resume/retry semantics for no real benefit.
+
+This corrects workflow_dsl_brainstorm.md §8's "a backend call or AI call is one
+more suspension point with a wake condition" — that line predates this decision
+and is superseded by it. The effectful-op list gains an AI-invocation op (bounded
+prompt family + facts, per D27's facade shape) that is effectful (not reorderable,
+not usable in expression position) but **not** in the suspension/checkpoint set.
+
+**Non-AI workflows are just workflows.** Already true under D26 — one language,
+capability profiles, no dialect split — but worth stating plainly now that
+guardrails/classification/narration are workflows too: combat resolution,
+month-end economy, and eventually UI are workflows in exactly the same sense.
+"Orchestration" is not a separate kind of thing; it is just the name for a
+workflow that happens to include AI steps.
+
+**Consequence for the merged docs.** `docs/plan.md`'s M3b section and D4's
+amendment both described the orchestrator as "shrinks to: guardrails → classify →
+run instance → narrate" — a fixed four-stage pipeline. That phrasing is corrected
+by this decision (see `docs/plan.md` M3b) to: one hardcoded entry-workflow id,
+everything else authored.
 
 ---
 

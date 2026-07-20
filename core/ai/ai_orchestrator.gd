@@ -295,7 +295,12 @@ func _as_array(value: Variant) -> Array:
 	return []
 
 
+## Every return path funnels through here, so this is the one place that hands the
+## finished trace to its sink (A1, D21). No-op when the kernel has no writer configured,
+## or the writer is disabled (most tests never see a file written).
 func _result(ok: bool, narrative: String, trace: AiTrace, applied: Array, error: String) -> Dictionary:
+	if _kernel != null and _kernel.trace_writer != null:
+		_kernel.trace_writer.write(trace)
 	return {
 		"ok": ok,
 		"narrative": narrative,
