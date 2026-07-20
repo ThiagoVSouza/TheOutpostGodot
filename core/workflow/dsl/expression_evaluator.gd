@@ -138,6 +138,12 @@ static func _index(from: Variant, key: Variant) -> Variant:
 	return null
 
 
+## Public truthiness, so statement-level ops (require/if conditions) coerce exactly the
+## way boolean expression operators do.
+static func truthy(v: Variant) -> bool:
+	return _truthy(v)
+
+
 static func _truthy(v: Variant) -> bool:
 	match typeof(v):
 		TYPE_NIL: return false

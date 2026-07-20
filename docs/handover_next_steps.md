@@ -355,13 +355,34 @@ GDScript Variant `==` **raises** on String-vs-number rather than returning false
 **Not built here (A3's job):** execution, `$$`/global binding at runtime, suspension
 & checkpointing, the real kernel-backed `DslEvalContext`, `set_global` effect + trace.
 
-### A3 — Resumable instances (D25)
+### A3 — Resumable instances (D25) — **DONE**
 
 Checkpoint at suspension points, the instance snapshot as save contract,
 `resume_require` on every suspension, `pc_stack` encoding.
 
 **Done when:** a suspended instance survives an app restart and resumes correctly —
 and re-validates rather than trusting the world it left.
+
+**Landed as:** `core/workflow/` — `global_store.gd` (D31), `dsl_function_registry.gd`
++ `dsl_table_registry.gd` (the names `fn`/`table_get` resolve through),
+`dsl/workflow_runtime_context.gd` (real kernel-backed `DslEvalContext`),
+`workflow_instance.gd` (the §5.2 snapshot + `to_dict`/`from_dict`),
+`workflow_registry.gd`, and `workflow_executor.gd` (the engine). All wired into
+`GameKernel`; construct per run via `WorkflowExecutor.for_kernel(kernel)`. 25 tests.
+
+**Key design call (settled in review):** the executor uses an **explicit control
+stack**, not native recursion, so a resume point serializes. `pc_stack` is a
+**structured resume path** — one descriptor per frame `{sel, at, pc, loop?}` where
+`sel` ∈ root/then/else/elif:N/body; loop frames carry their remaining values + pos so
+a resumed loop advances deterministically. Resume re-walks the tree by the path,
+re-checks `resume_require` first (§5.3, fails `stale_context`), and a declined
+`confirm` cancels. Verified surviving a JSON round-trip incl. suspension nested in a
+loop's if-branch. **`for` is half-open `[from, to)`. Rolls: k-th roll derives from
+(seed, roll_count) — only `roll_count` is persisted, no RNG blob.**
+
+**Deferred (noted):** nested *sub-workflow* suspension (`run` of a child that
+suspends) fails `nested_suspension_unsupported` for now; `table_get` range-rows (M3b);
+full save-folder wiring is M4 (the instance snapshot is already the contract).
 
 ### A4 — Migrate off v0 `WorkflowEngine`
 

@@ -140,8 +140,14 @@ and traces a human can read to verify an orchestration behaved correctly.
   `get` (no dotted access), lowercase operators, computed keys allowed, and a new
   **global-variable scope (D31)**. Validator accepts the two worked examples and
   rejects every purity/structure violation; 36 new tests.
-- **Resumable instances** (D25): checkpointing, snapshot contract,
-  `resume_require`.
+- **Resumable instances** (D25) — **done (A3)**: `core/workflow/` — the executor
+  (`workflow_executor.gd`) runs validated workflows on an **explicit control stack**
+  (so a resume point serializes), with real effects through CommandBus/EventBus and
+  the D31 `GlobalStore`. Suspends at `wait_game_time`/`confirm` and resumes from a
+  **structured `pc_stack`** (the §12 open detail, settled in review) that survives a
+  JSON round-trip — including suspension nested inside a loop's if-branch — and
+  re-checks `resume_require` on wake (§5.3). 25 tests. The instance snapshot
+  (`workflow_instance.gd`) is the save contract; M4 wires the save folder.
 - **Migrate off v0**: `Scheduler`, `AiOrchestrator._handle_schedule`, the month-end
   workflow and its tests move to the new kernel; delete `WorkflowEngine` in its own
   PR so the migration reviews separately from the build.

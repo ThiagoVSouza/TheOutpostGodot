@@ -29,6 +29,12 @@ var scheduler: Scheduler
 var saves: SaveManager
 var workflows: WorkflowEngine
 
+# --- workflow DSL kernel (M3a: A2 validation layer + A3 runtime) ---
+var globals: GlobalStore
+var dsl_functions: DslFunctionRegistry
+var dsl_tables: DslTableRegistry
+var workflow_registry: WorkflowRegistry
+
 var _booted: bool = false
 
 
@@ -79,6 +85,14 @@ func boot() -> void:
 	# 7. Calendar + workflow subsystems (scheduler listens on the event bus and runs
 	#    due workflows through the engine).
 	workflows = WorkflowEngine.new()
+
+	# 7b. Workflow DSL kernel (D24/D31): the global store, the fn/table registries the
+	#     `fn`/`table_get` ops resolve names through, and the validated-definition registry.
+	#     The A3 executor is constructed per run via WorkflowExecutor.for_kernel(self).
+	globals = GlobalStore.new()
+	dsl_functions = DslFunctionRegistry.new()
+	dsl_tables = DslTableRegistry.new()
+	workflow_registry = WorkflowRegistry.new()
 	clock = GameClock.new(events)
 	scheduler = Scheduler.new(events, workflows, self)
 	saves = SaveManager.new()
