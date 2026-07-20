@@ -1,16 +1,24 @@
 # The Outpost — Workflow DSL Brainstorm
 
-> **Status (2026-07-19): direction adopted in discussion; not yet implemented.**
-> Brainstormed session between the user and the agent (desktop offline, no code
-> written). This document records the requirements, the review of prior art
-> (Nortrix v1/v3), the language design direction, the execution model, and the
-> long-term vision — so implementation can start from a settled position.
+> **This is a brainstorm, not a source of truth.** Everything here is thinking
+> out loud from a design session between the user and the agent (2026-07-19,
+> desktop offline, no code written). Nothing in it is decided, and no part of
+> it should be treated as authoritative — where it reads confidently, read that
+> as "the direction we were leaning that afternoon," not "the plan." It exists
+> to capture the discussion and to inspire the eventual DSL work, so the
+> reasoning survives and we have something concrete to react to, revise, or
+> throw out when we sit down to design for real.
 >
-> Relationship to other docs: `docs/Orchestration_brainstorm.md` §10–§11 defines
-> the workflow *contract* this DSL implements and the mechanic-authoring flow it
-> anticipates; `docs/decisions.md` wins on any conflict. Candidate decisions
-> below (§13) are **proposed** — promote to `docs/decisions.md` after review.
-> Per the plan's GATE 0 discipline: review together before production code.
+> **Nothing here is a decision until it lands in `docs/decisions.md`.** The
+> "candidate decisions" in §13 are conversation starters for that review, not
+> conclusions. `docs/decisions.md` and `docs/plan.md` win on any conflict, and
+> the plan's GATE 0 discipline applies: talk it through together before any
+> production code.
+>
+> Context it builds on: `docs/Orchestration_brainstorm.md` §10–§11 sketches the
+> workflow *contract* a DSL like this would implement, and the mechanic-authoring
+> flow it anticipates. Prior art we drew on: the user's own **Nortrix** language
+> (v1/v3), reviewed in §3.
 
 ---
 
@@ -37,9 +45,14 @@ capability vocabulary, never in grammar.
 
 ---
 
-## 2. Requirements
+## 2. Requirements we think matter
 
-### 2.1 Inherited from the decisions log (non-negotiable)
+These are the constraints the discussion kept returning to. The first group we
+believe are hard — they fall out of decisions already recorded — but even those
+are worth re-examining rather than assuming. Treat this as "what we'd want to
+hold ourselves to," not a ratified list.
+
+### 2.1 Leaning-hard constraints, inherited from the decisions log
 
 - **Deterministic and total.** Same inputs + same seed → same outcome; every
   workflow provably terminates. No unbounded loops, no recursion, no wall-clock
@@ -171,7 +184,10 @@ migrate there: fail-fast stands by default.
 
 ## 5. Execution model: resumable instances
 
-### 5.1 Decision: checkpoint at suspension points (“store the plan, derive the state”)
+### 5.1 Where we landed: checkpoint at suspension points (“store the plan, derive the state”)
+
+This was the one genuinely open fork in the discussion, and the direction we
+settled on *in conversation* (not in the decisions log) was:
 
 **Persistence writes happen at every meaningful change — a command applied, an
 instance suspended — and never per interpreter step or per simulation tick.**
@@ -389,7 +405,7 @@ the intent enum until this ships.
 
 ## 8. Long-term vision: one language, data-only DLC
 
-Adopted direction (user, 2026-07-19): extend the language beyond mechanics so
+Direction the user raised and we leaned into (2026-07-19): extend the language beyond mechanics so
 that **DLCs can add not just flavor but new gameplay modes**, delivered as
 data with no executables.
 
@@ -436,7 +452,7 @@ data with no executables.
 
 ## 9. Complex components
 
-Adopted principle (user, 2026-07-19): **not everything is built in the DSL.**
+Principle the user raised and we leaned into (2026-07-19): **not everything is built in the DSL.**
 Engine-native subsystems ("complex components" — map, combat resolver, economy
 sim, pathfinding, …) are built in GDScript/Godot and expose a DSL-facing
 facade. The DSL never builds the map; it drives it.
@@ -486,7 +502,7 @@ second keeps both honest.
 
 ## 10. Authoring toolchain
 
-Adopted direction (user, 2026-07-19): content volume — rules, workflows, and
+Direction the user raised and we leaned into (2026-07-19): content volume — rules, workflows, and
 especially events/mechanics — will outgrow hand-edited JSON. Three authoring
 front-ends were proposed; the architectural point is that **all three are thin
 clients over one authoring backend** that the kernel already requires: the
@@ -581,7 +597,12 @@ speculatively.
 
 ---
 
-## 13. Candidate decisions for `docs/decisions.md` (after review)
+## 13. Talking points for a future `docs/decisions.md` review
+
+These are **not decisions** — they are the shape the ideas would take *if* we
+decided to adopt them, written in the decisions-log style only so they are easy
+to lift, argue with, amend, or reject when we actually hold that review. The
+D-numbers are placeholders. Every one is fair game to tear apart.
 
 - **D24 (candidate)** — Workflow DSL: JSON op-tree canonical form; explicit
   `op`; fully parenthesized expressions; self-contained conditionals;
