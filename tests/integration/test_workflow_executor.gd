@@ -20,7 +20,7 @@ func _run(kernel: GameKernel, def: Dictionary, params: Dictionary = {}) -> RefCo
 	var validation := WorkflowValidator.new().validate(def)
 	assert_true(validation.success, "test workflow should validate: %s" % validation.message)
 	var inst := Instance.create(String(def["id"]), int(def["version"]), params, 12345)
-	return Executor.for_kernel(kernel).run(def, inst)
+	return await Executor.for_kernel(kernel).run(def, inst)
 
 
 func test_full_pipeline_rolls_reads_state_computes_and_mutates() -> void:
@@ -45,7 +45,7 @@ func test_full_pipeline_rolls_reads_state_computes_and_mutates() -> void:
 			 "else": [{"op": "emit", "msg": "forage.none"}]}
 		]
 	}
-	var result: RefCounted = _run(kernel, def)
+	var result: RefCounted = await _run(kernel, def)
 
 	assert_true(result.succeeded(), "the workflow should complete")
 	assert_eq(int((kernel.state.get_value("resources", {}) as Dictionary).get("food", 0)), 3,
@@ -72,7 +72,7 @@ func test_fn_and_table_get_resolve_through_the_registries() -> void:
 			{"op": "emit", "msg": "x", "values": {"m": "$$m", "d": "$$d"}}
 		]
 	}
-	assert_true(_run(kernel, def).succeeded())
+	assert_true((await _run(kernel, def)).succeeded())
 	assert_eq(int((captured[0]["values"] as Dictionary)["m"]), 5, "fn(a=1) -> 5")
 	assert_eq(int((captured[0]["values"] as Dictionary)["d"]), 8, "table_get sword -> 8")
 
@@ -90,7 +90,7 @@ func test_globals_and_for_loop() -> void:
 			{"op": "let", "as": "$$final", "value": {"op": "get_global", "name": "count"}}
 		]
 	}
-	var result: RefCounted = _run(kernel, def)
+	var result: RefCounted = await _run(kernel, def)
 	assert_true(result.succeeded())
 	assert_eq(int(kernel.globals.get_value("count")), 3, "loop ran 3 times (half-open [0,3))")
 	assert_eq(int(result.instance.locals["final"]), 3, "the global read back into a local")
@@ -112,7 +112,7 @@ func test_foreach_binds_item_and_index() -> void:
 			]}
 		]
 	}
-	assert_true(_run(kernel, def, {"names": ["a", "b"]}).succeeded())
+	assert_true((await _run(kernel, def, {"names": ["a", "b"]})).succeeded())
 	assert_eq(seen.size(), 2)
 	assert_eq(seen[0], {"item": "a", "idx": 0})
 	assert_eq(seen[1], {"item": "b", "idx": 1})
@@ -130,7 +130,7 @@ func test_break_exits_the_loop() -> void:
 			]}
 		]
 	}
-	assert_true(_run(kernel, def).succeeded())
+	assert_true((await _run(kernel, def)).succeeded())
 	assert_eq(int(kernel.globals.get_value("n")), 3, "counted 0,1,2 then broke at i==3")
 
 
@@ -143,7 +143,7 @@ func test_require_failure_halts_before_the_command() -> void:
 			{"op": "run_command", "name": "grant_resource", "args": {"resource": "food", "amount": 5}}
 		]
 	}
-	var result: RefCounted = _run(kernel, def)
+	var result: RefCounted = await _run(kernel, def)
 	assert_eq(result.status, Instance.Status.FAILED)
 	assert_eq(result.fail_code, "precondition_failed")
 	assert_eq(int((kernel.state.get_value("resources", {}) as Dictionary).get("food", 0)), 0,
@@ -156,7 +156,7 @@ func test_non_whitelisted_command_fails_the_instance() -> void:
 		"op": "workflow", "id": "bad", "version": 1, "params": {},
 		"steps": [{"op": "run_command", "name": "delete_everything", "args": {}}]
 	}
-	var result: RefCounted = _run(kernel, def)
+	var result: RefCounted = await _run(kernel, def)
 	assert_eq(result.status, Instance.Status.FAILED)
 	assert_eq(result.fail_code, "unknown_command")
 
@@ -171,7 +171,7 @@ func test_wait_game_time_suspends_and_captures_state() -> void:
 			{"op": "run_command", "name": "grant_resource", "args": {"resource": "food", "amount": 100}}
 		]
 	}
-	var result: RefCounted = _run(kernel, def)
+	var result: RefCounted = await _run(kernel, def)
 	assert_eq(result.status, Instance.Status.SUSPENDED, "hitting wait_game_time suspends")
 	assert_eq(result.wake["type"], "game_time")
 	assert_eq(int(result.wake["at_day"]), 214)
@@ -200,8 +200,8 @@ func test_seeded_rolls_are_deterministic() -> void:
 	}
 	var a := Instance.create("dice", 1, {}, 999)
 	var b := Instance.create("dice", 1, {}, 999)
-	Executor.for_kernel(kernel).run(def, a)
-	Executor.for_kernel(kernel).run(def, b)
+	await Executor.for_kernel(kernel).run(def, a)
+	await Executor.for_kernel(kernel).run(def, b)
 	assert_eq(a.locals["sum"], b.locals["sum"], "same seed -> same roll sequence")
 	assert_between(int(a.locals["a"]), 3, 18, "3d6 is in range")
 
@@ -220,7 +220,7 @@ func test_narrate_produces_bounded_prose_from_decided_facts() -> void:
 			 "verbosity": "short", "language": "@lang", "as": "$$line"}
 		]
 	}
-	var result: RefCounted = _run(kernel, def, {"lang": "pt"})
+	var result: RefCounted = await _run(kernel, def, {"lang": "pt"})
 	assert_true(result.succeeded())
 	# The fake narrator echoes the bounded inputs deterministically (facts sorted by key), so
 	# the test proves the op passed the right instruction, decided facts, verbosity and language.
@@ -237,7 +237,7 @@ func test_narrate_defaults_verbosity_and_language() -> void:
 		"op": "workflow", "id": "tell2", "version": 1, "params": {},
 		"steps": [{"op": "narrate", "instruction": "the outpost is quiet"}]
 	}
-	var result: RefCounted = _run(kernel, def)
+	var result: RefCounted = await _run(kernel, def)
 	assert_true(result.succeeded())
 	assert_eq(result.narration, "[normal|en] the outpost is quiet", "sensible defaults when omitted")
 
@@ -257,11 +257,11 @@ func test_resume_after_wait_continues_from_where_it_suspended() -> void:
 		]
 	}
 	var inst := Instance.create("trip", 1, {}, 1)
-	var suspended: RefCounted = Executor.for_kernel(kernel).run(def, inst)
+	var suspended: RefCounted = await Executor.for_kernel(kernel).run(def, inst)
 	assert_eq(suspended.status, Instance.Status.SUSPENDED)
 	assert_eq(_food(kernel), 1, "only the pre-wait command ran")
 
-	var resumed: RefCounted = Executor.for_kernel(kernel).resume(def, inst)
+	var resumed: RefCounted = await Executor.for_kernel(kernel).resume(def, inst)
 	assert_true(resumed.succeeded(), "resume runs to completion")
 	assert_eq(_food(kernel), 11, "the post-wait command ran on resume")
 
@@ -280,13 +280,13 @@ func test_suspended_instance_survives_a_serialization_round_trip() -> void:
 		]
 	}
 	var inst := Instance.create("trip", 1, {}, 1)
-	Executor.for_kernel(kernel).run(def, inst)
+	await Executor.for_kernel(kernel).run(def, inst)
 
 	var json := JSON.stringify(inst.to_dict())
 	var reloaded := Instance.from_dict(JSON.parse_string(json))
 	assert_eq(reloaded.status, Instance.Status.SUSPENDED)
 
-	var resumed: RefCounted = Executor.for_kernel(kernel).resume(def, reloaded)
+	var resumed: RefCounted = await Executor.for_kernel(kernel).resume(def, reloaded)
 	assert_true(resumed.succeeded(), "the reloaded instance resumes and completes")
 	assert_eq(_food(kernel), 7, "2 before the restart + 5 after")
 
@@ -306,11 +306,11 @@ func test_resume_require_failure_fails_the_instance() -> void:
 		]
 	}
 	var inst := Instance.create("guarded_trip", 1, {}, 1)
-	Executor.for_kernel(kernel).run(def, inst)
+	await Executor.for_kernel(kernel).run(def, inst)
 
 	# The world moved while suspended: the precondition no longer holds.
 	kernel.state.set_value("still_valid", false)
-	var resumed: RefCounted = Executor.for_kernel(kernel).resume(def, inst)
+	var resumed: RefCounted = await Executor.for_kernel(kernel).resume(def, inst)
 	assert_eq(resumed.status, Instance.Status.FAILED)
 	assert_eq(resumed.fail_code, "stale_context", "resume re-checks and fails cleanly")
 	assert_eq(_food(kernel), 0, "no state changed on a stale resume")
@@ -328,15 +328,15 @@ func test_confirm_decline_cancels_and_confirm_accept_continues() -> void:
 	}
 	# Declined: the destructive command (after the confirm) never runs.
 	var declined_inst := Instance.create("destroy", 1, {}, 1)
-	Executor.for_kernel(kernel).run(def, declined_inst)
-	var declined: RefCounted = Executor.for_kernel(kernel).resume(def, declined_inst, {"confirmed": false})
+	await Executor.for_kernel(kernel).run(def, declined_inst)
+	var declined: RefCounted = await Executor.for_kernel(kernel).resume(def, declined_inst, {"confirmed": false})
 	assert_eq(declined.fail_code, "cancelled")
 	assert_eq(_food(kernel), 0, "a declined confirmation applies nothing")
 
 	# Accepted: it continues.
 	var ok_inst := Instance.create("destroy", 1, {}, 1)
-	Executor.for_kernel(kernel).run(def, ok_inst)
-	var accepted: RefCounted = Executor.for_kernel(kernel).resume(def, ok_inst, {"confirmed": true})
+	await Executor.for_kernel(kernel).run(def, ok_inst)
+	var accepted: RefCounted = await Executor.for_kernel(kernel).resume(def, ok_inst, {"confirmed": true})
 	assert_true(accepted.succeeded())
 	assert_eq(_food(kernel), 4)
 
@@ -361,14 +361,14 @@ func test_suspension_nested_in_if_and_loop_resumes_correctly() -> void:
 		]
 	}
 	var inst := Instance.create("loopwait", 1, {"items": ["a", "b"]}, 1)
-	var suspended: RefCounted = Executor.for_kernel(kernel).run(def, inst)
+	var suspended: RefCounted = await Executor.for_kernel(kernel).run(def, inst)
 	assert_eq(suspended.status, Instance.Status.SUSPENDED, "suspends on iteration 0")
 	assert_eq(seen, [0], "only the first iteration's emit happened before suspending")
 	assert_eq(_food(kernel), 0, "the trailing command has not run")
 
 	# Round-trip through JSON to prove the nested/loop resume point serializes.
 	var reloaded := Instance.from_dict(JSON.parse_string(JSON.stringify(inst.to_dict())))
-	var resumed: RefCounted = Executor.for_kernel(kernel).resume(def, reloaded)
+	var resumed: RefCounted = await Executor.for_kernel(kernel).resume(def, reloaded)
 	assert_true(resumed.succeeded())
 	assert_eq(seen, [0, 1], "the loop finished its second iteration after resume")
 	assert_eq(_food(kernel), 1, "the trailing command ran after the loop completed")
@@ -390,7 +390,7 @@ func test_run_invokes_a_registered_sub_workflow() -> void:
 		"op": "workflow", "id": "parent", "version": 1, "params": {},
 		"steps": [{"op": "run", "workflow": "grant_child", "args": {"amount": 7}}]
 	}
-	var result: RefCounted = _run(kernel, parent)
+	var result: RefCounted = await _run(kernel, parent)
 	assert_true(result.succeeded())
 	assert_eq(int((kernel.state.get_value("resources", {}) as Dictionary).get("wood", 0)), 7,
 		"the sub-workflow's command applied, param passed through")

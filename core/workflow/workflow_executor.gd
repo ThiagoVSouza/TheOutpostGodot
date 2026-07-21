@@ -104,7 +104,7 @@ func run(definition: Dictionary, instance: WorkflowInstance, trace: AiTrace = nu
 	if trace != null:
 		trace.add("workflow_started", {"workflow": instance.workflow_id, "instance": instance.instance_id})
 	var stack: Array = [Frame.new(definition.get("steps", []) as Array)]
-	return _execute(stack, definition, instance, result, trace, depth)
+	return await _execute(stack, definition, instance, result, trace, depth)
 
 
 ## Resume a suspended instance (D25/§5.3). [param outcome] carries the wake result — for a
@@ -131,7 +131,7 @@ func resume(definition: Dictionary, instance: WorkflowInstance, outcome: Diction
 	instance.status = WorkflowInstance.Status.RUNNING
 	if trace != null:
 		trace.add("workflow_resumed", {"instance": instance.instance_id})
-	return _execute(_rebuild_stack(definition, instance), definition, instance, result, trace, depth)
+	return await _execute(_rebuild_stack(definition, instance), definition, instance, result, trace, depth)
 
 
 ## The shared run loop, over an explicit control stack — driven fresh by [method run] or from
@@ -148,7 +148,7 @@ func _execute(stack: Array, definition: Dictionary, instance: WorkflowInstance, 
 			continue
 		var stmt: Dictionary = frame.block[frame.pc]
 		frame.pc += 1
-		var outcome := _exec_statement(stmt, instance, ctx, result, trace, depth)
+		var outcome := await _exec_statement(stmt, instance, ctx, result, trace, depth)
 		match int(outcome["action"]):
 			Action.CONTINUE:
 				pass
@@ -206,7 +206,7 @@ func _exec_statement(stmt: Dictionary, instance: WorkflowInstance, ctx: Workflow
 		"emit":
 			return _exec_emit(stmt, ctx, result, trace)
 		"narrate":
-			return _exec_narrate(stmt, ctx, instance, result, trace)
+			return await _exec_narrate(stmt, ctx, instance, result, trace)
 		"if":
 			return _exec_if(stmt, ctx)
 		"foreach":
@@ -216,7 +216,7 @@ func _exec_statement(stmt: Dictionary, instance: WorkflowInstance, ctx: Workflow
 		"break":
 			return {"action": Action.BREAK}
 		"run":
-			return _exec_run(stmt, ctx, result, trace, depth)
+			return await _exec_run(stmt, ctx, result, trace, depth)
 		"wait_game_time":
 			return {"action": Action.SUSPEND,
 				"wake": {"type": "game_time", "at_day": _eval(stmt.get("until_day", null), ctx)},
@@ -271,7 +271,9 @@ func _exec_narrate(stmt: Dictionary, ctx: WorkflowRuntimeContext, instance: Work
 	var context := _eval_args(stmt.get("context", {}), ctx)
 	var verbosity := String(stmt.get("verbosity", "normal"))
 	var language := String(_eval(stmt.get("language", "en"), ctx))
-	var prose := _narrator.narrate(instruction, context, verbosity, language)
+	# Narration is an in-memory await (D30): with the real AiBackend-backed narrator this
+	# suspends here; the FakeNarrator returns synchronously, so this is a no-op await for now.
+	var prose: String = await _narrator.narrate(instruction, context, verbosity, language)
 	result.narration = prose
 	if stmt.has("as"):
 		instance.locals[_local_name(stmt["as"])] = prose
@@ -339,7 +341,7 @@ func _exec_run(stmt: Dictionary, ctx: WorkflowRuntimeContext, result: RunResult,
 	var def := child_def as Dictionary
 	var child := WorkflowInstance.create(String(def["id"]), int(def["version"]),
 		_eval_args(stmt.get("args", {}), ctx), _child_seed(ctx))
-	var child_result := run(def, child, trace, depth + 1)
+	var child_result := await run(def, child, trace, depth + 1)
 	# Merge the child's observable effects into the parent's tally.
 	for c in child_result.applied_commands:
 		result.applied_commands.append(c)

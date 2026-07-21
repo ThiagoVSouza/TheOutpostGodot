@@ -61,17 +61,20 @@ func _validate(workflow_def: Dictionary, when: String) -> bool:
 
 func _on_month_ended(_payload: Dictionary) -> void:
 	for wf in _monthly:
-		_run(wf, "month_ended")
+		await _run(wf, "month_ended")
 
 
 func _on_day_passed(payload: Dictionary) -> void:
 	var d := int(payload.get("total_days", 0))
 	if _by_day.has(d):
 		for wf in _by_day[d]:
-			_run(wf, "day_passed")
+			await _run(wf, "day_passed")
 		_by_day.erase(d)
 
 
+## The executor is a coroutine (a workflow may `narrate`, an in-memory await — D30), so this
+## awaits it. A workflow with no AI step completes without suspending, so a non-narrating
+## scheduled workflow still finishes within the triggering emit.
 func _run(workflow_def: Dictionary, trigger: String) -> void:
 	_seq += 1
 	var instance := WorkflowInstance.create(
@@ -79,7 +82,7 @@ func _run(workflow_def: Dictionary, trigger: String) -> void:
 		int(workflow_def.get("version", 1)),
 		{},
 		hash("%d:%d" % [Time.get_ticks_usec(), _seq]))
-	var result := WorkflowExecutor.for_kernel(_kernel).run(workflow_def, instance)
+	var result := await WorkflowExecutor.for_kernel(_kernel).run(workflow_def, instance)
 	if _events != null:
 		_events.emit("workflow_ran", {
 			"ok": result.succeeded(),
