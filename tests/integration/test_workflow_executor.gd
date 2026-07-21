@@ -239,7 +239,26 @@ func test_narrate_defaults_verbosity_and_language() -> void:
 	}
 	var result: RefCounted = await _run(kernel, def)
 	assert_true(result.succeeded())
-	assert_eq(result.narration, "[normal|en] the outpost is quiet", "sensible defaults when omitted")
+	# The op defaults to `normal`, which the shipped `short` preference plants at the base of
+	# the ladder — the narrator only ever sees the resolved level.
+	assert_eq(result.narration, "[short|en] the outpost is quiet", "sensible defaults when omitted")
+
+
+func test_the_player_narration_preference_resolves_the_authored_level() -> void:
+	var kernel := _kernel()
+	kernel.narration.level = NarrationSettings.LEVEL_LONG
+	var narrated: Array = []
+	kernel.events.subscribe("workflow_narrated", func(p: Dictionary) -> void: narrated.append(p))
+	var def := {
+		"op": "workflow", "id": "tell3", "version": 1, "params": {},
+		"steps": [{"op": "narrate", "instruction": "the outpost is quiet", "verbosity": "short"}]
+	}
+	var result: RefCounted = await _run(kernel, def)
+	assert_true(result.succeeded())
+	assert_eq(result.narration, "[long|en] the outpost is quiet", "the preference reaches the seam")
+	# Both levels are traced, so a reader can tell an author's intent from the player's setting.
+	assert_eq(narrated[0]["authored_verbosity"], "short")
+	assert_eq(narrated[0]["verbosity"], "long")
 
 
 func test_ai_op_classifies_from_a_registered_family() -> void:

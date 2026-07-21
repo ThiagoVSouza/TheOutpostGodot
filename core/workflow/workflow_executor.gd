@@ -74,13 +74,14 @@ var _workflows: WorkflowRegistry
 var _narrator: DslNarrator
 var _prompt_families: PromptFamilyRegistry
 var _ai_runner: DslAiRunner
+var _narration: NarrationSettings
 
 
 func _init(state: GameState, command_registry: CommandRegistry, commands: CommandBus,
 		events: EventBus, globals: GlobalStore, functions: DslFunctionRegistry,
 		tables: DslTableRegistry, workflows: WorkflowRegistry = null,
 		narrator: DslNarrator = null, prompt_families: PromptFamilyRegistry = null,
-		ai_runner: DslAiRunner = null) -> void:
+		ai_runner: DslAiRunner = null, narration: NarrationSettings = null) -> void:
 	_state = state
 	_command_registry = command_registry
 	_commands = commands
@@ -93,13 +94,16 @@ func _init(state: GameState, command_registry: CommandRegistry, commands: Comman
 	_narrator = narrator if narrator != null else FakeNarrator.new()
 	_prompt_families = prompt_families if prompt_families != null else PromptFamilyRegistry.new()
 	_ai_runner = ai_runner if ai_runner != null else FakeAiRunner.new()
+	# Defaults are the shipped preference, so an unwired executor narrates exactly as authored.
+	_narration = narration if narration != null else NarrationSettings.new()
 
 
 ## Convenience constructor from a booted kernel.
 static func for_kernel(kernel: GameKernel) -> WorkflowExecutor:
 	return WorkflowExecutor.new(kernel.state, kernel.command_registry, kernel.commands,
 		kernel.events, kernel.globals, kernel.dsl_functions, kernel.dsl_tables,
-		kernel.workflow_registry, kernel.narrator, kernel.prompt_families, kernel.ai_runner)
+		kernel.workflow_registry, kernel.narrator, kernel.prompt_families, kernel.ai_runner,
+		kernel.narration)
 
 
 ## Run [param instance] against [param definition] (a validated `steps` tree). [param trace]
@@ -325,7 +329,10 @@ func _exec_narrate(stmt: Dictionary, ctx: WorkflowRuntimeContext, instance: Work
 		result: RunResult, trace: AiTrace) -> Dictionary:
 	var instruction := String(stmt["instruction"])
 	var context := _eval_args(stmt.get("context", {}), ctx)
-	var verbosity := String(stmt.get("verbosity", "normal"))
+	var authored := String(stmt.get("verbosity", "normal"))
+	# The authored literal is the beat's intent; the player's preference decides the band it
+	# lands in (see NarrationSettings). The narrator only ever sees the resolved level.
+	var verbosity := _narration.resolve(authored)
 	var language := String(_eval(stmt.get("language", "en"), ctx))
 	# Narration is an in-memory await (D30): with the real AiBackend-backed narrator this
 	# suspends here; the FakeNarrator returns synchronously, so this is a no-op await for now.
@@ -333,7 +340,10 @@ func _exec_narrate(stmt: Dictionary, ctx: WorkflowRuntimeContext, instance: Work
 	result.narration = prose
 	if stmt.has("as"):
 		instance.locals[_local_name(stmt["as"])] = prose
-	var record := {"instruction": instruction, "verbosity": verbosity, "language": language, "text": prose}
+	# Both levels are recorded: the trace should show what the author asked for *and* what the
+	# player's preference turned it into, or a short reply reads as a narrator bug.
+	var record := {"instruction": instruction, "verbosity": verbosity, "authored_verbosity": authored,
+		"language": language, "text": prose}
 	if _events != null:
 		_events.emit("workflow_narrated", record)
 	if trace != null:

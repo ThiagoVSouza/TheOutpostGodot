@@ -83,6 +83,38 @@ func _build_ui() -> void:
 	_retry_button.pressed.connect(func() -> void: Kernel.ai_availability.retry())
 	input_row.add_child(_retry_button)
 
+	# Narration preference: the three reading lengths one click apart, so prose styles can be
+	# compared on the same turn rather than from memory. `loose` sits here too — it is dev-only.
+	var narration_row := HBoxContainer.new()
+	left.add_child(narration_row)
+	var narration_title := Label.new()
+	narration_title.text = "Narration:"
+	narration_title.add_theme_color_override("font_color", Color.html("#%s" % C_FAINT))
+	narration_row.add_child(narration_title)
+	var group := ButtonGroup.new()
+	for option in [
+		{"label": "Topics", "level": NarrationSettings.LEVEL_TOPICS},
+		{"label": "Short", "level": NarrationSettings.LEVEL_SHORT},
+		{"label": "Long prose", "level": NarrationSettings.LEVEL_LONG},
+	]:
+		var level := String(option["level"])
+		var button := Button.new()
+		button.text = String(option["label"])
+		button.toggle_mode = true
+		button.button_group = group
+		button.button_pressed = Kernel.narration.level == level
+		button.pressed.connect(func() -> void: _on_narration_level(level))
+		narration_row.add_child(button)
+
+	var loose := CheckBox.new()
+	loose.text = "Loose (unbound)"
+	loose.tooltip_text = "Let the narrator embellish freely — gives up the D4 guarantee. Dev only."
+	loose.button_pressed = Kernel.narration.loose
+	loose.toggled.connect(func(on: bool) -> void:
+		Kernel.narration.loose = on
+		_append("[color=#%s]— narration %s —[/color]" % [C_FAINT, "unbound (free)" if on else "bound to facts"]))
+	narration_row.add_child(loose)
+
 	var dev_row := HBoxContainer.new()
 	left.add_child(dev_row)
 	var advance := Button.new()
@@ -172,7 +204,13 @@ static func render_trace(trace: AiTrace) -> String:
 			"workflow_emit":
 				lines.append("   [color=#%s]emit[/color] %s" % [C_FAINT, d.get("msg", "")])
 			"workflow_narrated":
-				lines.append("   [color=#%s]narrate[/color] [i]%s[/i]" % [C_NARRATE, d.get("text", "")])
+				# Show authored→resolved when the preference changed it, so a terse reply reads
+				# as the setting doing its job rather than as a narrator failure.
+				var authored := String(d.get("authored_verbosity", ""))
+				var level := String(d.get("verbosity", ""))
+				var band := level if authored.is_empty() or authored == level else "%s→%s" % [authored, level]
+				lines.append("   [color=#%s]narrate[/color] [color=#%s][%s][/color] [i]%s[/i]" % [
+					C_NARRATE, C_FAINT, band, d.get("text", "")])
 			"workflow_completed":
 				lines.append("[color=#%s]✓ completed[/color]" % C_DONE)
 			"workflow_failed":
@@ -193,6 +231,11 @@ func _set_busy(busy: bool) -> void:
 	_send_button.disabled = busy
 	if not busy:
 		_input.grab_focus()
+
+
+func _on_narration_level(level: String) -> void:
+	Kernel.narration.level = level
+	_append("[color=#%s]— narration level: %s —[/color]" % [C_FAINT, level])
 
 
 func _on_advance_month() -> void:
