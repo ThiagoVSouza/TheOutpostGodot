@@ -41,6 +41,13 @@ var pc_stack: Array = []
 ## suspending `wait_*`/`confirm` op. A failed recheck fails the instance (stale_context).
 var resume_require: Array = []
 
+## A hand-off chain (dispatch) is one turn made of many workflow segments (per the M3b
+## decision): they share an `orchestration_id` and one trace, and `segment` counts the
+## position in the chain (0 = the first workflow). A lone workflow has orchestration_id ==
+## instance_id and segment 0.
+var orchestration_id: String = ""
+var segment: int = 0
+
 static var _seq: int = 0
 
 
@@ -52,6 +59,17 @@ static func create(workflow_id: String, version: int, params: Dictionary, seed: 
 	inst.workflow_version = version
 	inst.params = params.duplicate(true)
 	inst.seed = seed
+	inst.orchestration_id = inst.instance_id  # own the orchestration until handed off
+	return inst
+
+
+## The next segment in a dispatch chain: a fresh instance for [param definition], seeded with
+## the hand-off [param args], sharing the chain's [param orchestration_id] at [param segment].
+static func dispatched(definition: Dictionary, args: Dictionary, orchestration_id: String, segment: int) -> WorkflowInstance:
+	var inst := WorkflowInstance.create(String(definition["id"]), int(definition["version"]),
+		args, hash("%s:%d" % [orchestration_id, segment]))
+	inst.orchestration_id = orchestration_id
+	inst.segment = segment
 	return inst
 
 
@@ -69,6 +87,8 @@ func to_dict() -> Dictionary:
 		"fail_code": fail_code,
 		"pc_stack": pc_stack.duplicate(true),
 		"resume_require": resume_require.duplicate(true),
+		"orchestration_id": orchestration_id,
+		"segment": segment,
 	}
 
 
@@ -88,6 +108,8 @@ static func from_dict(data: Dictionary) -> WorkflowInstance:
 	inst.fail_code = String(data.get("fail_code", ""))
 	inst.pc_stack = (data.get("pc_stack", []) as Array).duplicate(true)
 	inst.resume_require = (data.get("resume_require", []) as Array).duplicate(true)
+	inst.orchestration_id = String(data.get("orchestration_id", inst.instance_id))
+	inst.segment = int(data.get("segment", 0))
 	return inst
 
 

@@ -42,6 +42,7 @@ Measurements: `docs/benchmarks/milestone1_results.md`. Architecture: `docs/initi
 | **D29** | Orchestration reasons in English; only narration is localized | **Decided** |
 | **D30** | The orchestrator is a fixed executor; guardrails, classification and narration are workflows (the "ribosome" model) | **Decided** |
 | **D31** | Global variables: a writable, non-authoritative, persisted workflow scope beside game state | **Decided** |
+| **D32** | Two workflow composition modes: call/return (`run`) and hand-off (`dispatch`) | **Decided** |
 | **D17** | Benchmarking method — how to not fool yourself | Reference |
 
 Roadmap and current status: `docs/plan.md`.
@@ -964,6 +965,41 @@ The mitigations are the capability gate (untrusted content can't write globals a
 code review of privileged content, and the trace (a global feeding a command's
 authoritative arg is visible). Watched, not eliminated — same posture as D4's residual
 narration risk.
+
+---
+
+## D32 — Two workflow composition modes: call/return (`run`) and hand-off (`dispatch`)
+
+**Decided** (2026-07-21) — user-proposed during the M3b async design
+
+Workflows compose two ways, and it is a per-case structuring choice which to use:
+
+- **`run` — call / return.** Workflow A invokes B, **waits**, gets a value back, continues.
+  B is a *helper* (calculate a route, look up a value). The call stack nests: A → B → C.
+- **`dispatch` — hand-off.** A **finishes** by passing control to B; it does not wait or
+  return. B may hand off to C or D. Each workflow is a flat *phase* / state; dispatch is the
+  transition. The stack does not grow — the executor **trampolines** (run a segment; if it
+  ended in a dispatch, run the next).
+
+**Why hand-off matters for async (the real reason, not just style):** it sidesteps the
+nested-suspension problem A3 deferred. With `run`, a sub-workflow that suspends (an AI call
+or a `wait`) forces its whole parent stack to suspend and resume together. With `dispatch`,
+the previous workflow is *already done* when the next runs, so a mid-chain segment suspends
+and resumes on its own — using the existing flat `pc_stack`. Hand-off is what makes
+multi-phase async simple.
+
+**One orchestration, many segments.** A dispatch chain is one turn: the segments share an
+`orchestration_id` and one readable trace (each hand-off logged as `workflow_dispatched`),
+so a turn still reads end to end. Hand-off passes **bounded args** (like `run`), not shared
+locals, so each workflow stays isolated and testable. The chain is bounded by a **segment
+budget** and a **cycle guard** — non-linear never means unbounded.
+
+This **generalizes D30**: the entry-workflow → intent-workflow step (guardrails → classify →
+dispatch) is exactly a hand-off; D32 makes it a first-class primitive any workflow can use.
+
+**Guidance:** `run` for helpers, `dispatch` for phases/transitions; keep the graph shallow
+enough to read. Implemented in `core/workflow/workflow_executor.gd` (the trampoline is
+`_advance_chain`); `run` depth and dispatch segments are bounded separately.
 
 ---
 

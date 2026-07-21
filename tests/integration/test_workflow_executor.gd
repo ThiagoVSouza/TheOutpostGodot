@@ -374,6 +374,78 @@ func test_suspension_nested_in_if_and_loop_resumes_correctly() -> void:
 	assert_eq(_food(kernel), 1, "the trailing command ran after the loop completed")
 
 
+func _res(kernel: GameKernel, resource: String) -> int:
+	return int((kernel.state.get_value("resources", {}) as Dictionary).get(resource, 0))
+
+
+func test_dispatch_hands_off_to_another_workflow_in_one_orchestration() -> void:
+	var kernel := _kernel()
+	assert_true(kernel.workflow_registry.register({
+		"op": "workflow", "id": "grant_ten", "version": 1,
+		"params": {"amount": {"type": "int", "required": true}},
+		"steps": [{"op": "run_command", "name": "grant_resource",
+				   "args": {"resource": "food", "amount": "@amount"}}]
+	}).success)
+	var entry := {
+		"op": "workflow", "id": "start", "version": 1, "params": {},
+		"steps": [
+			{"op": "run_command", "name": "grant_resource", "args": {"resource": "food", "amount": 1}},
+			{"op": "dispatch", "workflow": "grant_ten", "args": {"amount": 10}}
+		]
+	}
+	var trace := AiTrace.new()
+	var inst := Instance.create("start", 1, {}, 1)
+	var result: RefCounted = await Executor.for_kernel(kernel).run(entry, inst, trace)
+
+	assert_true(result.succeeded(), "the whole chain completes")
+	assert_eq(_food(kernel), 11, "both segments applied their command (1 + 10)")
+	assert_has(result.applied_commands, "grant_resource")
+	# One orchestration, two segments.
+	assert_eq(result.instance.orchestration_id, inst.instance_id, "segments share the first orchestration id")
+	assert_eq(result.instance.segment, 1, "the hand-off target is segment 1")
+	assert_true(trace.has_stage("workflow_dispatched"), "the hand-off is recorded in the one trace")
+
+
+func test_dispatch_is_conditional() -> void:
+	var kernel := _kernel()
+	kernel.workflow_registry.register({"op": "workflow", "id": "give_gold", "version": 1, "params": {},
+		"steps": [{"op": "run_command", "name": "grant_resource", "args": {"resource": "gold", "amount": 3}}]})
+	kernel.workflow_registry.register({"op": "workflow", "id": "give_wood", "version": 1, "params": {},
+		"steps": [{"op": "run_command", "name": "grant_resource", "args": {"resource": "wood", "amount": 3}}]})
+	var router := {
+		"op": "workflow", "id": "router", "version": 1,
+		"params": {"kind": {"type": "string", "required": true}},
+		"steps": [{"op": "if", "cond": ["@kind", "==", "gold"],
+				   "then": [{"op": "dispatch", "workflow": "give_gold"}],
+				   "else": [{"op": "dispatch", "workflow": "give_wood"}]}]
+	}
+	await Executor.for_kernel(kernel).run(router, Instance.create("router", 1, {"kind": "gold"}, 1))
+	assert_eq(_res(kernel, "gold"), 3, "the gold branch dispatched")
+	assert_eq(_res(kernel, "wood"), 0, "the wood branch did not")
+
+
+func test_dispatch_cycle_is_caught() -> void:
+	var kernel := _kernel()
+	kernel.workflow_registry.register({"op": "workflow", "id": "pong", "version": 1, "params": {},
+		"steps": [{"op": "dispatch", "workflow": "ping"}]})
+	kernel.workflow_registry.register({"op": "workflow", "id": "ping", "version": 1, "params": {},
+		"steps": [{"op": "dispatch", "workflow": "pong"}]})
+	var entry := {"op": "workflow", "id": "ping", "version": 1, "params": {},
+		"steps": [{"op": "dispatch", "workflow": "pong"}]}
+	var result: RefCounted = await Executor.for_kernel(kernel).run(entry, Instance.create("ping", 1, {}, 1))
+	assert_eq(result.status, Instance.Status.FAILED)
+	assert_eq(result.fail_code, "dispatch_cycle", "a hand-off loop is caught, not run forever")
+
+
+func test_dispatch_to_unknown_workflow_fails() -> void:
+	var kernel := _kernel()
+	var entry := {"op": "workflow", "id": "x", "version": 1, "params": {},
+		"steps": [{"op": "dispatch", "workflow": "does_not_exist"}]}
+	var result: RefCounted = await Executor.for_kernel(kernel).run(entry, Instance.create("x", 1, {}, 1))
+	assert_eq(result.status, Instance.Status.FAILED)
+	assert_eq(result.fail_code, "unknown_workflow")
+
+
 func test_run_invokes_a_registered_sub_workflow() -> void:
 	var kernel := _kernel()
 	var child := {
