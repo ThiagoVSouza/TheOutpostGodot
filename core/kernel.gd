@@ -91,13 +91,16 @@ func boot() -> void:
 	dsl_functions = DslFunctionRegistry.new()
 	dsl_tables = DslTableRegistry.new()
 	workflow_registry = WorkflowRegistry.new()
-	# The `narrate` op's seam (A5). Fake by default — the real AiBackend-backed narrator wires
-	# in with M3b, where narration becomes an in-memory await (D30) and the executor a coroutine.
-	narrator = FakeNarrator.new()
-	# The `ai` op's classification seam (M3b): registered prompt families + the runner that
-	# resolves them. Fake runner by default; the real AiBackend-backed one wires in later.
+	# The `ai`/`narrate` seams (M3b). Against a real backend they call the model
+	# (grammar-constrained classify — D19; bounded prose — D4/D29, with the per-call timeout and
+	# T5 reporting living at the seam, D22/D30); against the fake they stay deterministic.
 	prompt_families = PromptFamilyRegistry.new()
-	ai_runner = FakeAiRunner.new()
+	if ai is FakeAiBackend:
+		narrator = FakeNarrator.new()
+		ai_runner = FakeAiRunner.new()
+	else:
+		narrator = LlamaNarrator.new(self)
+		ai_runner = LlamaAiRunner.new(self)
 
 	# 7b. Calendar + scheduler: the scheduler listens on the event bus and runs due
 	#     workflows on the DSL kernel above (validated when scheduled, run via the executor).
