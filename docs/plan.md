@@ -216,11 +216,14 @@ header separates M3 scope from target-architecture reference).
   the flow: entry workflow (`require guardrail → ai classify_intent → dispatch
   $$intent`) → forage workflow (`roll → branch → grant_resource → narrate`). The op
   vocabulary it uses — `ai` (classify), `dispatch` (hand-off), `narrate` (prose) —
-  landed in M3b-1/2. Runs end to end on `FakeAiRunner`/`FakeNarrator`; the M2
-  tool-calling orchestrator and its tests were retired (D4/D20). **Still to do:** swap
-  the fakes for the **real E2B-backed runner/narrator** (grammar-constrained, D19;
-  pipe-parsed, D20) — that's the remaining skeleton piece, and where the D17
-  measurement runs.
+  landed in M3b-1/2. The M2 tool-calling orchestrator and its tests were retired
+  (D4/D20). **Real E2B-backed runner/narrator now built and verified live:**
+  `LlamaAiRunner` (grammar-constrained classify, D19) + `LlamaNarrator` (bounded
+  prose), auto-selected when a real backend is active; timeout + T5 reporting live at
+  the seam (`LlamaAiCall`). A live forage turn on E2B classified, dispatched, granted
+  the table's `5`, and narrated "five units of food" — **D4 holding on a real model**
+  (`docs/benchmarks/m3b_walking_skeleton_e2b.md`). **Remaining:** the D17
+  classification-stability measurement across models/phrasings/languages.
 - **Measure classification stability** (D17) across models, phrasings and input
   languages before trusting the difficulty enum. This is the +17/+20/+15
   measurement repeated on the new design — the one number that says whether the
