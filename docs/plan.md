@@ -224,10 +224,15 @@ header separates M3 scope from target-architecture reference).
   the table's `5`, and narrated "five units of food" — **D4 holding on a real model**
   (`docs/benchmarks/m3b_walking_skeleton_e2b.md`). **Remaining:** the D17
   classification-stability measurement across models/phrasings/languages.
-- **Measure classification stability** (D17) across models, phrasings and input
-  languages before trusting the difficulty enum. This is the +17/+20/+15
-  measurement repeated on the new design — the one number that says whether the
-  approach works. If it lands poorly, rethink rather than patch.
+- **Measure classification stability** (D17) — **first result in, and it holds.**
+  `tools/measure_classification.gd`: difficulty (`low|medium|hard`), grammar-constrained,
+  temp 0, reason-in-English (D29), across 3 actions × 3 languages (en/pt/es) × 2 phrasings
+  on **E2B**. **18/18 within-action stability** — every action got one identical verdict
+  regardless of phrasing or language. The language-divergence that broke the old design
+  (Bonsai-4B: 3 outcomes in pt/es/fr) **does not reproduce**
+  (`docs/benchmarks/d17_classification_stability.md`). Caveats: one model (E2B, the shipping
+  default); one action read `low` vs the guessed `medium` — calibration, not instability;
+  small action set. **Next:** repeat across the ladder (E4B/Qwen/Bonsai) + widen the actions.
 - AI output only via the pipe protocol (D20); `tool_calls` retired
 - Rules own every number. The AI never emits a `grant_resource` amount.
 - Rework `AiOrchestrator`: it currently does the brief's model-driven tool calling,
