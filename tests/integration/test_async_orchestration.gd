@@ -1,10 +1,12 @@
 extends GutTest
 
-## D22 contract tests: the seam is genuinely async, cancellation stops state changes,
-## overlapping orchestrations are rejected, and the orchestrator-owned timeout fires.
+## D22 contract tests: the AiRequest seam is genuinely async and cancellable, and the
+## orchestrator rejects overlapping turns (busy guard). Per-call timeout and cancel of an
+## in-flight model call moved to the AI runner/narrator seams with the ribosome (D30), so
+## those orchestrator-level tests retired with the M2 tool-calling path.
 
 
-## A backend that never answers — for timeout and cancel-hook tests.
+## A backend that never answers — for the cancel-hook test.
 class StuckAiBackend:
 	extends AiBackend
 	var last_request: AiRequest = null
@@ -77,36 +79,6 @@ func test_cancel_runs_backend_cancel_hook() -> void:
 
 # --- orchestrator behavior ---
 
-func test_cancel_mid_turn_stops_pipeline_and_state() -> void:
-	var kernel := _make_kernel()
-	var fake := kernel.ai as FakeAiBackend
-	fake.queue_responses("forage", [
-		{"tool_calls": [{"name": "roll_die", "args": {"sides": 6, "count": 1, "seed": 1}}]},
-		{"commands": [{"name": "grant_resource", "args": {"resource": "food", "amount": 3}}],
-			"narrative": "should never arrive"},
-	])
-
-	# Capture-lambda pattern: cancel() resumes the pipeline synchronously, so the
-	# coroutine may already be completed by the time we look — awaiting it directly
-	# would hang on its already-emitted completion signal.
-	var holder := {}
-	var runner := func() -> void:
-		holder["result"] = await kernel.ai_orchestrator.handle_message("forage for food")
-	runner.call()
-	kernel.ai_orchestrator.cancel()
-	if not holder.has("result"):
-		await wait_frames(10)
-	assert_true(holder.has("result"), "orchestration must finish after cancel")
-	var result: Dictionary = holder["result"]
-
-	assert_false(bool(result["ok"]))
-	assert_eq(String(result["error"]), "cancelled")
-	var resources: Dictionary = kernel.state.get_value("resources", {})
-	assert_eq(int(resources.get("food", 0)), 0, "no state change after cancel")
-	var trace: AiTrace = result["trace"]
-	assert_true(trace.has_stage("cancelled"))
-
-
 func test_busy_guard_rejects_overlapping_message() -> void:
 	var kernel := _make_kernel()
 	var holder := {}
@@ -122,18 +94,6 @@ func test_busy_guard_rejects_overlapping_message() -> void:
 	var result: Dictionary = holder["first"]
 	assert_true(bool(result["ok"]), "the first orchestration is unaffected")
 	assert_false(kernel.ai_orchestrator.is_busy())
-
-
-func test_timeout_fails_a_stuck_backend() -> void:
-	var kernel := _make_kernel()
-	kernel.ai = StuckAiBackend.new()
-	kernel.ai_orchestrator.ai_timeout_seconds = 0.05
-	var result: Dictionary = await kernel.ai_orchestrator.handle_message("hello there outpost")
-	assert_false(bool(result["ok"]))
-	assert_eq(String(result["error"]), "timeout")
-	var trace: AiTrace = result["trace"]
-	assert_true(trace.has_stage("ai_failed"))
-	assert_false(kernel.ai_orchestrator.is_busy(), "orchestrator recovers after timeout")
 
 
 func test_orchestrator_idle_cancel_is_noop() -> void:

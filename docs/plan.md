@@ -211,9 +211,16 @@ header separates M3 scope from target-architecture reference).
   D23: ~36 MiB per warm 4K slot, automatic LCP slot routing (no pinning),
   warm routing calls ~36 ms. The micro-prompt design stands. Phone re-measure
   deferred to M6.
-- **Walking skeleton:** grammar-constrained intent classification (real E2B)
-  → one deterministic workflow on the M3a kernel → bounded narration → trace
-  (D21 settled; the writer ships in M3a)
+- **Walking skeleton** — **built with fakes (M3b-3)**: `AiOrchestrator` is now the
+  ribosome (D30) — it runs one hardcoded entry workflow per turn. base_game authors
+  the flow: entry workflow (`require guardrail → ai classify_intent → dispatch
+  $$intent`) → forage workflow (`roll → branch → grant_resource → narrate`). The op
+  vocabulary it uses — `ai` (classify), `dispatch` (hand-off), `narrate` (prose) —
+  landed in M3b-1/2. Runs end to end on `FakeAiRunner`/`FakeNarrator`; the M2
+  tool-calling orchestrator and its tests were retired (D4/D20). **Still to do:** swap
+  the fakes for the **real E2B-backed runner/narrator** (grammar-constrained, D19;
+  pipe-parsed, D20) — that's the remaining skeleton piece, and where the D17
+  measurement runs.
 - **Measure classification stability** (D17) across models, phrasings and input
   languages before trusting the difficulty enum. This is the +17/+20/+15
   measurement repeated on the new design — the one number that says whether the
