@@ -196,6 +196,32 @@ func test_rejects_non_operator_array_expression() -> void:
 	assert_false(_v().validate(def).success, "a bare array is not a valid expression")
 
 
+# --- narrate op (A5) ---
+
+func test_accepts_a_narrate_op() -> void:
+	var def := {"op": "workflow", "id": "x", "version": 1, "params": {}, "steps": [
+		{"op": "narrate", "instruction": "describe the hit",
+		 "context": {"damage": 6}, "verbosity": "short", "language": "en", "as": "$$line"}
+	]}
+	var r := _v().validate(def)
+	assert_true(r.success, "a well-formed narrate should validate: %s" % r.message)
+
+
+func test_rejects_narrate_without_instruction() -> void:
+	var def := {"op": "workflow", "id": "x", "version": 1, "params": {}, "steps": [
+		{"op": "narrate", "verbosity": "short"}
+	]}
+	assert_false(_v().validate(def).success, "narrate needs an instruction")
+
+
+func test_rejects_computed_narrate_instruction() -> void:
+	# Instructions are authored, never computed (D4) — a reference is rejected.
+	var def := {"op": "workflow", "id": "x", "version": 1, "params": {}, "steps": [
+		{"op": "narrate", "instruction": "@from_the_model"}
+	]}
+	assert_false(_v().validate(def).success, "narrate.instruction must be a plain literal")
+
+
 # --- control-flow rejections ---
 
 func test_rejects_break_outside_a_loop() -> void:

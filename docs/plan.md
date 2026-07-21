@@ -154,9 +154,14 @@ and traces a human can read to verify an orchestration behaved correctly.
   in the new DSL (`let`/`emit`/`run_command`; its old `narrate` free-text line became
   an `emit` of a message key + values, per the i18n discipline). The chat screen
   renders `workflow_emit`. **`WorkflowEngine` v0 and its test are deleted.** 131 green.
-- **Narration contract** (D4 amendment) — **still to do (A5)**: the AI `narrate` op —
-  instruction, context, verbosity, output language. (Distinct from the month-end
-  `emit`: `narrate` is AI-generated prose; `emit` is a canned localizable line.)
+- **Narration contract** (D4 amendment) — **done (A5)**: the `narrate` op —
+  instruction, context, verbosity, output language — is registered vocabulary
+  (effectful, statement-only), validated (instruction/verbosity are authored
+  literals, never computed — D4), and executed through a `DslNarrator` seam
+  (`FakeNarrator` default). It surfaces prose as `result.narration`, a
+  `workflow_narrated` event, and an optional `$$as` binding. **Seam is synchronous
+  for now** — the real `AiBackend`-backed narrator makes it an in-memory await (D30)
+  and turns the executor into a coroutine; that lands with M3b. 5 tests.
 
 **Exit — met** (A1+A3+A4): the month-end workflow runs on the new kernel with v0
 deleted; a suspended instance survives a restart; a trace of one orchestration is

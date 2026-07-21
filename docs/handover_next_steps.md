@@ -403,15 +403,27 @@ deleted; `kernel.workflows` removed.** 131 tests green.
 game-time wake re-arming in the scheduler is future work, not this migration. Month-end
 does not suspend.
 
-### A5 — Narration contract (D4 amendment)
+### A5 — Narration contract (D4 amendment) — **DONE**
 
 The `narrate` op: instruction, context, verbosity, output language. Instructions
 narrow enough that high verbosity decorates rather than invents. Expected to be too
 tight — widen from real scenarios, not speculation.
 
-**M3a exit — MET** (A1 traces + A3 restart-survival + A4 migration): month-end workflow
-runs on the new kernel with v0 deleted; a suspended instance survives restart; one trace
-reads end to end. A5 (the AI `narrate` op) remains an M3a task but is not an exit gate.
+**Landed as:** `narrate` registered in `op_registry.gd` (effectful, statement-only;
+`instruction`/`verbosity` = authored literals, `context` = expr dict, `language` =
+expr so `@lang` works, `as` = optional local). Executed in `workflow_executor.gd`
+via a **`DslNarrator` seam** (`core/workflow/dsl_narrator.gd`) with a deterministic
+`FakeNarrator` (`fake_narrator.gd`) default, wired as `kernel.narrator`. Surfaces
+prose as `RunResult.narration`, a `workflow_narrated` event, and an optional `$$as`
+binding. 5 tests. **Key scope call:** the seam is **synchronous** — wiring the real
+`AiBackend` behind it makes narration an in-memory await (D30) and turns the executor
+into a coroutine (ripples to `Scheduler`). That's deliberately deferred to **M3b**,
+where there's an actual turn to narrate; A5 delivers the op + contract + a fake.
+
+**M3a COMPLETE** — all of A1–A5 done. Exit criteria met (A1 traces + A3 restart-survival +
+A4 migration); A5 (the `narrate` op) also landed. **Next is M3b** — deterministic
+orchestration — which is where the real AiBackend-backed narrator wires in and the executor
+becomes a coroutine (D30 in-memory awaits).
 
 **Then M3b** — deterministic orchestration. **GATE 0 applies again there**, and its
 first real task is measuring difficulty-classification stability across models,

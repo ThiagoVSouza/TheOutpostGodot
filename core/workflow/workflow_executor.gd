@@ -53,6 +53,7 @@ class RunResult:
 	var emits: Array = []              # [{type, msg, values}]
 	var applied_commands: Array = []
 	var wake: Dictionary = {}          # set when SUSPENDED
+	var narration: String = ""         # the last `narrate` prose produced this run
 	var instance: WorkflowInstance
 
 	func succeeded() -> bool:
@@ -67,11 +68,13 @@ var _globals: GlobalStore
 var _functions: DslFunctionRegistry
 var _tables: DslTableRegistry
 var _workflows: WorkflowRegistry
+var _narrator: DslNarrator
 
 
 func _init(state: GameState, command_registry: CommandRegistry, commands: CommandBus,
 		events: EventBus, globals: GlobalStore, functions: DslFunctionRegistry,
-		tables: DslTableRegistry, workflows: WorkflowRegistry = null) -> void:
+		tables: DslTableRegistry, workflows: WorkflowRegistry = null,
+		narrator: DslNarrator = null) -> void:
 	_state = state
 	_command_registry = command_registry
 	_commands = commands
@@ -80,13 +83,15 @@ func _init(state: GameState, command_registry: CommandRegistry, commands: Comman
 	_functions = functions
 	_tables = tables
 	_workflows = workflows
+	# A fake by default so a workflow with a `narrate` op still runs without a wired narrator.
+	_narrator = narrator if narrator != null else FakeNarrator.new()
 
 
 ## Convenience constructor from a booted kernel.
 static func for_kernel(kernel: GameKernel) -> WorkflowExecutor:
 	return WorkflowExecutor.new(kernel.state, kernel.command_registry, kernel.commands,
 		kernel.events, kernel.globals, kernel.dsl_functions, kernel.dsl_tables,
-		kernel.workflow_registry)
+		kernel.workflow_registry, kernel.narrator)
 
 
 ## Run [param instance] against [param definition] (a validated `steps` tree). [param trace]
@@ -200,6 +205,8 @@ func _exec_statement(stmt: Dictionary, instance: WorkflowInstance, ctx: Workflow
 			return _exec_run_command(stmt, ctx, result, instance, trace)
 		"emit":
 			return _exec_emit(stmt, ctx, result, trace)
+		"narrate":
+			return _exec_narrate(stmt, ctx, instance, result, trace)
 		"if":
 			return _exec_if(stmt, ctx)
 		"foreach":
@@ -252,6 +259,27 @@ func _exec_emit(stmt: Dictionary, ctx: WorkflowRuntimeContext, result: RunResult
 		_events.emit("workflow_emit", record)
 	if trace != null:
 		trace.add("workflow_emit", record)
+	return {"action": Action.CONTINUE}
+
+
+## Bounded narration (A5): hand the narrator the authored instruction, the decided facts, a
+## verbosity and an output language; surface the prose. The narrator invents no numbers — every
+## value in `context` was already decided by earlier code (D4).
+func _exec_narrate(stmt: Dictionary, ctx: WorkflowRuntimeContext, instance: WorkflowInstance,
+		result: RunResult, trace: AiTrace) -> Dictionary:
+	var instruction := String(stmt["instruction"])
+	var context := _eval_args(stmt.get("context", {}), ctx)
+	var verbosity := String(stmt.get("verbosity", "normal"))
+	var language := String(_eval(stmt.get("language", "en"), ctx))
+	var prose := _narrator.narrate(instruction, context, verbosity, language)
+	result.narration = prose
+	if stmt.has("as"):
+		instance.locals[_local_name(stmt["as"])] = prose
+	var record := {"instruction": instruction, "verbosity": verbosity, "language": language, "text": prose}
+	if _events != null:
+		_events.emit("workflow_narrated", record)
+	if trace != null:
+		trace.add("workflow_narrated", record)
 	return {"action": Action.CONTINUE}
 
 

@@ -133,6 +133,17 @@ func _seed_core() -> void:
 	emit.args_fields = PackedStringArray(["values"])
 	register(emit)
 
+	# Bounded AI narration (A5, D4 amendment #3): produces player-facing prose from decided
+	# facts. `instruction`/`verbosity` are authored literals (never computed — D4); `context`
+	# is a dict of expressions (the decided facts); `language` may be a literal or a param
+	# (D29); `as` optionally binds the prose to a local.
+	var narrate := OpSpec.new("narrate", false, false, true, PackedStringArray(["instruction"]))
+	narrate.literal_fields = PackedStringArray(["instruction", "verbosity"])
+	narrate.expr_fields = PackedStringArray(["language"])
+	narrate.args_fields = PackedStringArray(["context"])
+	narrate.local_ref_fields = PackedStringArray(["as"])
+	register(narrate)
+
 	var run := OpSpec.new("run", false, false, true, PackedStringArray(["workflow"]))
 	run.literal_fields = PackedStringArray(["workflow"])
 	run.args_fields = PackedStringArray(["args"])
