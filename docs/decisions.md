@@ -41,6 +41,7 @@ Measurements: `docs/benchmarks/milestone1_results.md`. Architecture: `docs/initi
 | **D28** | Authoring toolchain: one headless authoring backend | **Decided** |
 | **D29** | Orchestration reasons in English; only narration is localized | **Decided** |
 | **D30** | The orchestrator is a fixed executor; guardrails, classification and narration are workflows (the "ribosome" model) | **Decided** |
+| **D31** | Global variables: a writable, non-authoritative, persisted workflow scope beside game state | **Decided** |
 | **D17** | Benchmarking method — how to not fool yourself | Reference |
 
 Roadmap and current status: `docs/plan.md`.
@@ -716,11 +717,19 @@ are **fully parenthesized** (`[left, "op", right]`) so operator precedence never
 exists inside the canonical format. Conditionals are self-contained nodes.
 `foreach` over finite validated collections and `for` with constant bounds are the
 only loops — **no `while`**, because an iteration cap is a tourniquet, not a
-termination proof. No globals: params (`@`) and instance locals (`$$`) only; game
-state is read through ops and written only via whitelisted commands. Effectful ops
-appear at statement level only, so a resume point is always a stack of array
-indices. Failure is **fail-fast** with a typed code. Validation is strict and
-happens **once at registration**, keeping the runtime lean enough for a phone.
+termination proof. Params (`@`) and instance locals (`$$`) are the working scopes;
+game state is read through ops and written only via whitelisted commands. (D24 as
+first written had *no* globals; **D31 later added a non-authoritative global scope**
+beside game state — the command choke point is untouched.) Effectful ops appear at
+statement level only, so a resume point is always a stack of array indices. Failure
+is **fail-fast** with a typed code. Validation is strict and happens **once at
+registration**, keeping the runtime lean enough for a phone.
+
+**A2 build note (2026-07-20):** the kernel's registration-time layer is implemented
+in `core/workflow/dsl/` — `op_registry.gd` (vocabulary + purity flags),
+`dsl_ref.gd` (sigils), `expression_evaluator.gd`, `workflow_validator.gd` — with the
+syntax details settled in the A2 review (atomic sigils, explicit `get`, lowercase
+operators; see brainstorm §4/§12). Execution/resumption is A3.
 
 Every gameplay number comes from a rule table, a registered pure function, or a
 seeded roll — never from free authoring, never from the model (D4).
@@ -908,6 +917,53 @@ amendment both described the orchestrator as "shrinks to: guardrails → classif
 run instance → narrate" — a fixed four-stage pipeline. That phrasing is corrected
 by this decision (see `docs/plan.md` M3b) to: one hardcoded entry-workflow id,
 everything else authored.
+
+---
+
+## D31 — Global variables: a writable, non-authoritative, persisted workflow scope beside game state
+
+**Decided** (2026-07-20) — amends D4; settled in the A2 syntax review
+
+The DSL gains a third data tier beside params (`@`, caller-set, read-only) and
+instance locals (`$$`, private to one workflow instance): **global variables**, a
+key-value store any workflow can read and write, shared across all workflows. This
+restores the cross-workflow shared scratch that Nortrix had and that coordination
+genuinely needs, without reopening D4 — because of one hard invariant.
+
+**The invariant (this is what keeps D4 alive):** globals are **non-authoritative**.
+A global may hold coordination data — counters, flags, last-classified-intent,
+orchestration/UI scratch — but **never** the source of an authoritative game number.
+Balance still comes only from rules, rolls and state, applied through commands. A
+`run_command` never derives an authoritative amount from a global. The day a global
+needs to become a real game effect, it goes through a command like everything else.
+Game state (`read_state`/`run_command`, the D4 choke point) is untouched; globals sit
+*beside* it, not over it.
+
+**Syntax — explicit ops, no new sigil** (consistent with choosing explicit `get`
+over dotted sigils in the same review):
+- read: `{"op": "get_global", "name": "turn_counter"}` — **pure**, expression position.
+- write: `{"op": "set_global", "name": "turn_counter", "value": <expr>}` — **effectful**,
+  statement position (like `run_command`: a statement-level effect, never inside an
+  expression).
+
+**Persistence:** globals are **part of the save contract** (§5.2), restored on reload
+alongside game state and suspended instances. Definition/versioning discipline applies
+as it does to locals.
+
+**Two guardrails carried from D30:**
+- **Traced.** A `set_global` is recorded in the orchestration trace (A1), so the audit
+  trail and replay stay whole even though the write is not a `CommandBus` mutation.
+- **Capability-gated.** Writing globals is a privileged capability: the base game and
+  the entry orchestration hold it; DLC and (eventually) AI-authored content run under a
+  profile that does not. This is D30's capability boundary doing exactly its job —
+  untrusted content cannot use globals to route around the command layer.
+
+**Residual risk:** "non-authoritative" is a discipline, not something the type system
+proves. An author *could* stash a damage number in a global and feed it to a command.
+The mitigations are the capability gate (untrusted content can't write globals at all),
+code review of privileged content, and the trace (a global feeding a command's
+authoritative arg is visible). Watched, not eliminated — same posture as D4's residual
+narration risk.
 
 ---
 

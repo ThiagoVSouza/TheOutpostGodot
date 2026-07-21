@@ -327,7 +327,7 @@ their own pointed at a scratch dir (`tests/unit/test_ai_trace_writer.gd`,
 `AiTraceWriter` `class_name`, run `--import` once** or dependent scripts fail to
 parse (the standing global-class-cache gotcha).
 
-### A2 — DSL core (D24)
+### A2 — DSL core (D24) — **DONE**
 
 Op registry with a `pure: true/false` flag per op, expression layer (fully
 parenthesized, no precedence anywhere in canonical form), and the
@@ -335,16 +335,54 @@ parenthesized, no precedence anywhere in canonical form), and the
 statement-level structurally, and D19's grammar generation later reads the same
 `pure` flag — one source of truth.
 
-**Watch for:** §12's open details land here — sigil escaping, the exact expression
-op set, rule-table format and lookup semantics.
+**Landed as:** `core/workflow/dsl/` — `op_registry.gd` (vocabulary + purity flags;
+grammar keywords like `if`/`let` are NOT registry ops, D27), `dsl_ref.gd` (sigil
+rule shared by validator + evaluator), `dsl_eval_context.gd` (read-only seam),
+`expression_evaluator.gd`, `workflow_validator.gd`. 36 tests across
+`test_op_registry.gd`, `test_dsl_expression_evaluator.gd`, `test_workflow_validator.gd`.
 
-### A3 — Resumable instances (D25)
+**§12 details settled in a syntax review with the user (see brainstorm §4/§12):**
+atomic sigils + explicit `get` op (no dotted access); lowercase operators
+(`== != < <= > >=`, `+ - * / %`, `and`/`or`/`not`, `in`/`contains`, `+` concatenates);
+computed keys allowed but discouraged; flat per-instance `$$` scope; and a new
+**global-variable scope — D31** (`get_global`/`set_global`, non-authoritative,
+persisted, capability-gated, traced; amends D4). Rule-table range-rows deferred to
+M3b. **Gotchas:** JSON parses `1` as a **float** (no int type) — integer-valued
+fields must accept integral floats (bit the validator; will bite the A3 executor);
+GDScript Variant `==` **raises** on String-vs-number rather than returning false
+(guard cross-type equality). Run `--import` after adding the new `class_name`s.
+
+**Not built here (A3's job):** execution, `$$`/global binding at runtime, suspension
+& checkpointing, the real kernel-backed `DslEvalContext`, `set_global` effect + trace.
+
+### A3 — Resumable instances (D25) — **DONE**
 
 Checkpoint at suspension points, the instance snapshot as save contract,
 `resume_require` on every suspension, `pc_stack` encoding.
 
 **Done when:** a suspended instance survives an app restart and resumes correctly —
 and re-validates rather than trusting the world it left.
+
+**Landed as:** `core/workflow/` — `global_store.gd` (D31), `dsl_function_registry.gd`
++ `dsl_table_registry.gd` (the names `fn`/`table_get` resolve through),
+`dsl/workflow_runtime_context.gd` (real kernel-backed `DslEvalContext`),
+`workflow_instance.gd` (the §5.2 snapshot + `to_dict`/`from_dict`),
+`workflow_registry.gd`, and `workflow_executor.gd` (the engine). All wired into
+`GameKernel`; construct per run via `WorkflowExecutor.for_kernel(kernel)`. 25 tests.
+
+**Key design call (settled in review):** the executor uses an **explicit control
+stack**, not native recursion, so a resume point serializes. `pc_stack` is a
+**structured resume path** — one descriptor per frame `{sel, at, pc, loop?}` where
+`sel` ∈ root/then/else/elif:N/body; loop frames carry their remaining values + pos so
+a resumed loop advances deterministically. Resume re-walks the tree by the path,
+re-checks `resume_require` first (§5.3, fails `stale_context`), and a declined
+`confirm` cancels. Verified surviving a JSON round-trip incl. suspension nested in a
+loop's if-branch. **`for` is half-open `[from, to)`. Rolls: k-th roll derives from
+(seed, roll_count) — only `roll_count` is persisted, no RNG blob.**
+
+**Deferred (noted):** nested *sub-workflow* suspension (`run` of a child that
+suspends) fails `nested_suspension_unsupported` for now; `table_get` range-rows (M3b);
+full save-folder wiring is M4 (the instance snapshot is already the contract).
 
 ### A4 — Migrate off v0 `WorkflowEngine`
 
