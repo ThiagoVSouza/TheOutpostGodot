@@ -222,6 +222,22 @@ func test_rejects_computed_narrate_instruction() -> void:
 	assert_false(_v().validate(def).success, "narrate.instruction must be a plain literal")
 
 
+# --- dispatch op (M3b hand-off) ---
+
+func test_accepts_a_dispatch_op() -> void:
+	var def := {"op": "workflow", "id": "x", "version": 1, "params": {}, "steps": [
+		{"op": "dispatch", "workflow": "next_phase", "args": {"intent": "$$intent"}}
+	]}
+	assert_true(_v().validate(def).success, "a well-formed dispatch should validate")
+
+
+func test_rejects_dispatch_without_workflow() -> void:
+	var def := {"op": "workflow", "id": "x", "version": 1, "params": {}, "steps": [
+		{"op": "dispatch", "args": {}}
+	]}
+	assert_false(_v().validate(def).success, "dispatch needs a target workflow")
+
+
 # --- control-flow rejections ---
 
 func test_rejects_break_outside_a_loop() -> void:

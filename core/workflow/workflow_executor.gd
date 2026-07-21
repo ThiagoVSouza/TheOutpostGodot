@@ -19,7 +19,9 @@ extends RefCounted
 const MAX_RUN_DEPTH: int = 16
 
 ## What executing one statement asks the run loop to do next.
-enum Action { CONTINUE, PUSH, BREAK, FAIL, SUSPEND }
+enum Action { CONTINUE, PUSH, BREAK, FAIL, SUSPEND, DISPATCH }
+
+const MAX_SEGMENTS: int = 32  # hand-off chain length bound (dispatch)
 
 
 class Frame:
@@ -54,6 +56,7 @@ class RunResult:
 	var applied_commands: Array = []
 	var wake: Dictionary = {}          # set when SUSPENDED
 	var narration: String = ""         # the last `narrate` prose produced this run
+	var dispatch: Dictionary = {}      # {workflow, args} while a hand-off is pending
 	var instance: WorkflowInstance
 
 	func succeeded() -> bool:
@@ -104,7 +107,8 @@ func run(definition: Dictionary, instance: WorkflowInstance, trace: AiTrace = nu
 	if trace != null:
 		trace.add("workflow_started", {"workflow": instance.workflow_id, "instance": instance.instance_id})
 	var stack: Array = [Frame.new(definition.get("steps", []) as Array)]
-	return await _execute(stack, definition, instance, result, trace, depth)
+	result = await _execute(stack, definition, instance, result, trace, depth)
+	return await _advance_chain(result, trace, depth, {_ref(instance): true})
 
 
 ## Resume a suspended instance (D25/§5.3). [param outcome] carries the wake result — for a
@@ -131,7 +135,42 @@ func resume(definition: Dictionary, instance: WorkflowInstance, outcome: Diction
 	instance.status = WorkflowInstance.Status.RUNNING
 	if trace != null:
 		trace.add("workflow_resumed", {"instance": instance.instance_id})
-	return await _execute(_rebuild_stack(definition, instance), definition, instance, result, trace, depth)
+	result = await _execute(_rebuild_stack(definition, instance), definition, instance, result, trace, depth)
+	return await _advance_chain(result, trace, depth, {_ref(instance): true})
+
+
+## The dispatch trampoline (M3b): while the last segment ended in a hand-off, run the next
+## workflow as a new segment — same orchestration and trace, bounded args, no growing stack
+## (which is what lets a mid-chain segment suspend and resume on its own). Bounded by segment
+## count and a cycle guard so a non-linear graph can never run away.
+func _advance_chain(result: RunResult, trace: AiTrace, depth: int, visited: Dictionary) -> RunResult:
+	while not result.dispatch.is_empty():
+		var from_inst: WorkflowInstance = result.instance
+		var ref := String(result.dispatch["workflow"])
+		var args: Dictionary = result.dispatch.get("args", {})
+		var seg := from_inst.segment + 1
+		if seg > MAX_SEGMENTS:
+			return _fail(result, from_inst, "dispatch_budget", "hand-off chain exceeded MAX_SEGMENTS", trace)
+		if visited.has(ref):
+			return _fail(result, from_inst, "dispatch_cycle", "hand-off returns to \"%s\"" % ref, trace)
+		visited[ref] = true
+		var next_def: Variant = _workflows.get_definition(ref) if _workflows != null else null
+		if not (next_def is Dictionary):
+			return _fail(result, from_inst, "unknown_workflow", "no dispatch target \"%s\"" % ref, trace)
+		var def := next_def as Dictionary
+		var next_inst := WorkflowInstance.dispatched(def, args, from_inst.orchestration_id, seg)
+		if trace != null:
+			trace.add("workflow_dispatched", {"from": from_inst.workflow_id, "to": ref, "segment": seg})
+		# One accumulating result across the whole turn: same object, new segment's instance.
+		result.dispatch = {}
+		result.instance = next_inst
+		result = await _execute([Frame.new(def.get("steps", []) as Array)], def, next_inst, result, trace, depth)
+	return result
+
+
+## A workflow's chain-identity key, for the cycle guard.
+func _ref(instance: WorkflowInstance) -> String:
+	return "%s@%d" % [instance.workflow_id, instance.workflow_version]
 
 
 ## The shared run loop, over an explicit control stack — driven fresh by [method run] or from
@@ -164,6 +203,12 @@ func _execute(stack: Array, definition: Dictionary, instance: WorkflowInstance, 
 				instance.pc_stack = _capture_pc_stack(stack)
 				instance.resume_require = _as_array(outcome.get("resume_require", []))
 				return _suspend(result, instance, outcome["wake"], trace)
+			Action.DISPATCH:
+				# Tail hand-off: this segment is done; the trampoline runs the next one.
+				result.dispatch = {"workflow": String(outcome["workflow"]), "args": outcome.get("args", {})}
+				instance.status = WorkflowInstance.Status.COMPLETED
+				instance.pc_stack = []
+				return result
 
 	instance.status = WorkflowInstance.Status.COMPLETED
 	instance.pc_stack = []
@@ -217,6 +262,10 @@ func _exec_statement(stmt: Dictionary, instance: WorkflowInstance, ctx: Workflow
 			return {"action": Action.BREAK}
 		"run":
 			return await _exec_run(stmt, ctx, result, trace, depth)
+		"dispatch":
+			# Hand off to another workflow (tail-call, no return). The trampoline picks it up.
+			return {"action": Action.DISPATCH, "workflow": String(stmt["workflow"]),
+				"args": _eval_args(stmt.get("args", {}), ctx)}
 		"wait_game_time":
 			return {"action": Action.SUSPEND,
 				"wake": {"type": "game_time", "at_day": _eval(stmt.get("until_day", null), ctx)},

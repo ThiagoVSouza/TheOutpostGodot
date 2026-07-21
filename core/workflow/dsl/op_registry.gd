@@ -149,6 +149,14 @@ func _seed_core() -> void:
 	run.args_fields = PackedStringArray(["args"])
 	register(run)
 
+	# Hand off to another workflow (M3b): a tail-call, not a return. Unlike `run` it does not
+	# come back — the turn continues as a new segment (same orchestration + trace). This is the
+	# phase/transition primitive; `run` stays the call/return helper primitive.
+	var dispatch := OpSpec.new("dispatch", false, false, true, PackedStringArray(["workflow"]))
+	dispatch.literal_fields = PackedStringArray(["workflow"])
+	dispatch.args_fields = PackedStringArray(["args"])
+	register(dispatch)
+
 	# Suspension points (execution/checkpointing is A3; here they are just vocabulary). Their
 	# resume_require / scope fields get light structural validation in the validator.
 	var wait_game_time := OpSpec.new("wait_game_time", false, false, true, PackedStringArray(["until_day"]))
