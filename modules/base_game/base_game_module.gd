@@ -32,16 +32,20 @@ func register(kernel: GameKernel) -> void:
 	)
 
 
-## A tiny, validated workflow: read the food stores, narrate a month-end line, and grant
+## A tiny, validated workflow on the A3 kernel: read the food stores, emit a localizable
+## month-end line (key + values, never an assembled string — D24 i18n discipline), and grant
 ## a little upkeep gold. Demonstrates the DSL end to end.
 func _end_of_month_workflow() -> Dictionary:
 	return {
+		"op": "workflow",
 		"id": "end_of_month_report",
 		"version": 1,
 		"origin": "base_game",
+		"params": {},
 		"steps": [
-			{"op": "read_state", "key": "resources.food", "as": "food", "default": 0},
-			{"op": "narrate", "text": "The month draws to a close. The stores hold ${food} food."},
+			{"op": "let", "as": "$$food",
+			 "value": {"op": "read_state", "path": ["resources", "food"]}},
+			{"op": "emit", "msg": "base_game.month_end", "values": {"food": "$$food"}},
 			{"op": "run_command", "name": "grant_resource", "args": {"resource": "gold", "amount": 1}},
 		],
 	}

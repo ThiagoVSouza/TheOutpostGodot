@@ -25,6 +25,9 @@ func test_scheduled_on_day_runs_once() -> void:
 	var ran: Array = []
 	kernel.events.subscribe("workflow_ran", func(_p: Dictionary) -> void: ran.append(1))
 
-	kernel.scheduler.schedule_on_day(3, {"steps": [{"op": "narrate", "text": "day three"}]})
+	kernel.scheduler.schedule_on_day(3, {
+		"op": "workflow", "id": "day_three", "version": 1, "params": {},
+		"steps": [{"op": "emit", "msg": "test.day_three"}]
+	})
 	kernel.clock.advance(5)
 	assert_eq(ran.size(), 1, "day-scheduled workflow runs exactly once")

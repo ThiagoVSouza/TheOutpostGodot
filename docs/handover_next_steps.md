@@ -384,11 +384,24 @@ loop's if-branch. **`for` is half-open `[from, to)`. Rolls: k-th roll derives fr
 suspends) fails `nested_suspension_unsupported` for now; `table_get` range-rows (M3b);
 full save-folder wiring is M4 (the instance snapshot is already the contract).
 
-### A4 — Migrate off v0 `WorkflowEngine`
+### A4 — Migrate off v0 `WorkflowEngine` — **DONE**
 
 Consumers: `Scheduler`, `AiOrchestrator._handle_schedule`, base_game's month-end
 workflow, `test_workflow_engine.gd`, `test_scheduler.gd`. **Delete v0 in its own
 PR** so the migration reviews separately from the build.
+
+**Landed as:** `Scheduler` now validates a def when scheduled (`WorkflowValidator`) and
+runs it via `WorkflowExecutor.for_kernel(kernel)` as a fresh `WorkflowInstance`; it no
+longer takes/uses `WorkflowEngine`. `AiOrchestrator._handle_schedule` validates with
+`WorkflowValidator` (dropped `kernel.workflows.validate_definition/default_capabilities`).
+base_game's month-end workflow rewritten in the new DSL — the v0 `narrate` free-text line
+(`"...${food}..."`) became `emit {msg: "base_game.month_end", values: {food: $$food}}`
+(i18n discipline), and the chat screen renders `workflow_emit` instead of the retired
+`workflow_narrative`. **`core/workflow/workflow_engine.gd` + `test_workflow_engine.gd`
+deleted; `kernel.workflows` removed.** 131 tests green.
+**Note:** a scheduled workflow that *suspends* reports `ok: false` and is not re-armed —
+game-time wake re-arming in the scheduler is future work, not this migration. Month-end
+does not suspend.
 
 ### A5 — Narration contract (D4 amendment)
 
@@ -396,8 +409,9 @@ The `narrate` op: instruction, context, verbosity, output language. Instructions
 narrow enough that high verbosity decorates rather than invents. Expected to be too
 tight — widen from real scenarios, not speculation.
 
-**M3a exit:** month-end workflow runs on the new kernel with v0 deleted; a suspended
-instance survives restart; one trace reads end to end.
+**M3a exit — MET** (A1 traces + A3 restart-survival + A4 migration): month-end workflow
+runs on the new kernel with v0 deleted; a suspended instance survives restart; one trace
+reads end to end. A5 (the AI `narrate` op) remains an M3a task but is not an exit gate.
 
 **Then M3b** — deterministic orchestration. **GATE 0 applies again there**, and its
 first real task is measuring difficulty-classification stability across models,

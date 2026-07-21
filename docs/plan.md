@@ -148,15 +148,19 @@ and traces a human can read to verify an orchestration behaved correctly.
   JSON round-trip — including suspension nested inside a loop's if-branch — and
   re-checks `resume_require` on wake (§5.3). 25 tests. The instance snapshot
   (`workflow_instance.gd`) is the save contract; M4 wires the save folder.
-- **Migrate off v0**: `Scheduler`, `AiOrchestrator._handle_schedule`, the month-end
-  workflow and its tests move to the new kernel; delete `WorkflowEngine` in its own
-  PR so the migration reviews separately from the build.
-- **Narration contract** (D4 amendment): the `narrate` op — instruction, context,
-  verbosity, output language.
+- **Migrate off v0** — **done (A4)**: `Scheduler` runs due workflows through
+  `WorkflowExecutor` (validated when scheduled), `AiOrchestrator._handle_schedule`
+  validates with `WorkflowValidator`, and base_game's month-end workflow is rewritten
+  in the new DSL (`let`/`emit`/`run_command`; its old `narrate` free-text line became
+  an `emit` of a message key + values, per the i18n discipline). The chat screen
+  renders `workflow_emit`. **`WorkflowEngine` v0 and its test are deleted.** 131 green.
+- **Narration contract** (D4 amendment) — **still to do (A5)**: the AI `narrate` op —
+  instruction, context, verbosity, output language. (Distinct from the month-end
+  `emit`: `narrate` is AI-generated prose; `emit` is a canned localizable line.)
 
-**Exit:** the month-end workflow runs on the new kernel with v0 deleted; a
-suspended instance survives a restart; a trace of one orchestration is readable
-end to end.
+**Exit — met** (A1+A3+A4): the month-end workflow runs on the new kernel with v0
+deleted; a suspended instance survives a restart; a trace of one orchestration is
+readable end to end. A5 remains as an M3a task but is not part of the exit criteria.
 
 ---
 

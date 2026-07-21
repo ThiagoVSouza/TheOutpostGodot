@@ -25,8 +25,8 @@ func _ready() -> void:
 	_source = Kernel.input_router.create_source("typed")
 	# Replies arrive via the event bus (D18), not as a return value of the submit call.
 	Kernel.events.subscribe(AiInputRouter.EVENT_TURN_COMPLETED, _on_turn_completed)
-	# Surface workflow narration (e.g. the end-of-month report) in the conversation log.
-	Kernel.events.subscribe("workflow_narrative", _on_workflow_narrative)
+	# Surface workflow emits (e.g. the end-of-month report) in the conversation log.
+	Kernel.events.subscribe("workflow_emit", _on_workflow_emit)
 	# T5: reflect AI outage/recovery state as system messages + the Retry control.
 	Kernel.events.subscribe(AiAvailability.EVENT_NAME, _on_ai_availability_changed)
 	_append("[b]The Outpost[/b] — the game master awaits. Describe what you do.")
@@ -137,8 +137,14 @@ func _on_advance_month() -> void:
 	_refresh_resources()
 
 
-func _on_workflow_narrative(payload: Dictionary) -> void:
-	_append("[color=gray]Chronicle:[/color] %s" % payload.get("text", ""))
+## A workflow emit carries a message key + values (i18n discipline, D24), not assembled
+## prose. Until translations are wired (later milestone), render the key and its values so
+## the chronicle line stays visible in the dev conversation log.
+func _on_workflow_emit(payload: Dictionary) -> void:
+	var msg := String(payload.get("msg", ""))
+	var values: Dictionary = payload.get("values", {})
+	var suffix := "  %s" % JSON.stringify(values) if not values.is_empty() else ""
+	_append("[color=gray]Chronicle:[/color] %s%s" % [msg, suffix])
 
 
 func _on_ai_availability_changed(payload: Dictionary) -> void:
