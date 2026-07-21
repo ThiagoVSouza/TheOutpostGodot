@@ -273,7 +273,7 @@ func _handle_schedule(schedule_data: Variant, trace: AiTrace) -> void:
 	if when != "month_end" or not (wf is Dictionary):
 		trace.add("workflow_rejected", {"reason": "unsupported schedule", "when": when})
 		return
-	var validation := _kernel.workflows.validate_definition(wf, _kernel.workflows.default_capabilities())
+	var validation := WorkflowValidator.new().validate(wf)
 	if not validation.success:
 		trace.add("workflow_rejected", {"reason": validation.message})
 		return

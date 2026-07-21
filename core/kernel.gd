@@ -27,7 +27,6 @@ var input_router: AiInputRouter
 var clock: GameClock
 var scheduler: Scheduler
 var saves: SaveManager
-var workflows: WorkflowEngine
 
 # --- workflow DSL kernel (M3a: A2 validation layer + A3 runtime) ---
 var globals: GlobalStore
@@ -82,19 +81,18 @@ func boot() -> void:
 	ai = _create_ai_backend()
 	ai_availability = AiAvailability.new(events, func() -> AiBackend: return ai)
 
-	# 7. Calendar + workflow subsystems (scheduler listens on the event bus and runs
-	#    due workflows through the engine).
-	workflows = WorkflowEngine.new()
-
-	# 7b. Workflow DSL kernel (D24/D31): the global store, the fn/table registries the
-	#     `fn`/`table_get` ops resolve names through, and the validated-definition registry.
-	#     The A3 executor is constructed per run via WorkflowExecutor.for_kernel(self).
+	# 7. Workflow DSL kernel (D24/D31): the global store, the fn/table registries the
+	#    `fn`/`table_get` ops resolve names through, and the validated-definition registry.
+	#    The A3 executor is constructed per run via WorkflowExecutor.for_kernel(self).
 	globals = GlobalStore.new()
 	dsl_functions = DslFunctionRegistry.new()
 	dsl_tables = DslTableRegistry.new()
 	workflow_registry = WorkflowRegistry.new()
+
+	# 7b. Calendar + scheduler: the scheduler listens on the event bus and runs due
+	#     workflows on the DSL kernel above (validated when scheduled, run via the executor).
 	clock = GameClock.new(events)
-	scheduler = Scheduler.new(events, workflows, self)
+	scheduler = Scheduler.new(events, self)
 	saves = SaveManager.new()
 
 	# 8. AI orchestrator ties the above together (needs tools, command_registry, ai,
