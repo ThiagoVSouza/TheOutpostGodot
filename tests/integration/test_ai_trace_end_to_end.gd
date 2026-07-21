@@ -26,14 +26,7 @@ func test_a_real_orchestration_writes_a_readable_trace_file() -> void:
 	add_child_autofree(kernel)
 	kernel.trace_writer = AiTraceWriter.new(SCRATCH_DIR, true)
 
-	var fake := kernel.ai as FakeAiBackend
-	fake.queue_responses("forage", [
-		{"tool_calls": [{"name": "roll_die", "args": {"sides": 6, "count": 1, "seed": 42}}]},
-		{
-			"commands": [{"name": "grant_resource", "args": {"resource": "food", "amount": 3}}],
-			"narrative": "Your scouts return with baskets of food.",
-		},
-	])
+	(kernel.ai_runner as FakeAiRunner).set_result("classify_intent", "forage")
 
 	var result: Dictionary = await kernel.ai_orchestrator.handle_message("I send scouts to forage the hills")
 	assert_true(result["ok"], "the orchestration itself should still succeed")
@@ -58,16 +51,15 @@ func test_a_real_orchestration_writes_a_readable_trace_file() -> void:
 	var md_text := FileAccess.get_file_as_string(md_path)
 	for stage in trace.stages():
 		assert_string_contains(md_text, stage, "the Markdown export should name stage '%s'" % stage)
-	assert_string_contains(md_text, "Your scouts return with baskets of food.")
+	# Both forage outcomes narrate "the foraging party returns ..."; the decided outcome is in
+	# the readable trace regardless of the seeded roll.
+	assert_string_contains(md_text, "the foraging party returns", "the narrated outcome is in the trace")
 
 
 func test_disabled_trace_writer_leaves_no_file_behind() -> void:
 	var kernel := GameKernel.new()
 	add_child_autofree(kernel)
 	kernel.trace_writer = AiTraceWriter.new(SCRATCH_DIR, false)
-
-	var fake := kernel.ai as FakeAiBackend
-	fake.set_response("general", {"narrative": "The outpost is calm."})
 
 	await kernel.ai_orchestrator.handle_message("How are the walls holding?")
 

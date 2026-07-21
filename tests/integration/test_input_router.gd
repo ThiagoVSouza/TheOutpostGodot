@@ -124,6 +124,6 @@ func test_source_id_is_recorded_in_the_trace() -> void:
 	var recorded := ""
 	for entry_v in trace.entries():
 		var entry := entry_v as Dictionary
-		if String(entry["stage"]) == "build_request":
+		if String(entry["stage"]) == "turn_started":
 			recorded = String((entry["data"] as Dictionary).get("source", ""))
 	assert_eq(recorded, "replay", "the originating source id reaches the pipeline trace")

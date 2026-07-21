@@ -3,7 +3,13 @@ extends GutTest
 ## T5 policy tests (D16 amendment): a backend failure blocks orchestration with a
 ## visible unavailable state, at most three bounded automatic recovery attempts run
 ## per outage, a deliberate player retry starts a new sequence, and no game state
-## changes while unavailable. The fake never fails, so default flows are untouched.
+## changes while unavailable.
+##
+## Ribosome note (D30): the orchestrator no longer calls the backend directly — the model is
+## reached through the executor's runner/narrator seams, which report failures to availability.
+## With fakes here, these tests open an outage via `ai_availability.report_failure(...)`
+## directly; the recovery machinery (attempt_recovery, retry, events) is unchanged and still
+## driven through `kernel.ai`.
 
 
 ## Configurable failing backend: generate() fails while `generate_fails` is true;
@@ -76,9 +82,8 @@ func test_backend_failure_opens_outage_and_parks_after_three_attempts() -> void:
 	var kernel: GameKernel = setup["kernel"]
 	var flaky: FlakyBackend = setup["flaky"]
 
-	var result: Dictionary = await kernel.ai_orchestrator.handle_message("hello there outpost")
-	assert_false(bool(result["ok"]))
-	assert_eq(String(result["error"]), "backend_error")
+	# The seams report a backend failure to availability; with fakes here, open it directly.
+	kernel.ai_availability.report_failure("connection_refused")
 	assert_true(kernel.ai_availability.is_blocked(), "failure opens the outage immediately")
 
 	await _await_state(kernel.ai_availability, AiAvailability.State.UNAVAILABLE)
@@ -92,16 +97,13 @@ func test_backend_failure_opens_outage_and_parks_after_three_attempts() -> void:
 func test_blocked_orchestration_refuses_without_backend_or_state_change() -> void:
 	var setup := _make_kernel_with_flaky([])
 	var kernel: GameKernel = setup["kernel"]
-	var flaky: FlakyBackend = setup["flaky"]
 
-	var _first: Dictionary = await kernel.ai_orchestrator.handle_message("hello there outpost")
+	kernel.ai_availability.report_failure("connection_refused")
 	await _await_state(kernel.ai_availability, AiAvailability.State.UNAVAILABLE)
-	var calls_before := flaky.generate_calls
 
 	var blocked: Dictionary = await kernel.ai_orchestrator.handle_message("forage for food")
 	assert_false(bool(blocked["ok"]))
 	assert_eq(String(blocked["error"]), "unavailable")
-	assert_eq(flaky.generate_calls, calls_before, "no backend call while unavailable")
 	var resources: Dictionary = kernel.state.get_value("resources", {})
 	assert_eq(int(resources.get("food", 0)), 0, "no state change while unavailable")
 	var trace: AiTrace = blocked["trace"]
@@ -115,12 +117,11 @@ func test_recovery_success_mid_sequence_restores_availability() -> void:
 	var kernel: GameKernel = setup["kernel"]
 	var flaky: FlakyBackend = setup["flaky"]
 
-	var _r: Dictionary = await kernel.ai_orchestrator.handle_message("hello there outpost")
+	kernel.ai_availability.report_failure("connection_refused")
 	await _await_state(kernel.ai_availability, AiAvailability.State.AVAILABLE)
 	assert_eq(kernel.ai_availability.state(), AiAvailability.State.AVAILABLE)
 	assert_eq(flaky.recovery_attempts, 2, "sequence stops at the first healthy probe")
 
-	flaky.generate_fails = false
 	var after: Dictionary = await kernel.ai_orchestrator.handle_message("hello again outpost")
 	assert_true(bool(after["ok"]), "orchestration works again after recovery")
 
@@ -130,7 +131,7 @@ func test_player_retry_starts_a_new_bounded_sequence() -> void:
 	var kernel: GameKernel = setup["kernel"]
 	var flaky: FlakyBackend = setup["flaky"]
 
-	var _r: Dictionary = await kernel.ai_orchestrator.handle_message("hello there outpost")
+	kernel.ai_availability.report_failure("connection_refused")
 	await _await_state(kernel.ai_availability, AiAvailability.State.UNAVAILABLE)
 	assert_eq(flaky.recovery_attempts, 3)
 
@@ -183,7 +184,7 @@ func test_events_announce_recovering_unavailable_and_restored() -> void:
 	var kernel: GameKernel = setup["kernel"]
 	var flaky: FlakyBackend = setup["flaky"]
 
-	var _r: Dictionary = await kernel.ai_orchestrator.handle_message("hello there outpost")
+	kernel.ai_availability.report_failure("connection_refused")
 	await _await_state(kernel.ai_availability, AiAvailability.State.UNAVAILABLE)
 	flaky.recovery_results = [true]
 	kernel.ai_availability.retry()
