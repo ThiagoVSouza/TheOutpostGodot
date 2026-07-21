@@ -34,6 +34,7 @@ var dsl_functions: DslFunctionRegistry
 var dsl_tables: DslTableRegistry
 var workflow_registry: WorkflowRegistry
 var narrator: DslNarrator
+var narration: NarrationSettings
 var prompt_families: PromptFamilyRegistry
 var ai_runner: DslAiRunner
 
@@ -95,6 +96,8 @@ func boot() -> void:
 	# (grammar-constrained classify — D19; bounded prose — D4/D29, with the per-call timeout and
 	# T5 reporting living at the seam, D22/D30); against the fake they stay deterministic.
 	prompt_families = PromptFamilyRegistry.new()
+	# The player's reading-length preference, applied to every `narrate` op by the executor.
+	narration = NarrationSettings.new()
 	if ai is FakeAiBackend:
 		narrator = FakeNarrator.new()
 		ai_runner = FakeAiRunner.new()

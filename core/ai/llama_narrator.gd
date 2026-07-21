@@ -14,8 +14,21 @@ const SYSTEM := "You are the game master of The Outpost, a Greco-Roman fantasy s
 	+ "resources, numbers, or events beyond the facts provided; higher verbosity means more " \
 	+ "colour, not more facts."
 
-## Rough token budgets per verbosity level.
-const BUDGET := {"short": 60, "normal": 120, "long": 220}
+## `topics` is a different output *form*, not a shorter length (see [NarrationSettings]), so it
+## gets its own binding: a bare list of what happened, for players who want the ledger and not
+## the prose.
+const SYSTEM_TOPICS := "You are the game master of The Outpost, a Greco-Roman fantasy " \
+	+ "settlement game. Report ONLY the outcome you are given as a short bulleted list, one " \
+	+ "short clause per line, each line starting with '- '. No prose, no preamble, no closing " \
+	+ "line. Never invent resources, numbers, or events beyond the facts provided."
+
+## Playground-only (see [member NarrationSettings.loose]): drops the binding to the given facts
+## so we can see what the model reaches for unprompted. NOT a shipping mode — it gives up D4.
+const SYSTEM_LOOSE := "You are the game master of The Outpost, a Greco-Roman fantasy " \
+	+ "settlement game. Narrate the moment vividly. You may embellish freely."
+
+## Rough token budgets per resolved level.
+const BUDGET := {"topics": 80, "short": 60, "normal": 120, "long": 220, "full": 350}
 
 var _kernel: GameKernel
 
@@ -27,7 +40,7 @@ func _init(kernel: GameKernel) -> void:
 func narrate(instruction: String, context: Dictionary, verbosity: String, language: String) -> String:
 	var request := {
 		"messages": [
-			{"role": "system", "content": SYSTEM},
+			{"role": "system", "content": _system_prompt(verbosity)},
 			{"role": "user", "content": _user_prompt(instruction, context, verbosity, language)},
 		],
 		"temperature": 0.7,
@@ -38,6 +51,16 @@ func narrate(instruction: String, context: Dictionary, verbosity: String, langua
 		# A failed narration should not lose the turn's mechanics; surface a plain line.
 		return "(The moment passes.)"
 	return String(out["content"]).strip_edges()
+
+
+## Pick the binding for this call. The verbosity handed in is already resolved against the
+## player's preference by the executor, so `topics` arriving here means the player asked for it.
+func _system_prompt(verbosity: String) -> String:
+	if _kernel != null and _kernel.narration != null and _kernel.narration.loose:
+		return SYSTEM_LOOSE
+	if verbosity == NarrationSettings.LEVEL_TOPICS:
+		return SYSTEM_TOPICS
+	return SYSTEM
 
 
 func _user_prompt(instruction: String, context: Dictionary, verbosity: String, language: String) -> String:
