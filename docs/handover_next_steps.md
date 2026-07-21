@@ -4,46 +4,112 @@
 mid-milestone after a usage-limit cutoff. Follow this file top to bottom.
 Keep it updated as work lands: it is a living checklist, not an archive.
 
-Last updated: 2026-07-20 · State: **M2 is COMPLETE and verified** (PRs #7–#16).
-77/77 tests green. Real E2B in the running app at 0.80–0.85 s warm —
-`docs/benchmarks/milestone2_exit_e2b.md`. **M3a (workflow DSL kernel + traces) is
-the current milestone and is cleared to start.**
-
-**Every M3a gate is open.** D21 was settled 2026-07-20 (files, not SQLite) so trace
-code is unblocked. D24–D28 are promoted, D29 is new, and D4 gained a substantial
-amendment. **GATE 0 was satisfied by the planning conversation of 2026-07-20** — no
-further direction review is needed to begin M3a. GATE 0 *does* apply again at M3b.
+Last updated: 2026-07-21 (evening) · State: **M3a is COMPLETE; M3b is essentially
+complete and was driven by hand in the playground against real E2B.** 161/161 tests
+green. Sections below marked *(historical)* describe milestones already finished —
+they are kept for their gotchas, not as instructions.
 
 ## 0. If you are the next agent, start exactly here
 
-1. `git fetch` and start from `origin/main`.
-2. **Read `docs/decisions.md` D4's amendment and D24–D29 first.** They are new, they
-   are the whole basis of M3a, and D4's amendment changes the pipeline shape you may
-   remember from the older sketch: orchestration is **authored workflow content**,
-   not fixed orchestrator code.
-3. **Work M3a in the order in §7** — traces first. That ordering is deliberate:
-   the trace writer is what makes every later step manually verifiable, which is the
-   entire reason the user wanted traces (D21).
-4. Scope discipline: **JSON canonical form only, no text parser.** The `nortrix`
-   text syntax in `docs/reference_dsl/` is *reference*, not this milestone's target
-   (D24, D28). Building a parser now roughly doubles M3a.
-5. Read §1 (context bootstrap). The T1 lessons in §2a and the T6 harness gotchas in
-   §4's T6 entry will save you real time.
+1. `git fetch` and start from `origin/main`. **Verify what actually merged** —
+   `gh pr view N --json state,mergedAt`. This project has produced two false
+   "merged" reports and one merge that silently dropped half a branch.
+2. **Read §0a (the live session log) before anything else** — it is the freshest
+   record of what works, what is open, and where the surprises were.
+3. Read `docs/decisions.md` D4 + its amendments and D24–D32. They are the basis of
+   the whole workflow/AI design: orchestration is **authored workflow content**, not
+   orchestrator code (D30, the ribosome model).
+4. Scope discipline still holds: **JSON canonical form only, no text parser** (D24,
+   D28). The `nortrix` syntax in `docs/reference_dsl/` is reference, not a target.
 
-### What T1 changed (PR #7, all tests 37/37, verified in-app)
+## 0a. Session log — 2026-07-21 evening (playground testing)
 
-`AiBackend.generate()` now returns an `AiRequest` handle
+**What this session did:** drove the M3b playground by hand against a real local
+E2B model, found and fixed a silent narration failure, then added player-facing
+narration levels.
+
+### Running the playground against real E2B (do it exactly this way)
+
+```
+C:\Tools\llama.cpp\b10042\llama-server.exe \
+  -m C:\Models\gemma-4\gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf \
+  --host 127.0.0.1 --port 8099 -ngl 99 -c 4096 --no-webui -rea off --cache-reuse 256
+```
+Healthy in ~6 s (`curl 127.0.0.1:8099/health`). Then launch:
+```
+OUTPOST_PLAYGROUND=1 OUTPOST_AI_BACKEND=remote-llama \
+OUTPOST_AI_ENDPOINT=http://127.0.0.1:8099/v1/chat/completions \
+  Godot_v4.7.1-stable_win64_console.exe --path .
+```
+Traces land in `%APPDATA%\Godot\app_userdata\The Outpost\traces\` as JSONL + `.md`.
+Reading the newest `.jsonl` is the fastest way to see what a turn actually did.
+
+**`-rea off` is MANDATORY and omitting it fails silently.** Without it Gemma 4
+reasons, so the response has an empty `content` and a populated `reasoning_content`;
+`LlamaChatCodec` rejects that as `empty_content`, and `LlamaNarrator` swallows it
+into the literal fallback **"(The moment passes.)"** while also opening a T5 outage.
+Grammar-constrained *classification* still works, so the turn looks healthy and fast
+and only the prose is dead. **That fallback string in a trace means this bug.**
+
+### What landed
+
+**Narration levels** (branch `feat/m3b-narration-verbosity`): three player-facing
+reading lengths — topics / short / long prose — plus a dev-only `loose` toggle.
+`NarrationSettings` (`core/ai/narration_settings.gd`) lives on the kernel;
+`WorkflowExecutor._exec_narrate` resolves the **authored literal** against the
+player's preference and hands the narrator only the resolved level. The DSL is
+unchanged: `verbosity` stays an authored literal (D4 amendment #3). Traces record
+both levels (`authored_verbosity` + `verbosity`). Verified live on E2B: same beat,
+16 tokens at `short` vs 67 at `long prose`; `topics` produced real `- ` bullets.
+
+### Open questions for tomorrow
+
+1. **Narration prompt work (the reason the levels were built).**
+   - `topics` narrates the *instruction* rather than the fiction —
+     "- Acknowledge the decision." The instruction reads as a directive to the
+     model; it likely needs reframing as an event.
+   - **The raw d20 leaks into prose** — "the high roll of nineteen". Accurate but
+     fiction-breaking: `roll` is in the narrate context at
+     `modules/base_game/base_game_module.gd:86`. Either drop it or pass a
+     qualitative band. Gets likelier at higher verbosity.
+   - The `general` branch asserts outcomes it did not resolve ("The knight is sent
+     to pursue the spiders") — D4 holds on numbers, but a player would assume the
+     knight went. Blunter instruction, or say plainly that nothing was resolved.
+2. **The action set is 2 labels** (`forage`, `general`,
+   `base_game_module.gd:37`). "Kill a wolf" classified as `forage` once and
+   `general` another time — out-of-set input has nowhere sensible to go. Widening
+   the set is also what D17 needs (it measured 3 actions, 1 model).
+3. **PR #28 (D17 measurement) was still OPEN** at the end of this session.
+
+### Recent measurements (E2B, classify + narrate per turn)
+
+| Level | Narrate tokens | Turn total |
+|---|---|---|
+| topics | 21 | 0.73 s |
+| short | 16 | 0.63 s |
+| long prose | 67 | 1.31 s |
+
+Consistent with the M2 exit figure (0.80–0.85 s warm). Long prose is
+generation-bound, not a regression.
+
+### What T1 changed *(historical — PR #7)*
+
+`AiBackend.generate()` returns an `AiRequest` handle
 (`chunk`/`completed`/`failed`/`finished` signals, `cancel()`, awaitable
 `wait()`); backends must never finish it synchronously in-call.
-`FakeAiBackend` completes deferred. `AiOrchestrator.handle_message()` is a
-coroutine (callers `await` it) with busy guard, `cancel()` + state-change
-fence, and an orchestrator-owned per-call timeout
-(`ai_timeout_seconds`, default 30 s). Chat screen awaits and locks input
-while in flight. New tests: `tests/integration/test_async_orchestration.gd`.
+`FakeAiBackend` completes deferred. Chat screen awaits and locks input
+while in flight. (The M2 orchestrator described here was later replaced by the
+D30 ribosome orchestrator.)
 
 ---
 
-## ⛔ GATE 0 — no coding before a direction review with the user
+## ⛔ GATE 0 — a direction review with the user before each milestone
+
+**SATISFIED for M2, M3a and M3b** (the M3b review chose build-skeleton-first with
+the economy/forage anchor). It applies again before **M4**. The rest of this
+section is the original M2-era wording, kept for the shape of the review.
+
+<details><summary>Original M2 gate text (historical)</summary>
 
 **Do not write production code until the user has reviewed and confirmed the
 direction in a conversation.** The user has said the plan below may need
@@ -58,6 +124,8 @@ fine-tuning before implementation starts. Specifically:
    traces, not M2 — but do not "helpfully" scaffold traces early.)
 3. There is no review-exempt task remaining. **Everything from T3 on needs the
    task-specific review first.**
+
+</details>
 
 ---
 
