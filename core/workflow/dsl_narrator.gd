@@ -8,8 +8,17 @@ extends RefCounted
 ## rather than inventing new facts. The narrator never adjudicates: every number it is handed
 ## was already decided by code (D4).
 ##
-## Synchronous for now. Wiring the real [AiBackend] behind this makes narration an in-memory
-## await (D30) and turns the executor into a coroutine — that lands with the M3b orchestration,
-## where there is an actual turn to narrate. [FakeNarrator] keeps A5 deterministic and testable.
+## The method is a **coroutine** (D22/D30): narration is an in-memory await inside the
+## executing instance — the real AiBackend-backed narrator suspends on its request; the fakes
+## yield a frame. It is never a checkpoint (an AI call does not persist a snapshot, D30).
 func narrate(_instruction: String, _context: Dictionary, _verbosity: String, _language: String) -> String:
+	await _yield()
 	return ""
+
+
+## Yield one frame so the seam is genuinely asynchronous, guarded so it is safe even if ever
+## called outside a running SceneTree (returns immediately then).
+func _yield() -> void:
+	var loop := Engine.get_main_loop()
+	if loop is SceneTree:
+		await (loop as SceneTree).process_frame
