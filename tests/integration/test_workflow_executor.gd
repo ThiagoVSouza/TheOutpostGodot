@@ -206,6 +206,42 @@ func test_seeded_rolls_are_deterministic() -> void:
 	assert_between(int(a.locals["a"]), 3, 18, "3d6 is in range")
 
 
+func test_narrate_produces_bounded_prose_from_decided_facts() -> void:
+	var kernel := _kernel()
+	var narrated: Array = []
+	kernel.events.subscribe("workflow_narrated", func(p: Dictionary) -> void: narrated.append(p))
+	var def := {
+		"op": "workflow", "id": "tell", "version": 1,
+		"params": {"lang": {"type": "string", "required": true}},
+		"steps": [
+			{"op": "let", "as": "$$dmg", "value": 6},
+			{"op": "narrate", "instruction": "the gladius lands",
+			 "context": {"damage": "$$dmg", "weapon": "gladius"},
+			 "verbosity": "short", "language": "@lang", "as": "$$line"}
+		]
+	}
+	var result: RefCounted = _run(kernel, def, {"lang": "pt"})
+	assert_true(result.succeeded())
+	# The fake narrator echoes the bounded inputs deterministically (facts sorted by key), so
+	# the test proves the op passed the right instruction, decided facts, verbosity and language.
+	assert_eq(result.narration, "[short|pt] the gladius lands (damage=6, weapon=gladius)")
+	assert_eq(result.instance.locals["line"], result.narration, "narration bound to $$line")
+	assert_eq(narrated.size(), 1, "one workflow_narrated event fired")
+	assert_eq(narrated[0]["language"], "pt", "output language flows through (D29)")
+	assert_eq(narrated[0]["verbosity"], "short")
+
+
+func test_narrate_defaults_verbosity_and_language() -> void:
+	var kernel := _kernel()
+	var def := {
+		"op": "workflow", "id": "tell2", "version": 1, "params": {},
+		"steps": [{"op": "narrate", "instruction": "the outpost is quiet"}]
+	}
+	var result: RefCounted = _run(kernel, def)
+	assert_true(result.succeeded())
+	assert_eq(result.narration, "[normal|en] the outpost is quiet", "sensible defaults when omitted")
+
+
 func _food(kernel: GameKernel) -> int:
 	return int((kernel.state.get_value("resources", {}) as Dictionary).get("food", 0))
 

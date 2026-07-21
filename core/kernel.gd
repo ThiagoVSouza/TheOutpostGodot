@@ -33,6 +33,7 @@ var globals: GlobalStore
 var dsl_functions: DslFunctionRegistry
 var dsl_tables: DslTableRegistry
 var workflow_registry: WorkflowRegistry
+var narrator: DslNarrator
 
 var _booted: bool = false
 
@@ -88,6 +89,9 @@ func boot() -> void:
 	dsl_functions = DslFunctionRegistry.new()
 	dsl_tables = DslTableRegistry.new()
 	workflow_registry = WorkflowRegistry.new()
+	# The `narrate` op's seam (A5). Fake by default — the real AiBackend-backed narrator wires
+	# in with M3b, where narration becomes an in-memory await (D30) and the executor a coroutine.
+	narrator = FakeNarrator.new()
 
 	# 7b. Calendar + scheduler: the scheduler listens on the event bus and runs due
 	#     workflows on the DSL kernel above (validated when scheduled, run via the executor).
