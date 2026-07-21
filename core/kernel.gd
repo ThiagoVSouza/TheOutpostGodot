@@ -34,6 +34,8 @@ var dsl_functions: DslFunctionRegistry
 var dsl_tables: DslTableRegistry
 var workflow_registry: WorkflowRegistry
 var narrator: DslNarrator
+var prompt_families: PromptFamilyRegistry
+var ai_runner: DslAiRunner
 
 var _booted: bool = false
 
@@ -92,6 +94,10 @@ func boot() -> void:
 	# The `narrate` op's seam (A5). Fake by default — the real AiBackend-backed narrator wires
 	# in with M3b, where narration becomes an in-memory await (D30) and the executor a coroutine.
 	narrator = FakeNarrator.new()
+	# The `ai` op's classification seam (M3b): registered prompt families + the runner that
+	# resolves them. Fake runner by default; the real AiBackend-backed one wires in later.
+	prompt_families = PromptFamilyRegistry.new()
+	ai_runner = FakeAiRunner.new()
 
 	# 7b. Calendar + scheduler: the scheduler listens on the event bus and runs due
 	#     workflows on the DSL kernel above (validated when scheduled, run via the executor).

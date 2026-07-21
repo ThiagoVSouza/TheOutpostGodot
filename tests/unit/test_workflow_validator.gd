@@ -222,6 +222,30 @@ func test_rejects_computed_narrate_instruction() -> void:
 	assert_false(_v().validate(def).success, "narrate.instruction must be a plain literal")
 
 
+# --- ai op (M3b classification) ---
+
+func test_accepts_an_ai_op() -> void:
+	var def := {"op": "workflow", "id": "x", "version": 1, "params": {}, "steps": [
+		{"op": "ai", "family": "classify_intent", "facts": {"message": "$$m"}, "as": "$$intent"}
+	]}
+	assert_true(_v().validate(def).success, "a well-formed ai op should validate")
+
+
+func test_rejects_ai_without_family() -> void:
+	var def := {"op": "workflow", "id": "x", "version": 1, "params": {}, "steps": [
+		{"op": "ai", "facts": {}, "as": "$$x"}
+	]}
+	assert_false(_v().validate(def).success, "ai needs a family")
+
+
+func test_rejects_computed_ai_family() -> void:
+	# You may not compute which classifier runs (D4) — family must be a plain literal.
+	var def := {"op": "workflow", "id": "x", "version": 1, "params": {}, "steps": [
+		{"op": "ai", "family": "@which_one", "as": "$$x"}
+	]}
+	assert_false(_v().validate(def).success)
+
+
 # --- dispatch op (M3b hand-off) ---
 
 func test_accepts_a_dispatch_op() -> void:

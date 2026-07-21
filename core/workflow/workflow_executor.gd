@@ -72,12 +72,15 @@ var _functions: DslFunctionRegistry
 var _tables: DslTableRegistry
 var _workflows: WorkflowRegistry
 var _narrator: DslNarrator
+var _prompt_families: PromptFamilyRegistry
+var _ai_runner: DslAiRunner
 
 
 func _init(state: GameState, command_registry: CommandRegistry, commands: CommandBus,
 		events: EventBus, globals: GlobalStore, functions: DslFunctionRegistry,
 		tables: DslTableRegistry, workflows: WorkflowRegistry = null,
-		narrator: DslNarrator = null) -> void:
+		narrator: DslNarrator = null, prompt_families: PromptFamilyRegistry = null,
+		ai_runner: DslAiRunner = null) -> void:
 	_state = state
 	_command_registry = command_registry
 	_commands = commands
@@ -86,15 +89,17 @@ func _init(state: GameState, command_registry: CommandRegistry, commands: Comman
 	_functions = functions
 	_tables = tables
 	_workflows = workflows
-	# A fake by default so a workflow with a `narrate` op still runs without a wired narrator.
+	# Fakes by default so a workflow with a `narrate` or `ai` op still runs without wired seams.
 	_narrator = narrator if narrator != null else FakeNarrator.new()
+	_prompt_families = prompt_families if prompt_families != null else PromptFamilyRegistry.new()
+	_ai_runner = ai_runner if ai_runner != null else FakeAiRunner.new()
 
 
 ## Convenience constructor from a booted kernel.
 static func for_kernel(kernel: GameKernel) -> WorkflowExecutor:
 	return WorkflowExecutor.new(kernel.state, kernel.command_registry, kernel.commands,
 		kernel.events, kernel.globals, kernel.dsl_functions, kernel.dsl_tables,
-		kernel.workflow_registry, kernel.narrator)
+		kernel.workflow_registry, kernel.narrator, kernel.prompt_families, kernel.ai_runner)
 
 
 ## Run [param instance] against [param definition] (a validated `steps` tree). [param trace]
@@ -252,6 +257,8 @@ func _exec_statement(stmt: Dictionary, instance: WorkflowInstance, ctx: Workflow
 			return _exec_emit(stmt, ctx, result, trace)
 		"narrate":
 			return await _exec_narrate(stmt, ctx, instance, result, trace)
+		"ai":
+			return await _exec_ai(stmt, ctx, instance, trace)
 		"if":
 			return _exec_if(stmt, ctx)
 		"foreach":
@@ -331,6 +338,30 @@ func _exec_narrate(stmt: Dictionary, ctx: WorkflowRuntimeContext, instance: Work
 		_events.emit("workflow_narrated", record)
 	if trace != null:
 		trace.add("workflow_narrated", record)
+	return {"action": Action.CONTINUE}
+
+
+## Bounded AI classification (M3b): invoke a registered prompt family with the decided facts,
+## get one value from its closed set, and bind it to a local. The value being in-set is the
+## family's grammar guarantee (D19); re-checked here so a mis-registered fake or backend fails
+## loudly rather than binding garbage.
+func _exec_ai(stmt: Dictionary, ctx: WorkflowRuntimeContext, instance: WorkflowInstance, trace: AiTrace) -> Dictionary:
+	var family_id := String(stmt["family"])
+	var facts := _eval_args(stmt.get("facts", {}), ctx)
+	var family := _prompt_families.get_family(family_id)
+	if family == null:
+		return {"action": Action.FAIL, "fail_code": "unknown_family",
+			"fail_msg": "no registered prompt family \"%s\"" % family_id}
+	var value: String = await _ai_runner.classify(family, facts)
+	if not family.options.is_empty() and not family.options.has(value):
+		return {"action": Action.FAIL, "fail_code": "ai_out_of_set",
+			"fail_msg": "classification \"%s\" is not in family \"%s\"" % [value, family_id]}
+	instance.locals[_local_name(stmt["as"])] = value
+	var record := {"family": family_id, "value": value}
+	if _events != null:
+		_events.emit("workflow_ai", record)
+	if trace != null:
+		trace.add("workflow_ai", record)
 	return {"action": Action.CONTINUE}
 
 
