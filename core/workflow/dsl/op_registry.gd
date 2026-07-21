@@ -144,6 +144,16 @@ func _seed_core() -> void:
 	narrate.local_ref_fields = PackedStringArray(["as"])
 	register(narrate)
 
+	# Bounded AI classification (M3b): invoke a registered prompt family with bounded facts; the
+	# model proposes one value from the family's closed set (grammar-constrained, D19). `family`
+	# is an authored literal (you may not compute which classifier runs); `facts` is a dict of
+	# expressions; `as` binds the constrained result.
+	var ai := OpSpec.new("ai", false, false, true, PackedStringArray(["family", "as"]))
+	ai.literal_fields = PackedStringArray(["family"])
+	ai.args_fields = PackedStringArray(["facts"])
+	ai.local_ref_fields = PackedStringArray(["as"])
+	register(ai)
+
 	var run := OpSpec.new("run", false, false, true, PackedStringArray(["workflow"]))
 	run.literal_fields = PackedStringArray(["workflow"])
 	run.args_fields = PackedStringArray(["args"])

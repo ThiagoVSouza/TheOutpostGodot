@@ -242,6 +242,47 @@ func test_narrate_defaults_verbosity_and_language() -> void:
 	assert_eq(result.narration, "[normal|en] the outpost is quiet", "sensible defaults when omitted")
 
 
+func test_ai_op_classifies_from_a_registered_family() -> void:
+	var kernel := _kernel()
+	kernel.prompt_families.register(PromptFamily.new("classify_intent",
+		PackedStringArray(["forage", "attack", "talk"])))
+	(kernel.ai_runner as FakeAiRunner).set_result("classify_intent", "forage")
+	var seen: Array = []
+	kernel.events.subscribe("workflow_ai", func(p: Dictionary) -> void: seen.append(p))
+	var def := {
+		"op": "workflow", "id": "classify", "version": 1,
+		"params": {"text": {"type": "string", "required": true}},
+		"steps": [{"op": "ai", "family": "classify_intent", "facts": {"message": "@text"}, "as": "$$intent"}]
+	}
+	var result: RefCounted = await _run(kernel, def, {"text": "I forage the hills"})
+	assert_true(result.succeeded())
+	assert_eq(result.instance.locals["intent"], "forage", "the constrained verdict binds to the local")
+	assert_eq(seen.size(), 1, "one workflow_ai event")
+	assert_eq(seen[0]["value"], "forage")
+
+
+func test_ai_op_rejects_an_out_of_set_result() -> void:
+	var kernel := _kernel()
+	kernel.prompt_families.register(PromptFamily.new("mood", PackedStringArray(["calm", "tense"])))
+	# The grammar would make this unsampleable for the real backend; a mis-scripted fake must
+	# still be caught rather than binding garbage.
+	(kernel.ai_runner as FakeAiRunner).set_result("mood", "chaotic")
+	var def := {"op": "workflow", "id": "m", "version": 1, "params": {},
+		"steps": [{"op": "ai", "family": "mood", "facts": {}, "as": "$$m"}]}
+	var result: RefCounted = await _run(kernel, def)
+	assert_eq(result.status, Instance.Status.FAILED)
+	assert_eq(result.fail_code, "ai_out_of_set")
+
+
+func test_ai_op_unknown_family_fails() -> void:
+	var kernel := _kernel()
+	var def := {"op": "workflow", "id": "u", "version": 1, "params": {},
+		"steps": [{"op": "ai", "family": "does_not_exist", "facts": {}, "as": "$$x"}]}
+	var result: RefCounted = await _run(kernel, def)
+	assert_eq(result.status, Instance.Status.FAILED)
+	assert_eq(result.fail_code, "unknown_family")
+
+
 func _food(kernel: GameKernel) -> int:
 	return int((kernel.state.get_value("resources", {}) as Dictionary).get("food", 0))
 
