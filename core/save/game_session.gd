@@ -1,42 +1,53 @@
 class_name GameSession
 extends RefCounted
 
-## Which slot the player is currently in, and when it gets written (M4/B4a).
+## The game in progress: where it lives, and when it is written (M4/B4a).
 ##
-## [SaveManager] knows *how* to read and write a slot; this knows *which one* and *when* — the
-## policy half, deliberately separate so the mechanism stays testable without a running session.
+## Two persistence layers, answering different questions:
 ##
-## The autosave policy is built around one fact: **on Android the OS can kill a backgrounded
-## app without warning, and it never asks first.** So the only write that is genuinely
-## guaranteed is the one made when the app is *told* it is going to the background. Everything
-## else — the per-turn autosave — is an optimization that limits how much a hard kill can cost.
+##   [SaveWorkspace] — `user://current/`, the live game as separate parts. Written at every
+##       turn boundary and every OS lifecycle event, but only the parts that actually changed.
+##       This is what survives a crash. Losing at most the turn in progress is the contract.
+##   [SaveManager]   — `user://saves/<slot>.json`, a whole snapshot the player named. Written
+##       deliberately, or on a long cadence. This is what the player keeps, revisits, and one
+##       day shares.
 ##
-## Turn-boundary autosaves are coalesced by [constant AUTOSAVE_INTERVAL] so a fast player does
-## not write a file every second; a lifecycle save always writes immediately and ignores it.
-
-## Minimum seconds between turn-boundary autosaves. Lifecycle saves bypass this entirely.
-const AUTOSAVE_INTERVAL: float = 20.0
+## The distinction matters because the two have opposite cost profiles. A snapshot is
+## O(total state) and would be ruinous per turn once M5's memories exist; a checkpoint touches
+## only what moved. Building the split now is cheap — retrofitting it after memories land is
+## not, which is the same argument that made migrations worth doing early.
+##
+## **There is deliberately no autosave interval.** A checkpoint that writes nothing when
+## nothing changed costs a comparison, so throttling it would only add a way to lose a turn.
+## (An earlier interval-based version also hid a real bug: `Time.get_ticks_msec()` is small in
+## a short-lived process, so the *first* checkpoint — the one that matters most — was skipped.)
 
 const DEFAULT_SLOT_NAME := "The Outpost"
 
-## Emitted after a load, a new game, or any successful save, so UI can reflect the slot.
+## How often the game snapshots itself to a slot on its own, in game days. Rare on purpose: the
+## workspace already protects against a crash, so this exists to give the player a named point
+## to come back to, not to protect data.
+const AUTO_SNAPSHOT_DAYS: int = 360
+
+## Errors that mean "the data is fine, this build cannot read it" — as opposed to "the data is
+## damaged". The distinction decides whether it is safe to move on: damaged data can be
+## abandoned for a snapshot, but data written by a *newer* build must never be discarded or
+## overwritten, because the player only has to reinstall the newer build to get it back.
+const REFUSALS: Array[String] = ["save_from_newer_version", "module_from_newer_version"]
+
 signal session_changed(slot_id: String, slot_name: String)
 
 var slot_id: String = ""
 var slot_name: String = DEFAULT_SLOT_NAME
 
-## When false, only explicit [method save] calls write. Defaults to off under the test runner
-## so an automated run never writes into the player's real save directory — the same guard the
-## trace writer uses (A1). A *default*, not a hard gate: tests of this machinery point at a
-## scratch directory and set it back on.
+## When false, only explicit [method checkpoint] / [method snapshot] calls write. Defaults off
+## under the test runner so an automated run never writes into the player's real save
+## directory — the same guard the trace writer uses (A1). A *default*, not a hard gate: tests
+## of this machinery point at scratch directories and set it back on.
 var autosave_enabled: bool = OS.get_environment("OUTPOST_TEST_RUN") != "1"
 
 var _kernel: GameKernel
-## -1 means "not saved yet this session". A plain 0 would compare against a process that has
-## only been alive a few seconds and wrongly conclude the interval had not elapsed — so the
-## very first autosave of a short session would be skipped, which is the one that matters most.
-var _last_autosave_msec: int = -1
-var _dirty: bool = false
+var _last_snapshot_day: int = 0
 
 
 ## Note on wiring: this does **not** subscribe itself to the event bus. A [RefCounted] that
@@ -47,106 +58,190 @@ func _init(kernel: GameKernel) -> void:
 	_kernel = kernel
 
 
-## True once this session is attached to a slot on disk.
 func has_slot() -> bool:
 	return not slot_id.is_empty()
 
 
+func workspace() -> SaveWorkspace:
+	return _kernel.workspace
+
+
 # --- starting a session ------------------------------------------------------------------
 
-## Resume the most recently saved slot, or start a fresh session if there is none.
-## Returns `{ok, continued, slot_id, error}` — `continued` distinguishes "loaded a save" from
-## "there was nothing to load", which is not an error and callers usually render differently.
+## Resume the game in progress, or the newest snapshot, or start fresh — in that order.
+## Returns `{ok, continued, source, error}` where `source` is "workspace", "slot" or "new".
+##
+## The workspace wins over a slot file even when the slot is newer by wall clock: the workspace
+## *is* the game the player was playing, and a slot is a copy they took of it. Preferring the
+## snapshot would silently discard everything since it was taken.
 func continue_or_start() -> Dictionary:
-	var available: Array = _kernel.saves.slots()
-	if available.is_empty():
-		start_new()
-		return {"ok": true, "continued": false, "slot_id": slot_id, "error": ""}
+	if workspace().exists():
+		var resumed := _restore_from_workspace()
+		if bool(resumed["ok"]):
+			return {"ok": true, "continued": true, "source": "workspace", "error": ""}
+		var error := String(resumed["error"])
+		if REFUSALS.has(error):
+			# The live game is intact — this build is simply too old to read it (a downgrade,
+			# or a sideloaded older APK). **Stop here.** Continuing would reach `start_new`,
+			# which clears the workspace, and the player would lose their settlement to a
+			# version mismatch without ever being asked. Their files are untouched; the choice
+			# of what to do next belongs to them.
+			_kernel.log.error("GameSession",
+				"Refusing to open the live game: %s. Left untouched." % error)
+			return {"ok": false, "continued": false, "source": "workspace_blocked", "error": error}
+		# Genuinely damaged rather than merely unreadable by this build. A snapshot is exactly
+		# the backup for this, so fall through to the newest one.
+		_kernel.log.warn("GameSession", "Workspace unreadable (%s); trying the newest snapshot"
+			% error)
 
-	var newest: Dictionary = available[0]  # slots() is newest first
-	var loaded := load_slot(String(newest["id"]))
-	if not bool(loaded["ok"]):
-		# A corrupt or unreadable newest save must not wedge the player out of their game.
-		# Starting fresh here would *overwrite* it on the next autosave, so the session stays
-		# detached from any slot: the game is playable and the bad file is left alone for the
-		# player (or a support conversation) to deal with.
+	var available: Array = _kernel.saves.slots()
+	if not available.is_empty():
+		var newest: Dictionary = available[0]  # slots() is newest first
+		var loaded := load_slot(String(newest["id"]))
+		if bool(loaded["ok"]):
+			return {"ok": true, "continued": true, "source": "slot", "error": ""}
+		# Do not adopt a slot that would not load: staying detached means the next snapshot
+		# creates a new file instead of overwriting one the player may still want.
 		_kernel.log.warn("GameSession", "Could not continue slot '%s' (%s); starting detached"
 			% [newest["id"], loaded["error"]])
 		slot_id = ""
-		slot_name = String(newest.get("name", DEFAULT_SLOT_NAME))
-		return {"ok": false, "continued": false, "slot_id": "", "error": String(loaded["error"])}
-	return {"ok": true, "continued": true, "slot_id": slot_id, "error": ""}
+		return {"ok": false, "continued": false, "source": "new", "error": String(loaded["error"])}
+
+	start_new()
+	return {"ok": true, "continued": false, "source": "new", "error": ""}
 
 
-## Begin a new session. Does not write anything: a slot is created on the first save, so
-## opening the game and closing it again never leaves a stray empty settlement behind.
+## Begin a new game, discarding the workspace. Writes no slot file: one is created on the first
+## snapshot, so opening the game and closing it again never leaves a stray empty settlement.
 func start_new(name: String = DEFAULT_SLOT_NAME) -> void:
+	workspace().clear()
 	slot_id = ""
 	slot_name = name
-	_dirty = false
+	_last_snapshot_day = 0
 	session_changed.emit(slot_id, slot_name)
 
 
+## Load a slot snapshot over the current game. The workspace is replaced wholesale — a leftover
+## part from the previous game would otherwise be read back as if it belonged to this one.
 func load_slot(id: String) -> Dictionary:
 	var loaded: Dictionary = _kernel.saves.load_slot(_kernel, id)
 	if not bool(loaded["ok"]):
 		return loaded
-	slot_id = id
 	var meta: Dictionary = (loaded["data"] as Dictionary).get("slot", {}) as Dictionary
+	slot_id = id
 	slot_name = String(meta.get("name", DEFAULT_SLOT_NAME))
-	_dirty = false
-	_last_autosave_msec = Time.get_ticks_msec()
+	_last_snapshot_day = _kernel.clock.total_days
+	workspace().clear()
+	_write_all_parts()
 	session_changed.emit(slot_id, slot_name)
 	return loaded
 
 
 # --- writing -----------------------------------------------------------------------------
 
-## Write the session now, creating its slot on first save. [param reason] is recorded in the
-## log so a trace of when saves happened is readable after the fact.
-func save(reason: String = "manual") -> Dictionary:
+## Write the live game to the workspace, touching only the parts that changed. This is the
+## cheap, frequent write: called at every turn boundary and every OS lifecycle event.
+## Returns the number of parts written.
+func checkpoint(reason: String = "turn") -> int:
+	if not autosave_enabled:
+		return 0
+	var written := _write_all_parts()
+	if written > 0:
+		_kernel.log.debug("GameSession", "Checkpointed %d part(s) (%s)" % [written, reason])
+	_maybe_auto_snapshot()
+	return written
+
+
+## Write a whole snapshot to the slot, creating one on first use. This is the rare, expensive
+## write — the thing the player thinks of as "saving".
+func snapshot(reason: String = "manual") -> Dictionary:
 	var result: Dictionary
 	if has_slot():
 		result = _kernel.saves.save_slot(_kernel, slot_id, slot_name)
 	else:
 		result = _kernel.saves.save_new(_kernel, slot_name)
 	if not bool(result["ok"]):
-		_kernel.log.error("GameSession", "Save failed (%s): %s" % [reason, result["error"]])
+		_kernel.log.error("GameSession", "Snapshot failed (%s): %s" % [reason, result["error"]])
 		return result
 	slot_id = String(result["slot_id"])
-	_dirty = false
-	_last_autosave_msec = Time.get_ticks_msec()
+	_last_snapshot_day = _kernel.clock.total_days
 	_kernel.log.info("GameSession", "Saved '%s' (%s)" % [slot_name, reason])
 	session_changed.emit(slot_id, slot_name)
 	return result
 
 
-## Mark that something happened worth persisting. Cheap and safe to call often — the decision
-## about whether to actually write belongs to [method autosave].
-func mark_dirty() -> void:
-	_dirty = true
+## The write that actually matters on mobile. Android can kill a backgrounded app without
+## warning and never asks first, so this is the last moment we are guaranteed to run code —
+## and because a checkpoint only writes what moved, it is cheap enough to always take.
+func save_on_lifecycle_event(reason: String) -> int:
+	return checkpoint(reason)
 
 
-## A turn-boundary autosave: writes only if something changed and the interval has elapsed.
-## Returns true if it wrote.
-func autosave() -> bool:
-	if not _autosave_allowed() or not _dirty:
-		return false
-	if _last_autosave_msec >= 0 \
-			and Time.get_ticks_msec() - _last_autosave_msec < int(AUTOSAVE_INTERVAL * 1000.0):
-		return false
-	return bool(save("autosave")["ok"])
+## Snapshot on a long game-time cadence so the player has named points to come back to. The
+## workspace already covers crash safety, so this is a convenience, not a durability measure.
+func _maybe_auto_snapshot() -> void:
+	if not has_slot() and _kernel.clock.total_days == 0:
+		return  # nothing has happened yet; do not create a settlement out of an empty game
+	if _kernel.clock.total_days - _last_snapshot_day < AUTO_SNAPSHOT_DAYS:
+		return
+	snapshot("auto")
 
 
-## The save that actually matters. Called when the OS tells us the app is leaving the
-## foreground, or is closing — the last moment we are guaranteed to run code. Ignores the
-## interval and writes whenever there is anything to write, because there may be no next
-## chance: Android kills backgrounded apps without asking.
-func save_on_lifecycle_event(reason: String) -> bool:
-	if not _autosave_allowed() or not _dirty:
-		return false
-	return bool(save(reason)["ok"])
+# --- parts <-> kernel ----------------------------------------------------------------------
+
+## Serialize the live game and hand each part to the workspace, which skips the ones whose
+## content has not changed. Assembling through [method SaveManager.capture] keeps one mapping
+## between the kernel and the save shape, shared with snapshots.
+func _write_all_parts() -> int:
+	var payload := _kernel.saves.capture(_kernel, slot_id, slot_name)
+	var ws := workspace()
+	var written := 0
+	var parts := {
+		SaveWorkspace.WORLD: payload["state"],
+		SaveWorkspace.GLOBALS: payload["globals"],
+		SaveWorkspace.CLOCK: payload["clock"],
+		SaveWorkspace.INSTANCES: payload["workflow_instances"],
+		SaveWorkspace.META: {
+			"version": payload["version"],
+			"slot": payload["slot"],
+		},
+	}
+	for part: String in parts:
+		if ws.checkpoint_part(part, parts[part] as Dictionary):
+			written += 1
+	for id: String in (payload["modules"] as Dictionary):
+		if ws.checkpoint_part(SaveWorkspace.module_part_name(id),
+				(payload["modules"] as Dictionary)[id] as Dictionary):
+			written += 1
+	return written
 
 
-func _autosave_allowed() -> bool:
-	return autosave_enabled
+## Reassemble the workspace parts into the save envelope and apply it. Going back through
+## [method SaveManager.restore] is what gives the workspace B3's migrations for free — a
+## workspace can be as old as any slot file if the player left the game closed across an update.
+func _restore_from_workspace() -> Dictionary:
+	var ws := workspace()
+	var meta := ws.read_part(SaveWorkspace.META)
+	if meta.is_empty():
+		return {"ok": false, "error": "workspace_unreadable", "data": {}}
+	var payload := {
+		"version": meta.get("version", SaveManager.SAVE_VERSION),
+		"slot": meta.get("slot", {}),
+		"state": ws.read_part(SaveWorkspace.WORLD),
+		"globals": ws.read_part(SaveWorkspace.GLOBALS),
+		"clock": ws.read_part(SaveWorkspace.CLOCK),
+		"workflow_instances": ws.read_part(SaveWorkspace.INSTANCES),
+		"modules": ws.module_parts(),
+	}
+	var restored: Dictionary = _kernel.saves.restore(_kernel, payload)
+	if not bool(restored["ok"]):
+		return restored
+	var slot: Dictionary = payload["slot"] as Dictionary
+	slot_id = String(slot.get("id", ""))
+	slot_name = String(slot.get("name", DEFAULT_SLOT_NAME))
+	_last_snapshot_day = _kernel.clock.total_days
+	# Reconciles anything the read did not cover (a part the save had but this build assembles
+	# differently). Normally writes nothing: the workspace records what it reads as current.
+	_write_all_parts()
+	session_changed.emit(slot_id, slot_name)
+	return restored

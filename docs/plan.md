@@ -329,21 +329,24 @@ Tasks, one branch + PR each:
   *Not built: a migration chain for the core envelope (`SAVE_VERSION`). There are no v0 saves
   and no second version, so the mechanism would have zero users; the version check already
   refuses anything newer. Add the chain when `SAVE_VERSION` first moves.*
-- **B4a — session lifecycle** — **done (2026-07-22)**. `GameSession` owns *which* slot the
-  player is in and *when* it gets written; `SaveManager` stays the mechanism. The boot flow
-  (not `GameKernel.boot()`) resumes the newest slot before the first screen renders — booting
-  is pure wiring, and when to resume is a product decision.
-  **The autosave policy is built around one fact:** on Android the OS can kill a backgrounded
-  app without warning and never asks first, so the save taken when we are *told* we are leaving
-  the foreground (`NOTIFICATION_APPLICATION_PAUSED`, plus close and back) is the only genuinely
-  guaranteed one. The turn-boundary autosave is an optimization that limits how much a hard
-  kill costs, and is coalesced to 20 s; lifecycle saves ignore the interval entirely.
-  Dirty tracking hangs off `command_applied` — the authoritative "world changed" signal, since
-  the brief mandates every mutation goes through the command bus — plus `day_passed`.
-  A new session **writes nothing until the first save**, so opening and closing the game leaves
-  no stray empty settlement; and a newest save that lists but will not load leaves the session
-  **detached**, so the next autosave creates a new slot instead of overwriting the file the
-  player may still want.
+- **B4a — session lifecycle, two-layer** — **done (2026-07-22)**. Policy revised before merge
+  after the user challenged whole-file autosaving; the result is **D34**.
+  `SaveWorkspace` (`user://current/`) is the live game as **separate parts**, written at every
+  turn boundary and every OS lifecycle event but **only where the content changed**. A slot
+  file is a whole snapshot, written deliberately or on a long game-time cadence. Crash contract:
+  lose the turn in progress, nothing more.
+  On Android the OS kills backgrounded apps without warning, so the lifecycle write
+  (`APPLICATION_PAUSED`, close, back) is the only guaranteed one — and because a checkpoint
+  only writes what moved, it is cheap enough to always take. **No autosave interval**: a
+  checkpoint that writes nothing costs a comparison, so throttling could only add a way to lose
+  a turn.
+  Resume order is workspace → newest snapshot → new game; the workspace wins even against a
+  wall-clock-newer snapshot, because it *is* the game being played.
+  **The rule that matters most:** an older build meeting newer data **stops** and leaves it
+  completely untouched. The first implementation fell through to a fresh start, which cleared
+  the workspace — a downgrade would have silently destroyed a settlement.
+  `AtomicFile` now holds the durability logic (tmp → verify → `.bak` → rename) once, shared by
+  both layers.
 - **B4b — the confirmation UI** that re-presents a pending question (B1's `pending_instance`),
   and the slot-management surface. Standing rule 4 applies to B1's path here.
 

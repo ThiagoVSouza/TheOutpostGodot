@@ -1042,6 +1042,58 @@ the output. Standing rule 4 again.
 
 ---
 
+## D34 — Two persistence layers: a live workspace and rare whole snapshots
+
+**Decided** (2026-07-22) — user-raised during the M4/B4a review, before it merged
+
+Persistence splits in two, because the two jobs have opposite cost profiles:
+
+| | `user://current/` (workspace) | `user://saves/<slot>.json` (snapshot) |
+|---|---|---|
+| Question | "what is happening right now" | "a settlement I can name and come back to" |
+| Written | every turn + every OS lifecycle event | deliberately, or on a long game-time cadence |
+| Scope | **only the parts that changed** | the whole world |
+
+**Why.** Rewriting the whole world every turn is O(total state) per turn. Today the save is a
+couple of KB and it genuinely does not matter — but at **M5 (memory and retrieval)** a
+settlement carrying thousands of memories re-serialized every turn is real cost, and on mobile
+flash it is wear as well. Splitting now is cheap; splitting after memories exist is not. This
+is the same argument that made migrations worth doing early (D33's neighbourhood).
+
+**The crash contract is explicit: you may lose the turn in progress, nothing more.** That is
+what a checkpoint buys, and it is enough — nobody has ever been upset about losing one turn.
+
+**What was considered and rejected for now:**
+
+- **Concurrency was *not* a reason.** It was raised as one, and it does not apply: GDScript
+  here is single-threaded, workflows are main-thread coroutines, and `AiOrchestrator` has an
+  explicit one-turn-at-a-time busy guard. There is no contended writer. Size and write
+  amplification justify this split; parallelism does not, and deciding on that basis would have
+  been deciding on a fiction.
+- **SQLite deferred.** Godot does not ship it — it needs a GDExtension, meaning native builds
+  per platform including Android arm64, export-template friction, and a new way for D3's
+  `.remap` bug class to bite. Memories are append-heavy and read-by-retrieval, which **JSONL
+  already serves** (the trace writer does exactly this, and D21 already deferred SQLite once).
+  Revisit at M5 **with a measurement**, per D17.
+- **Dirty flags rejected in favour of content comparison.** A flag someone forgets to set is a
+  lost turn, and the bug stays invisible until a player loses progress. Parts are small enough
+  that comparing them is cheaper than being wrong.
+- **No autosave interval.** A checkpoint that writes nothing costs a comparison, so throttling
+  could only add a way to lose a turn.
+
+**The rule that matters most — refuse, never discard.** An older build meeting data from a
+newer one must **stop**, not treat "I cannot read this" as "there is nothing here". The first
+implementation fell through to a fresh start, which cleared the workspace: a downgrade would
+have silently destroyed a settlement. Data that is merely *unreadable by this build* is left
+completely untouched (the player only has to reinstall the newer build); only genuinely
+*damaged* data may be abandoned for a snapshot. `GameSession.REFUSALS` is that distinction.
+
+**Ordering of authority on resume:** workspace, then newest snapshot, then new game. The
+workspace wins even when a snapshot is newer by wall clock — the workspace *is* the game being
+played, and a snapshot is a copy taken of it.
+
+---
+
 ## D17 — Benchmarking method: how to not fool yourself
 
 **Reference** (2026-07-16) — every item below cost us a wrong conclusion first

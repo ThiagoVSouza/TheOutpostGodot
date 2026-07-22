@@ -27,8 +27,6 @@ extends RefCounted
 const SAVE_VERSION: int = 1
 
 const EXTENSION := ".json"
-const BACKUP_SUFFIX := ".bak"
-const TEMP_SUFFIX := ".tmp"
 
 var saves_dir: String
 
@@ -60,7 +58,7 @@ func save_slot(kernel: GameKernel, slot_id: String, name: String) -> Dictionary:
 		return {"ok": false, "slot_id": slot_id, "error": "no_directory"}
 
 	var payload := capture(kernel, slot_id, name)
-	if not _write_atomically(_path_for(slot_id), JSON.stringify(payload, "\t")):
+	if not AtomicFile.write_text(_path_for(slot_id), JSON.stringify(payload, "\t")):
 		return {"ok": false, "slot_id": slot_id, "error": "write_failed"}
 	return {"ok": true, "slot_id": slot_id, "error": ""}
 
@@ -116,12 +114,11 @@ func load_slot(kernel: GameKernel, slot_id: String) -> Dictionary:
 func read_slot(slot_id: String) -> Dictionary:
 	if not _is_safe_slot_id(slot_id):
 		return {"ok": false, "error": "bad_slot_id", "data": {}}
-	var parsed := _read_json(_path_for(slot_id))
+	# Falls back to the `.bak` when the main file is unreadable — the case a crash mid-save
+	# leaves behind.
+	var parsed := AtomicFile.read_json(_path_for(slot_id))
 	if not bool(parsed["ok"]):
-		var backup := _read_json(_path_for(slot_id) + BACKUP_SUFFIX)
-		if not bool(backup["ok"]):
-			return {"ok": false, "error": String(parsed["error"]), "data": {}}
-		parsed = backup
+		return {"ok": false, "error": String(parsed["error"]), "data": {}}
 	var data: Dictionary = parsed["data"]
 	# Refuse a save written by a newer build rather than guessing at fields we do not know.
 	# Loading it anyway would quietly discard whatever that version added.
@@ -252,61 +249,11 @@ func has_slot(slot_id: String) -> bool:
 func delete_slot(slot_id: String) -> bool:
 	if not _is_safe_slot_id(slot_id):
 		return false
-	var path := _path_for(slot_id)
-	for candidate in [path, path + BACKUP_SUFFIX, path + TEMP_SUFFIX]:
-		if FileAccess.file_exists(candidate):
-			DirAccess.remove_absolute(candidate)
+	AtomicFile.remove_all(_path_for(slot_id))
 	return true
 
 
 # --- disk plumbing ---------------------------------------------------------------------
-
-## Write via a temp file, keeping the slot's previous contents as `.bak` until the new file is
-## in place. A crash can therefore lose the *newest* save but never destroy the slot: whatever
-## survives — new file or backup — is a complete save, never a half-written one.
-func _write_atomically(path: String, text: String) -> bool:
-	var temp := path + TEMP_SUFFIX
-	var f := FileAccess.open(temp, FileAccess.WRITE)
-	if f == null:
-		return false
-	f.store_string(text)
-	f.close()
-	# Read it back before trusting it: a full disk fails at flush, and finding that out now is
-	# much better than finding out when the player tries to load.
-	if not bool(_read_json(temp)["ok"]):
-		DirAccess.remove_absolute(temp)
-		return false
-
-	var backup := path + BACKUP_SUFFIX
-	if FileAccess.file_exists(path):
-		if FileAccess.file_exists(backup):
-			DirAccess.remove_absolute(backup)
-		# Rename rather than copy: the old bytes are never in two incomplete states at once.
-		if DirAccess.rename_absolute(path, backup) != OK:
-			DirAccess.remove_absolute(temp)
-			return false
-	if DirAccess.rename_absolute(temp, path) != OK:
-		# Put the previous save back — failing to write must not also lose what was there.
-		if FileAccess.file_exists(backup):
-			DirAccess.rename_absolute(backup, path)
-		return false
-	return true
-
-
-func _read_json(path: String) -> Dictionary:
-	if not FileAccess.file_exists(path):
-		return {"ok": false, "error": "not_found", "data": {}}
-	var text := FileAccess.get_file_as_string(path)
-	if text.is_empty():
-		return {"ok": false, "error": "empty_file", "data": {}}
-	# `JSON.parse_string` pushes an engine error on malformed input; a corrupt save is an
-	# expected condition here (that is what the backup is for), not something to log as a fault.
-	# The instance API reports the failure as a return value instead.
-	var json := JSON.new()
-	if json.parse(text) != OK or not (json.data is Dictionary):
-		return {"ok": false, "error": "corrupt_save", "data": {}}
-	return {"ok": true, "error": "", "data": json.data as Dictionary}
-
 
 func _path_for(slot_id: String) -> String:
 	return "%s/%s%s" % [saves_dir, slot_id, EXTENSION]

@@ -141,7 +141,7 @@ func _set_busy(busy: bool) -> void:
 
 
 func _on_save() -> void:
-	var result: Dictionary = Kernel.session.save("manual")
+	var result: Dictionary = Kernel.session.snapshot("manual")
 	if bool(result["ok"]):
 		_append("[color=gray]Saved '%s'.[/color]" % Kernel.session.slot_name)
 	else:

@@ -6,7 +6,8 @@ Keep it updated as work lands: it is a living checklist, not an archive.
 
 Last updated: 2026-07-22 · State: **M3a and M3b are COMPLETE. M4 (save/load) is in
 progress — B1, B2, B3 and B4a have landed; B4b (the confirmation UI + slot management)
-is next.** 231/231 tests green. GATE 0 for M4 was
+is next.** 234/234 tests green. **D34 (two persistence layers) is the newest decision and
+governs everything in the save path.** GATE 0 for M4 was
 satisfied on 2026-07-22; see `docs/plan.md` §M4 for the direction it settled.
 Sections below marked *(historical)* describe milestones already finished — they are
 kept for their gotchas, not as instructions.
@@ -31,52 +32,61 @@ further buys nothing. Build machinery, not content.
 
 ## 0a. Session log — 2026-07-22 (M3b close-out, then M4 begins)
 
-### M4/B4a — session lifecycle (landed)
+### M4/B4a — two-layer persistence (landed) — **read D34 before touching this**
 
-`GameSession` (`core/save/game_session.gd`, on the kernel as `session`) owns *which* slot the
-player is in and *when* it is written. `SaveManager` stays the mechanism; this is the policy.
+**Its policy was rewritten before merge**, after the user challenged whole-file autosaving.
+The reasoning is D34; this is the operational summary.
 
-**The autosave policy follows from one fact:** on Android the OS can kill a backgrounded app
-without warning and never asks first. So the save taken when we are *told* we are leaving the
-foreground is the only genuinely guaranteed one — `GameKernel._notification` handles
-`APPLICATION_PAUSED`, `WM_CLOSE_REQUEST` and `WM_GO_BACK_REQUEST`. The turn-boundary autosave
-merely limits how much a hard kill costs, and is coalesced to `AUTOSAVE_INTERVAL` (20 s);
-lifecycle saves bypass the interval entirely.
+Two layers, opposite cost profiles:
 
-Other calls worth keeping:
+- **`SaveWorkspace`** (`user://current/`) — the live game as **separate parts**
+  (`world`/`globals`/`clock`/`instances`/`meta`/`module_<id>`). Written at every turn boundary
+  and every OS lifecycle event, but **only the parts whose content changed**. This is what
+  survives a crash. Contract: lose the turn in progress, nothing more.
+- **`SaveManager`** slot files — a whole snapshot the player named. Rare, deliberate.
 
-- **Resume happens in the boot flow, not `GameKernel.boot()`.** Booting stays pure wiring so
-  tests get a clean world, and *when* to resume is a product decision owned by whatever shows
-  the first screen. `boot.gd` resumes before the first screen renders, so the game opens
-  showing the player's world rather than flickering into it.
-- **A new session writes nothing until the first save.** Opening the game and closing it again
-  never leaves a stray empty settlement in the load menu.
-- **A newest save that lists but will not load leaves the session detached** (no slot). If it
-  adopted the slot, the next autosave would overwrite a file the player may still want.
-- Dirty tracking hangs off **`command_applied`** — the authoritative "the world changed"
-  signal, since the brief mandates every mutation goes through the command bus — plus
-  `day_passed` for time.
+`AtomicFile` holds the durability logic (tmp → read back → `.bak` → rename) once, shared by
+both. `GameSession` is the policy; `GameKernel._notification` drives `APPLICATION_PAUSED`,
+`WM_CLOSE_REQUEST`, `WM_GO_BACK_REQUEST`.
 
-**Two gotchas this cost:**
+**Do not reintroduce these, they were removed on purpose:**
 
-1. **The kernel owns the event subscriptions, not the session.** `GameSession` is RefCounted
-   and reaches the bus through the kernel, so handing the bus a handler that captures it forms
-   `session → kernel → events → handler → session` — exactly the leaking cycle the T1 notes
-   warn about. The kernel is a Node with an explicit lifetime, so it subscribes and calls into
-   the session. **Don't "tidy" this back into `GameSession._init`.**
-2. **`Time.get_ticks_msec()` is small in a short process.** The autosave interval check
-   compared against an initial `0`, so in a 3-second test run (or a quick app launch) the
-   elapsed time never exceeded 20 s and the *first* autosave — the one that matters most —
-   was silently skipped. `_last_autosave_msec` starts at `-1` meaning "never saved". Watch for
-   this anywhere a tick-based interval has a zero default.
+- **No autosave interval.** A checkpoint that writes nothing costs a comparison, so throttling
+  could only add a way to lose a turn. (The earlier interval also hid a real bug:
+  `Time.get_ticks_msec()` is small in a short-lived process, so the *first* autosave — the one
+  that matters most — was silently skipped. Watch for that anywhere a tick interval defaults
+  to zero.)
+- **No dirty flags.** The workspace compares each part's serialized content. A flag someone
+  forgets to set is a lost turn, and the bug is invisible until a player loses progress.
 
-Also: `autosave_enabled` **defaults** from `OUTPOST_TEST_RUN` rather than being gated by it, so
-tests of this machinery can opt back in against a scratch directory. A hard env gate made the
-behaviour untestable.
+**The most dangerous bug in this milestone, caught before merge:** an older build meeting data
+from a newer one originally fell through to `start_new()`, which calls `workspace().clear()` —
+**a downgrade would have silently deleted the player's settlement.** Now `GameSession.REFUSALS`
+separates "unreadable by this build" (stop, touch nothing — reinstalling the newer build gets
+it back) from "genuinely damaged" (may be abandoned for a snapshot). If you add a new error
+code to the save path, decide which side of that line it falls on.
 
-Verified in the real app: two processes — one plays a turn, advances the clock and takes the
-lifecycle save; the other relaunches into the same settlement — plus a real `boot.tscn` run
-logging `Continued 'Ironhold'` and showing the chat screen.
+Resume order: workspace → newest snapshot → new game. The workspace wins even against a
+wall-clock-newer snapshot, because it *is* the game being played.
+
+**Two more standing points:**
+
+1. **The kernel owns the event subscription, not the session.** `GameSession` is RefCounted and
+   reaches the bus through the kernel, so a handler capturing it forms
+   `session → kernel → events → handler → session` — the leaking cycle the T1 notes warn about.
+   **Don't "tidy" this back into `GameSession._init`.**
+2. `autosave_enabled` **defaults** from `OUTPOST_TEST_RUN` rather than being gated by it, so
+   tests of this machinery can opt back in against scratch directories. A hard env gate made
+   the behaviour untestable.
+
+**Gotcha the live run caught (tests missed it):** resuming rewrote all six parts identically,
+doubling the I/O of every launch — precisely the write amplification the split exists to
+prevent. `SaveWorkspace.read_part` now records what it reads as already-written. There is a
+regression test.
+
+Verified in the real app across four processes: play → checkpoint (6 parts, then 0 on a
+repeat) → relaunch and resume → simulated downgrade refused with every file intact → resume
+again, still refused, still intact.
 
 ### M4/B3 — module-declared migrations (landed)
 
