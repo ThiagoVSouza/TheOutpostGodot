@@ -95,10 +95,54 @@ func _finish(result: RefCounted, trace: AiTrace) -> Dictionary:
 		WorkflowInstance.Status.COMPLETED:
 			return _result(true, narrative, trace, applied, "")
 		WorkflowInstance.Status.SUSPENDED:
-			# A confirm-pending turn: the reply stands; resume wiring is a later step.
-			return _result(true, narrative, trace, applied, "pending_confirmation")
+			# A confirm-pending turn. The instance goes to the store, which owns it until
+			# something wakes it (M4/B1) — before this it was dropped, so a workflow that
+			# suspended could never be resumed or saved. The reply still stands: the player
+			# reads the question the workflow asked, and answers via `resume`.
+			var suspended: WorkflowInstance = result.get("instance")
+			_kernel.workflow_instances.remember(suspended)
+			return _result(true, narrative, trace, applied, "pending_confirmation",
+				suspended.instance_id if suspended != null else "")
 		_:
 			return _result(false, narrative, trace, applied, String(result.get("fail_code")))
+
+
+## Answer a pending question and resume its instance (M4/B1 — coroutine, await it).
+## [param outcome] carries the wake result; for a confirmation, `{confirmed: bool}`.
+##
+## Goes through the same busy guard and the same `_finish` contract as a fresh turn, because it
+## *is* a turn: it applies commands and narrates. The instance is forgotten before it runs, so a
+## failed resume cannot leave a question the player has already answered sitting in the store —
+## and if the workflow suspends again, `_finish` remembers it anew with a new pending handle.
+func resume(instance_id: String, outcome: Dictionary = {}) -> Dictionary:
+	if _busy:
+		return _result(false, "The game master is still thinking.", AiTrace.new(), [], "busy")
+
+	var instance := _kernel.workflow_instances.get_instance(instance_id)
+	if instance == null:
+		var missing := AiTrace.new()
+		missing.add("resume_unknown_instance", {"instance": instance_id})
+		return _result(false, "There is nothing waiting on an answer.", missing, [], "unknown_instance")
+
+	var entry: Variant = _kernel.workflow_registry.get_definition(instance.workflow_id)
+	if not (entry is Dictionary):
+		# The workflow the save was made against is gone (a module removed or renamed it).
+		# Drop the instance rather than stranding an unanswerable question in every future save.
+		_kernel.workflow_instances.forget(instance_id)
+		var gone := AiTrace.new()
+		gone.add("resume_unknown_workflow", {"workflow": instance.workflow_id, "instance": instance_id})
+		return _result(false, "That course of action is no longer available.", gone, [], "unknown_workflow")
+
+	_busy = true
+	var trace := AiTrace.new()
+	trace.add("turn_resumed", {"instance": instance_id, "workflow": instance.workflow_id,
+		"wake": instance.wake.duplicate(true), "outcome": outcome.duplicate(true)})
+	_kernel.workflow_instances.forget(instance_id)
+	var result := await WorkflowExecutor.for_kernel(_kernel).resume(
+		entry as Dictionary, instance, outcome, trace)
+	var out: Dictionary = _finish(result, trace)
+	_busy = false
+	return out
 
 
 func _seed(message: String) -> int:
@@ -107,7 +151,8 @@ func _seed(message: String) -> int:
 
 ## Every return path funnels through here, so this is the one place that hands the finished
 ## trace to its sink (A1, D21). No-op when the kernel has no writer, or the writer is disabled.
-func _result(ok: bool, narrative: String, trace: AiTrace, applied: Array, error: String) -> Dictionary:
+func _result(ok: bool, narrative: String, trace: AiTrace, applied: Array, error: String,
+		pending_instance: String = "") -> Dictionary:
 	if _kernel != null and _kernel.trace_writer != null:
 		_kernel.trace_writer.write(trace)
 	return {
@@ -116,4 +161,6 @@ func _result(ok: bool, narrative: String, trace: AiTrace, applied: Array, error:
 		"trace": trace,
 		"applied_commands": applied,
 		"error": error,
+		# The handle a caller answers a pending question with; empty on every other turn.
+		"pending_instance": pending_instance,
 	}

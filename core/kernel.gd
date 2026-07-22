@@ -33,6 +33,9 @@ var globals: GlobalStore
 var dsl_functions: DslFunctionRegistry
 var dsl_tables: DslTableRegistry
 var workflow_registry: WorkflowRegistry
+## Owns suspended instances between the turn that suspended and the wake that resumes them
+## (M4/B1). Part of the save contract.
+var workflow_instances: WorkflowInstanceStore
 var narrator: DslNarrator
 var narration: NarrationSettings
 var prompt_families: PromptFamilyRegistry
@@ -92,6 +95,7 @@ func boot() -> void:
 	dsl_functions = DslFunctionRegistry.new()
 	dsl_tables = DslTableRegistry.new()
 	workflow_registry = WorkflowRegistry.new()
+	workflow_instances = WorkflowInstanceStore.new()
 	# The `ai`/`narrate` seams (M3b). Against a real backend they call the model
 	# (grammar-constrained classify — D19; bounded prose — D4/D29, with the per-call timeout and
 	# T5 reporting living at the seam, D22/D30); against the fake they stay deterministic.
