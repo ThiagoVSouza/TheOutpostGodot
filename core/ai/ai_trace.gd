@@ -41,6 +41,16 @@ func has_stage(stage: String) -> bool:
 	return stages().has(stage)
 
 
+## Every entry recorded for one stage, in order, as their data dictionaries. `has_stage` answers
+## "did this happen"; this answers "with what" — which is the question a D4 audit actually asks.
+func entries_for(stage: String) -> Array:
+	var out: Array = []
+	for e in _entries:
+		if e["stage"] == stage:
+			out.append(e["data"])
+	return out
+
+
 ## Human-readable multiline dump for the dev trace panel / logs.
 func to_text() -> String:
 	var lines: Array = []

@@ -4,10 +4,11 @@
 mid-milestone after a usage-limit cutoff. Follow this file top to bottom.
 Keep it updated as work lands: it is a living checklist, not an archive.
 
-Last updated: 2026-07-21 (evening) · State: **M3a is COMPLETE; M3b is essentially
-complete and was driven by hand in the playground against real E2B.** 161/161 tests
-green. Sections below marked *(historical)* describe milestones already finished —
-they are kept for their gotchas, not as instructions.
+Last updated: 2026-07-22 · State: **M3a is COMPLETE; M3b is COMPLETE** — the
+walking skeleton, the D17 gate, the playground, narration levels, and the narration
+quality pass all landed and were verified against real E2B. 175/175 tests green.
+**GATE 0 applies again before M4.** Sections below marked *(historical)* describe
+milestones already finished — they are kept for their gotchas, not as instructions.
 
 ## 0. If you are the next agent, start exactly here
 
@@ -22,7 +23,75 @@ they are kept for their gotchas, not as instructions.
 4. Scope discipline still holds: **JSON canonical form only, no text parser** (D24,
    D28). The `nortrix` syntax in `docs/reference_dsl/` is reference, not a target.
 
-## 0a. Session log — 2026-07-21 evening (playground testing)
+## 0a. Session log — 2026-07-22 (narration quality + a widened action set)
+
+**What this session did:** closed out the three narration problems the previous
+session opened, widened the intent set from two labels to five, and re-verified the
+whole thing live on E2B. 161 → 175 tests. Branch: `feat/m3b-narration-quality`.
+
+### What landed
+
+**Range-row rule tables** (`DslTableRegistry.register_ranges`) — the `table_get`
+range-rows deferred from A2. Bands are half-open `[from, to)` like the DSL's `for`;
+open ends via omitted `from`/`to`; overlapping, disordered or empty rows are refused
+at registration rather than silently first-matching. **No DSL or op change was
+needed** — `table_get` reads both table shapes through the same path.
+
+**The raw d20 no longer reaches the narrator.** The gather workflows now band the
+roll through a `*_outcome` range table and branch on the band's *name*, so nothing
+downstream of the roll sees the number. The threshold moved out of the authored `if`
+and into the table at the same time. The die is now traced instead
+(`workflow_rolled`) — it left the fiction and entered the audit trail, which is where
+"why did I get 3 food?" should be answered. `AiTrace.entries_for(stage)` was added
+for that, and the `workflow_narrated` record now also carries the `context` the model
+was given (a trace showing only the reply cannot tell you whether the model invented
+something).
+
+**Five intents instead of two:** `forage`, `hunt`, `rest`, `build`, `general` —
+deliberately different workflow *shapes*, not five copies of forage. `forage`/`hunt`
+are the same authored shape with different table data; `rest` resolves with no roll
+at all; `build` is refused in fiction by its own precondition.
+
+**Narration prompt fixes:** the user prompt says `What happened:` rather than
+`Narrate:`, the topics binding demands past-tense events and forbids restating the
+request, and the base binding says plainly what to do when nothing was resolved.
+
+### Two things only the live run could find (rule 4 earning its place again)
+
+1. **"I sing to the goats" classified as `forage`, twice.** Widening the label set
+   did not fix the catch-all — the classifier prompt listed *bare label names*, so
+   `general` carried no hint that it was the decline option and the model reached for
+   the nearest plausible action (goats → animals → food). Fix: `PromptFamily` gained
+   an optional `descriptions` dict (`label -> meaning`) that the runner renders into
+   the prompt; base_game authors them. It then classified `general` correctly.
+   **The grammar bounds what the model may answer; the descriptions are what make the
+   answer sensible.** A closed set alone is not enough.
+2. **The band label surfaced verbatim in prose** — "The outcome is steady." That is
+   the *same failure as the raw die*: a mechanical term reaching the player as
+   narration. Fixed with an explicit binding (`LlamaNarrator.NO_LABELS`): category
+   words shape word choice but are never named. Now reads "a bountiful haul".
+
+Both were invisible to 173 passing tests.
+
+### Live results (E2B, 5 intents × 3 narration levels)
+
+All five intents route to their own workflow; no raw die in any prose at any level;
+turns 0.29–1.46 s (long prose is generation-bound, as before). Leftover nits, none
+blocking: at `topics` the model occasionally states a band as its own bullet ("- The
+return was meagre") — defensible in a ledger form — and E2B produces the odd
+grammatical slip ("Nothing befall the settlement"), which is a model-size artifact.
+
+### Reproducing the live check
+
+The throwaway `extends SceneTree` script pattern from §2a is how this was driven
+(boot the kernel, set `kernel.narration.level`, loop messages through
+`kernel.ai_orchestrator.handle_message`, print intent/roll/context/prose). Write it,
+run it with `--headless -s res://<tmp>.gd`, **delete it after** — it is never
+committed.
+
+---
+
+## 0b. Session log — 2026-07-21 evening (playground testing)
 
 **What this session did:** drove the M3b playground by hand against a real local
 E2B model, found and fixed a silent narration failure, then added player-facing
@@ -62,7 +131,7 @@ unchanged: `verbosity` stays an authored literal (D4 amendment #3). Traces recor
 both levels (`authored_verbosity` + `verbosity`). Verified live on E2B: same beat,
 16 tokens at `short` vs 67 at `long prose`; `topics` produced real `- ` bullets.
 
-### Open questions for tomorrow
+### Open questions for tomorrow — **all resolved 2026-07-22, see §0a**
 
 1. **Narration prompt work (the reason the levels were built).**
    - `topics` narrates the *instruction* rather than the fiction —
@@ -79,7 +148,11 @@ both levels (`authored_verbosity` + `verbosity`). Verified live on E2B: same bea
    `base_game_module.gd:37`). "Kill a wolf" classified as `forage` once and
    `general` another time — out-of-set input has nowhere sensible to go. Widening
    the set is also what D17 needs (it measured 3 actions, 1 model).
+   *Resolved: five labels + per-label descriptions; "Kill a wolf" is now stably
+   `hunt`. Widening alone was not sufficient — see §0a finding 1.*
 3. **PR #28 (D17 measurement) was still OPEN** at the end of this session.
+   *It merged 2026-07-21 21:14, along with #29. The report of it being open was
+   simply stale — check `gh pr view` rather than trusting a handover line.*
 
 ### Recent measurements (E2B, classify + narrate per turn)
 

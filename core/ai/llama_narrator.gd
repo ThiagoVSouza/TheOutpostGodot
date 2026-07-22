@@ -12,7 +12,16 @@ const TIMEOUT: float = 30.0
 const SYSTEM := "You are the game master of The Outpost, a Greco-Roman fantasy settlement " \
 	+ "game. Narrate ONLY the outcome you are given, in vivid but concise prose. Never invent " \
 	+ "resources, numbers, or events beyond the facts provided; higher verbosity means more " \
-	+ "colour, not more facts."
+	+ "colour, not more facts. If the facts say nothing was resolved, say so plainly and do " \
+	+ "not imply that anyone acted or that anything came of it. " + NO_LABELS
+
+## Some decided facts are *categories* the rules used to pick the outcome — an outcome band like
+## "steady" or "bountiful". They are given so the prose can take on their colour, but the model's
+## instinct is to append them as a verdict ("The outcome is steady."), which reads like a debug
+## line in the middle of the fiction. This is the same failure as the raw die leaking: a
+## mechanical term surfacing as narration.
+const NO_LABELS := "Some facts are category words describing how well it went; let them shape " \
+	+ "your word choice, but never name them or state the category as a sentence of its own."
 
 ## `topics` is a different output *form*, not a shorter length (see [NarrationSettings]), so it
 ## gets its own binding: a bare list of what happened, for players who want the ledger and not
@@ -20,7 +29,9 @@ const SYSTEM := "You are the game master of The Outpost, a Greco-Roman fantasy s
 const SYSTEM_TOPICS := "You are the game master of The Outpost, a Greco-Roman fantasy " \
 	+ "settlement game. Report ONLY the outcome you are given as a short bulleted list, one " \
 	+ "short clause per line, each line starting with '- '. No prose, no preamble, no closing " \
-	+ "line. Never invent resources, numbers, or events beyond the facts provided."
+	+ "line. Never invent resources, numbers, or events beyond the facts provided. Each line " \
+	+ "states something that happened in the settlement, in the past tense. Never restate the " \
+	+ "request itself and never write a line that tells someone to do something. " + NO_LABELS
 
 ## Playground-only (see [member NarrationSettings.loose]): drops the binding to the given facts
 ## so we can see what the model reaches for unprompted. NOT a shipping mode — it gives up D4.
@@ -64,5 +75,9 @@ func _system_prompt(verbosity: String) -> String:
 
 
 func _user_prompt(instruction: String, context: Dictionary, verbosity: String, language: String) -> String:
-	return "Narrate: %s\nDecided facts: %s\nVerbosity: %s\nWrite the reply in language: %s" % [
+	# "What happened" rather than "Narrate": an authored instruction is a description of the
+	# event the rules already resolved, and labelling it as a task makes the model treat the
+	# sentence itself as the thing to report (most visibly at `topics`, which listed the
+	# instruction back as a bullet).
+	return "What happened: %s\nDecided facts: %s\nVerbosity: %s\nWrite the reply in language: %s" % [
 		instruction, JSON.stringify(context), verbosity, language]

@@ -14,7 +14,16 @@ extends RefCounted
 var id: String
 var options: PackedStringArray
 
+## Optional one-line meaning per label, `label -> description`. The grammar constrains *what*
+## the model may answer but says nothing about what the labels mean, so a bare set leaves the
+## model guessing from the words themselves — and a catch-all named `general` carries no hint
+## that it is the "nothing mechanical happens here" bucket, so the model reaches for a
+## plausible action instead of declining. Authored content, like the option set itself.
+var descriptions: Dictionary = {}
 
-func _init(family_id: String, family_options: PackedStringArray = PackedStringArray()) -> void:
+
+func _init(family_id: String, family_options: PackedStringArray = PackedStringArray(),
+		option_descriptions: Dictionary = {}) -> void:
 	id = family_id
 	options = family_options
+	descriptions = option_descriptions

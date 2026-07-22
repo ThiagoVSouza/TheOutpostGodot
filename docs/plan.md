@@ -222,8 +222,21 @@ header separates M3 scope from target-architecture reference).
   prose), auto-selected when a real backend is active; timeout + T5 reporting live at
   the seam (`LlamaAiCall`). A live forage turn on E2B classified, dispatched, granted
   the table's `5`, and narrated "five units of food" — **D4 holding on a real model**
-  (`docs/benchmarks/m3b_walking_skeleton_e2b.md`). **Remaining:** the D17
-  classification-stability measurement across models/phrasings/languages.
+  (`docs/benchmarks/m3b_walking_skeleton_e2b.md`).
+- **Narration quality + a widened action set** — **done (2026-07-22)**. The intent set
+  went from 2 labels to 5 (`forage`, `hunt`, `rest`, `build`, `general`) as deliberately
+  different workflow shapes: two gathering workflows that differ only in table data, one
+  that resolves with no roll, and one refused in fiction by its own precondition. The raw
+  d20 no longer reaches the narrator — `table_get` gained **range rows** (the A2 deferral)
+  and the workflows band the roll through a rule table, branching on the band's name; the
+  die is traced (`workflow_rolled`) instead of narrated, and the `workflow_narrated` record
+  now carries the context the model was given.
+  **Two findings only the live run produced:** a grammar-constrained closed set is *not*
+  enough on its own — with bare label names E2B forced "I sing to the goats" into `forage`,
+  and only per-label descriptions (new `PromptFamily.descriptions`) moved it to the
+  catch-all; and category words in the facts get announced as verdicts ("The outcome is
+  steady.") unless the narrator is explicitly told to let them colour word choice instead.
+  Both classes are the same mistake — a mechanical term reaching the player as fiction.
 - **Measure classification stability** (D17) — **first result in, and it holds.**
   `tools/measure_classification.gd`: difficulty (`low|medium|hard`), grammar-constrained,
   temp 0, reason-in-English (D29), across 3 actions × 3 languages (en/pt/es) × 2 phrasings
@@ -232,7 +245,11 @@ header separates M3 scope from target-architecture reference).
   (Bonsai-4B: 3 outcomes in pt/es/fr) **does not reproduce**
   (`docs/benchmarks/d17_classification_stability.md`). Caveats: one model (E2B, the shipping
   default); one action read `low` vs the guessed `medium` — calibration, not instability;
-  small action set. **Next:** repeat across the ladder (E4B/Qwen/Bonsai) + widen the actions.
+  small action set. **Next:** repeat across the ladder (E4B/Qwen/Bonsai). *(The action set
+  was widened to five on 2026-07-22.* **Re-read the measurement in light of D33:** it used
+  bare label names, and `low|medium|hard` are self-explanatory in a way `general` is not, so
+  the result probably stands — but the tool should carry descriptions before the ladder run,
+  or it measures a prompt the game no longer uses.*)*
 - AI output only via the pipe protocol (D20); `tool_calls` retired
 - Rules own every number. The AI never emits a `grant_resource` amount.
 - Rework `AiOrchestrator`: it currently does the brief's model-driven tool calling,

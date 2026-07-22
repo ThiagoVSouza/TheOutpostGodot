@@ -32,14 +32,31 @@ func register(kernel: GameKernel) -> void:
 	kernel.scheduler.schedule_monthly(_end_of_month_workflow())
 
 	# --- M3b: the orchestration a player turn runs through (the ribosome, D30) ---
-	# The closed intent set the model classifies into (grammar-constrained, D19).
+	# The closed intent set the model classifies into (grammar-constrained, D19). Five labels
+	# plus the catch-all: two of them are gathering actions that differ only in their balance
+	# data, one resolves with no roll at all, and one is refused by its own preconditions —
+	# deliberately different workflow *shapes*, so the skeleton proves the routing rather than
+	# one lucky path. `general` is the honest home for anything out of set.
+	# The labels carry their meaning with them: the grammar decides what the model *may* answer,
+	# these decide whether it answers sensibly. `general` in particular has to say out loud that
+	# it is the decline option, or every message gets forced into an action that resolves.
 	kernel.prompt_families.register(PromptFamily.new("classify_intent",
-		PackedStringArray(["forage", "general"])))
-	# Balance numbers live in a tunable table, not in code (D24).
-	kernel.dsl_tables.register("forage_yield", {"success": 5})
+		PackedStringArray(["forage", "hunt", "rest", "build", "general"]),
+		{
+			"forage": "gathering plants, berries, roots or other food from the land",
+			"hunt": "pursuing and killing animals for meat",
+			"rest": "the settlement pauses, works less, sleeps or recovers",
+			"build": "constructing, repairing or extending a building or structure",
+			"general": "anything else, including idle talk, questions, feelings and whimsy — "
+				+ "choose this whenever the message is not clearly one of the actions above",
+		}))
+	_register_tables(kernel)
 	# The entry workflow (the one hardcoded id) and the intent workflows it dispatches to.
 	kernel.workflow_registry.register(_entry_workflow())
-	kernel.workflow_registry.register(_forage_workflow())
+	kernel.workflow_registry.register(_gather_workflow("forage"))
+	kernel.workflow_registry.register(_gather_workflow("hunt"))
+	kernel.workflow_registry.register(_rest_workflow())
+	kernel.workflow_registry.register(_build_workflow())
 
 	kernel.log.info(
 		"BaseGame",
@@ -47,9 +64,39 @@ func register(kernel: GameKernel) -> void:
 	)
 
 
-## The ribosome's entry workflow (D30): real guardrails, then classify the intent from a
-## closed set, then hand off to the intent's workflow. An unrecognized intent is acknowledged
-## in prose rather than resolved — the "I sing to the goats" case has no mechanical stake.
+## Balance data (D24): every number a turn can produce lives here, editable without a rebuild.
+##
+## The `*_outcome` tables are **range tables** — a d20 total maps to the *band* it falls in.
+## That is what keeps the raw die out of the game: the workflow branches on the band's name and
+## hands the narrator that word, so no step downstream of the roll ever sees `19`. It also puts
+## the success threshold in the data instead of a magic number in an authored `if`.
+func _register_tables(kernel: GameKernel) -> void:
+	# Foraging is the safe option: it succeeds more often than not, and pays modestly.
+	kernel.dsl_tables.register_ranges("forage_outcome", [
+		{"to": 8, "value": "meagre"},
+		{"from": 8, "to": 16, "value": "steady"},
+		{"from": 16, "value": "bountiful"},
+	])
+	kernel.dsl_tables.register("forage_yield", {"meagre": 0, "steady": 3, "bountiful": 5})
+
+	# Hunting is the gamble: it fails half the time and pays roughly double when it lands.
+	kernel.dsl_tables.register_ranges("hunt_outcome", [
+		{"to": 11, "value": "meagre"},
+		{"from": 11, "to": 18, "value": "steady"},
+		{"from": 18, "value": "bountiful"},
+	])
+	kernel.dsl_tables.register("hunt_yield", {"meagre": 0, "steady": 6, "bountiful": 11})
+
+	# What the outpost must have in store before a work crew can be fed off the job.
+	kernel.dsl_tables.register("build_cost", {"food": 10})
+
+
+## The ribosome's entry workflow (D30): real guardrails, then classify the intent from a closed
+## set, then hand off to the intent's workflow. Routing is an explicit authored chain rather
+## than "dispatch to whatever the model said" — `dispatch.workflow` is a literal by design, so
+## the set of reachable workflows is auditable here and the model only picks among them.
+## An unrecognized intent is acknowledged in prose rather than resolved — the "I sing to the
+## goats" case has no mechanical stake.
 func _entry_workflow() -> Dictionary:
 	return {
 		"op": "workflow", "id": "orchestration_entry", "version": 1, "origin": "base_game",
@@ -60,34 +107,110 @@ func _entry_workflow() -> Dictionary:
 			{"op": "ai", "family": "classify_intent", "facts": {"message": "@message"}, "as": "$$intent"},
 			{"op": "if", "cond": ["$$intent", "==", "forage"],
 			 "then": [{"op": "dispatch", "workflow": "forage", "args": {"message": "@message"}}],
+			 "elif": [
+				{"cond": ["$$intent", "==", "hunt"],
+				 "then": [{"op": "dispatch", "workflow": "hunt", "args": {"message": "@message"}}]},
+				{"cond": ["$$intent", "==", "rest"],
+				 "then": [{"op": "dispatch", "workflow": "rest", "args": {"message": "@message"}}]},
+				{"cond": ["$$intent", "==", "build"],
+				 "then": [{"op": "dispatch", "workflow": "build", "args": {"message": "@message"}}]},
+			 ],
+			 # The catch-all. The instruction states what *happened* — the words were heard and
+			 # nothing was set in motion — rather than instructing the narrator to "acknowledge",
+			 # which it will otherwise repeat back as the event itself (worst at `topics`). The
+			 # unresolved state is also a decided fact in the context, so the model has something
+			 # true to say instead of inventing an outcome nobody adjudicated.
 			 "else": [{"op": "narrate",
-					   "instruction": "acknowledge the player's words without resolving an action",
-					   "context": {"message": "@message"}, "verbosity": "short", "language": "en"}]}
+					   "instruction": "the outpost hears the player's words and nothing is set in motion",
+					   "context": {"message": "@message", "outcome": "nothing was resolved this turn"},
+					   "verbosity": "short", "language": "en"}]}
 		]
 	}
 
 
-## The forage intent (economy anchor): a seeded roll decides the outcome, the reward comes from
-## a rule table (never the model), the command owns the state change, and the model only
-## narrates the decided result (D4).
-func _forage_workflow() -> Dictionary:
+## The gathering intents (economy anchor), one workflow per intent from one shape: a seeded roll
+## picks an outcome *band* from a rule table, the band picks the reward from another table (never
+## the model), the command owns the state change, and the model only narrates the decided result
+## (D4). `forage` and `hunt` differ purely in the data their tables hold.
+func _gather_workflow(intent: String) -> Dictionary:
 	return {
-		"op": "workflow", "id": "forage", "version": 1, "origin": "base_game",
+		"op": "workflow", "id": intent, "version": 1, "origin": "base_game",
 		"params": {"message": {"type": "string", "required": true}},
 		"steps": [
 			{"op": "roll", "dice": "1d20", "as": "$$roll"},
-			{"op": "if", "cond": ["$$roll", ">=", 8],
+			# The die becomes a word here and stays a word from here on.
+			{"op": "let", "as": "$$outcome",
+			 "value": {"op": "table_get", "table": "%s_outcome" % intent, "key": "$$roll"}},
+			{"op": "let", "as": "$$amount",
+			 "value": {"op": "table_get", "table": "%s_yield" % intent, "key": "$$outcome"}},
+			{"op": "if", "cond": ["$$amount", ">", 0],
 			 "then": [
-				{"op": "let", "as": "$$amount",
-				 "value": {"op": "table_get", "table": "forage_yield", "key": "success"}},
 				{"op": "run_command", "name": "grant_resource",
 				 "args": {"resource": "food", "amount": "$$amount"}},
-				{"op": "narrate", "instruction": "the foraging party returns with food",
-				 "context": {"amount": "$$amount", "roll": "$$roll"}, "verbosity": "short", "language": "en"}
+				{"op": "narrate", "instruction": _gather_success_instruction(intent),
+				 "context": {"amount": "$$amount", "outcome": "$$outcome"},
+				 "verbosity": "short", "language": "en"}
 			 ],
 			 "else": [
-				{"op": "narrate", "instruction": "the foraging party returns empty-handed",
-				 "context": {"roll": "$$roll"}, "verbosity": "short", "language": "en"}
+				{"op": "narrate", "instruction": _gather_failure_instruction(intent),
+				 "context": {"outcome": "$$outcome"}, "verbosity": "short", "language": "en"}
+			 ]}
+		]
+	}
+
+
+func _gather_success_instruction(intent: String) -> String:
+	if intent == "hunt":
+		return "the hunting party returns to the outpost carrying meat"
+	return "the foraging party returns to the outpost carrying food"
+
+
+func _gather_failure_instruction(intent: String) -> String:
+	if intent == "hunt":
+		return "the hunting party returns to the outpost having killed nothing"
+	return "the foraging party returns to the outpost empty-handed"
+
+
+## Resting: a turn that resolves with no roll at all. The plan calls for workflows whose shape
+## decides what happens — "a seeded roll if the action warrants one, or none at all" — and this
+## is the one that warrants none. Nothing is granted; the day simply passes.
+func _rest_workflow() -> Dictionary:
+	return {
+		"op": "workflow", "id": "rest", "version": 1, "origin": "base_game",
+		"params": {"message": {"type": "string", "required": true}},
+		"steps": [
+			{"op": "narrate", "instruction": "the outpost spends the day at rest and nothing befalls it",
+			 "context": {"outcome": "the day passes quietly"},
+			 "verbosity": "short", "language": "en"}
+		]
+	}
+
+
+## Building: a turn a precondition can refuse. The refusal is fiction the player reads, not a
+## `require` failure — an outcome the rules declined is still an outcome, and the narrator is
+## told plainly that the work did not begin so it cannot imply that it did.
+func _build_workflow() -> Dictionary:
+	return {
+		"op": "workflow", "id": "build", "version": 1, "origin": "base_game",
+		"params": {"message": {"type": "string", "required": true}},
+		"steps": [
+			{"op": "let", "as": "$$stored",
+			 "value": {"op": "read_state", "path": ["resources", "food"]}},
+			{"op": "let", "as": "$$needed",
+			 "value": {"op": "table_get", "table": "build_cost", "key": "food"}},
+			{"op": "if", "cond": ["$$stored", ">=", "$$needed"],
+			 "then": [
+				{"op": "narrate", "instruction": "a work crew is assembled and building begins",
+				 "context": {"outcome": "the work begins"}, "verbosity": "short", "language": "en"}
+			 ],
+			 "else": [
+				{"op": "narrate",
+				 "instruction": "there is too little food stored to feed a work crew, so the building does not begin",
+				 # Only the verdict, not the numbers: an outpost with no food entry at all reads
+				 # `$$stored` as null (comparison treats that as "not enough", correctly), and a
+				 # literal null has no business reaching a prompt.
+				 "context": {"outcome": "the work does not begin"},
+				 "verbosity": "short", "language": "en"}
 			 ]}
 		]
 	}
