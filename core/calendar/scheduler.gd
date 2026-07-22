@@ -50,6 +50,27 @@ func pending_monthly() -> int:
 	return _monthly.size()
 
 
+func pending_on_days() -> int:
+	return _by_day.size()
+
+
+## Drop everything armed by the game that was being played, called when a save is loaded
+## (M4/B4a). Without it a one-off scheduled for day 500 in one game stays armed after loading
+## a day-10 save from another — the classic load-leak, where the previous session bleeds into
+## the new one and produces events nobody can explain.
+##
+## `_monthly` is deliberately kept: those are registered by modules at boot as *content*, not
+## scheduled by play, so clearing them would silently disable the month-end report for the rest
+## of the process.
+##
+## **Known limitation, not an oversight:** one-off arms are cleared rather than restored,
+## because they are not in the save at all. Persisting them needs the game-time wake re-arming
+## that A4 deferred. Clearing is the safe half of that — losing a scheduled event is a missing
+## feature; running another game's is a bug.
+func reset_scheduled_by_play() -> void:
+	_by_day.clear()
+
+
 func _validate(workflow_def: Dictionary, when: String) -> bool:
 	var result := _validator.validate(workflow_def)
 	if not result.success:

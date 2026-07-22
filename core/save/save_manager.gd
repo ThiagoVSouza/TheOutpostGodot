@@ -32,6 +32,9 @@ var saves_dir: String
 
 ## Module data from the last loaded save whose module is not loaded in this build — carried
 ## forward untouched so the next save does not erase it. See [method restore].
+##
+## Scoped to the game it came from: [method forget_carried] drops it when the player starts a
+## new game, or this build would write one settlement's DLC data into another's save.
 var _carried_modules: Dictionary = {}
 
 static var _seq: int = 0
@@ -147,10 +150,16 @@ func restore(kernel: GameKernel, data: Dictionary) -> Dictionary:
 		return {"ok": false, "error": String(migrated["error"]), "data": {},
 			"migrations": migrated["applied"]}
 
+	# Every store that holds game state is *replaced*, never merged, and anything armed by the
+	# previous game is dropped. Partial resets are how a load quietly inherits the last session:
+	# an event fires that belongs to a game the player is no longer in, and nobody can explain
+	# it. If you add a kernel service that holds game state, add it here — and
+	# `test_load_isolation.gd` will fail until you have classified it either way.
 	kernel.state.from_dict(data.get("state", {}) as Dictionary)
 	kernel.globals.from_dict(data.get("globals", {}) as Dictionary)
 	kernel.clock.from_dict(data.get("clock", {}) as Dictionary)
 	kernel.workflow_instances.from_dict(data.get("workflow_instances", {}) as Dictionary)
+	kernel.scheduler.reset_scheduled_by_play()
 
 	var module_data: Dictionary = migrated["data"]
 	for module: Module in kernel.modules.loaded_modules():
@@ -196,6 +205,13 @@ func _migrate_modules(kernel: GameKernel, saved_modules: Dictionary) -> Dictiona
 		if not (result["applied"] as Array).is_empty():
 			applied[id] = result["applied"]
 	return {"ok": true, "data": out, "applied": applied, "error": ""}
+
+
+## Drop carried-over module data. Called when a new game starts: the data belongs to the
+## settlement it was loaded from, and carrying it into an unrelated game would attribute one
+## player's DLC content to another of their saves.
+func forget_carried() -> void:
+	_carried_modules.clear()
 
 
 ## Entries in the save belonging to modules this build has not loaded.

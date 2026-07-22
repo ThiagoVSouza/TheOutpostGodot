@@ -69,6 +69,17 @@ code to the save path, decide which side of that line it falls on.
 Resume order: workspace → newest snapshot → new game. The workspace wins even against a
 wall-clock-newer snapshot, because it *is* the game being played.
 
+**Loading replaces, never merges — and there is a test that enforces it structurally.**
+`tests/integration/test_load_isolation.gd` enumerates every `GameKernel` service and **fails
+until each is classified** SAVED / ARMED_BY_PLAY / CONTENT / RUNTIME. If you add a kernel
+field, that test tells you so. It was written after review found two latent leaks of exactly
+the kind that makes players abandon a campaign: `Scheduler._by_day` (one-off events armed by
+play were neither saved nor cleared, so a day-500 event from one game stayed armed after
+loading a day-10 save from another) and `SaveManager._carried_modules` (a disabled DLC's data
+was carried into an unrelated *new* game). `Scheduler._monthly` is deliberately *not* reset —
+module-registered schedules are content, and clearing them would disable the month-end report
+for the rest of the process.
+
 **Two more standing points:**
 
 1. **The kernel owns the event subscription, not the session.** `GameSession` is RefCounted and

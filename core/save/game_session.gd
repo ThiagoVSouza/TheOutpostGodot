@@ -115,6 +115,10 @@ func continue_or_start() -> Dictionary:
 ## snapshot, so opening the game and closing it again never leaves a stray empty settlement.
 func start_new(name: String = DEFAULT_SLOT_NAME) -> void:
 	workspace().clear()
+	# Everything the previous game left behind goes with it. A new game inheriting the last
+	# one's armed events or carried module data is the load-leak that makes players restart.
+	_kernel.saves.forget_carried()
+	_kernel.scheduler.reset_scheduled_by_play()
 	slot_id = ""
 	slot_name = name
 	_last_snapshot_day = 0

@@ -1092,6 +1092,31 @@ completely untouched (the player only has to reinstall the newer build); only ge
 workspace wins even when a snapshot is newer by wall clock — the workspace *is* the game being
 played, and a snapshot is a copy taken of it.
 
+### Loading replaces; it never merges
+
+**Every store holding game state is replaced wholesale, and everything armed by play is
+dropped.** Partial resets are the failure mode that makes players abandon a campaign: something
+from the previous session stays live, an event fires that belongs to a game they are no longer
+in, and nothing in the UI can explain it. The bugs are individually small and collectively
+fatal to trust.
+
+Reviewing against this found two real leaks, both latent:
+
+1. **`Scheduler._by_day`** — one-off workflows armed by play were neither saved nor cleared, so
+   loading a day-10 save left a day-500 event armed from a different game. Now cleared on load
+   and on new game. *Not* restored, because persisting them needs the game-time re-arming A4
+   deferred — losing a scheduled event is a missing feature; running another game's is a bug.
+2. **`SaveManager._carried_modules`** — data belonging to a disabled DLC was carried across a
+   *new game*, so one settlement's content would have been written into an unrelated save.
+
+**`_monthly` is deliberately not reset**: module-registered schedules are content, identical
+for every save in the process, and clearing them would silently disable the month-end report.
+
+The structural guard is `tests/integration/test_load_isolation.gd`, which enumerates every
+`GameKernel` service and **fails until each is classified** as SAVED, ARMED_BY_PLAY, CONTENT or
+RUNTIME. Adding a kernel field without deciding which it is was how both leaks got in; this
+makes forgetting loud instead of silent.
+
 ---
 
 ## D17 — Benchmarking method: how to not fool yourself
