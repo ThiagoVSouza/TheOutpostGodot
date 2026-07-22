@@ -244,7 +244,14 @@ func _exec_statement(stmt: Dictionary, instance: WorkflowInstance, ctx: Workflow
 					"fail_msg": stmt.get("fail_msg", "")}
 			return {"action": Action.CONTINUE}
 		"roll":
-			instance.locals[_local_name(stmt["as"])] = _roll(String(stmt["dice"]), instance)
+			var dice := String(stmt["dice"])
+			var rolled: Variant = _roll(dice, instance)
+			instance.locals[_local_name(stmt["as"])] = rolled
+			# The die is traced but deliberately kept out of player-facing prose (workflows band
+			# it through a rule table first). This entry is where "why did I get 3 food?" is
+			# answered — the audit trail D4 needs, without leaking the number into the fiction.
+			if trace != null:
+				trace.add("workflow_rolled", {"dice": dice, "result": rolled})
 			return {"action": Action.CONTINUE}
 		"set_global":
 			var gname := String(stmt["name"])
@@ -342,8 +349,11 @@ func _exec_narrate(stmt: Dictionary, ctx: WorkflowRuntimeContext, instance: Work
 		instance.locals[_local_name(stmt["as"])] = prose
 	# Both levels are recorded: the trace should show what the author asked for *and* what the
 	# player's preference turned it into, or a short reply reads as a narrator bug.
-	var record := {"instruction": instruction, "verbosity": verbosity, "authored_verbosity": authored,
-		"language": language, "text": prose}
+	# The decided facts are recorded alongside the prose: a trace that shows only the reply
+	# cannot answer whether the model was *given* something it then invented, which is the one
+	# question D4 makes worth asking.
+	var record := {"instruction": instruction, "context": context, "verbosity": verbosity,
+		"authored_verbosity": authored, "language": language, "text": prose}
 	if _events != null:
 		_events.emit("workflow_narrated", record)
 	if trace != null:

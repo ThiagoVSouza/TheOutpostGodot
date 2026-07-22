@@ -64,6 +64,38 @@ func test_llama_runner_classifies_and_shapes_the_request() -> void:
 		"the player's message reaches the prompt")
 
 
+func test_a_families_label_descriptions_reach_the_prompt() -> void:
+	# Found live, not in tests: with bare labels E2B classified "I sing to the goats" as `forage`
+	# (goats → animals → food) because nothing told it `general` was the decline option. Adding
+	# the meanings moved it to `general`. The grammar bounds the answer; this is what makes the
+	# answer sensible, so it is worth pinning.
+	var backend := RecordingBackend.new()
+	backend.scripted_content = "general"
+	var kernel := _kernel_with(backend)
+	var runner := LlamaAiRunner.new(kernel)
+	var family := PromptFamily.new("classify_intent", PackedStringArray(["forage", "general"]),
+		{"forage": "gathering food from the land", "general": "anything else, including whimsy"})
+
+	var value: String = await runner.classify(family, {"message": "I sing to the goats"})
+
+	assert_eq(value, "general")
+	var prompt := String((backend.last_request["messages"] as Array)[1]["content"])
+	assert_string_contains(prompt, "gathering food from the land", "each label's meaning is in the prompt")
+	assert_string_contains(prompt, "anything else, including whimsy", "including the catch-all's")
+
+
+func test_a_family_without_descriptions_still_lists_its_labels() -> void:
+	var backend := RecordingBackend.new()
+	backend.scripted_content = "forage"
+	var kernel := _kernel_with(backend)
+	var runner := LlamaAiRunner.new(kernel)
+
+	await runner.classify(_family(), {"message": "I forage the hills"})
+
+	var prompt := String((backend.last_request["messages"] as Array)[1]["content"])
+	assert_string_contains(prompt, "forage, general", "descriptions are optional, not required")
+
+
 func test_llama_runner_guards_an_out_of_set_answer() -> void:
 	var backend := RecordingBackend.new()
 	backend.scripted_content = "nonsense"  # the grammar would forbid this; the guard still catches it

@@ -1003,6 +1003,45 @@ enough to read. Implemented in `core/workflow/workflow_executor.gd` (the trampol
 
 ---
 
+## D33 — A closed set needs label *meanings*; and mechanical terms never reach the player
+
+**Decided** (2026-07-22) — from live E2B verification during the M3b narration quality pass
+
+Two findings from the same root, both invisible to a green test suite.
+
+**1. Grammar-constraining a closed set bounds the answer; it does not make the answer
+sensible.** The classifier prompt listed bare label names (`forage, hunt, rest, build,
+general`). E2B classified *"I sing to the goats"* as `forage` — twice — because nothing told
+it that `general` was the decline option, so it reached for the nearest plausible action
+(goats → animals → food). Widening the set from two labels to five did **not** fix this on
+its own. Giving each label a one-line meaning did, immediately.
+
+**Therefore:** every `PromptFamily` whose labels are not self-explanatory carries
+`descriptions` (`label -> meaning`), rendered into the prompt by the runner, and the
+catch-all must state out loud that it is the catch-all. This is authored content, owned by
+the module beside the option set (D30) — not runner code. D19 is unchanged: the grammar is
+still the enforcement mechanism, and the descriptions are advisory. *This makes classification
+quality partly a content problem, which means it must be re-measured when content changes.*
+
+**2. A mechanical term must never reach the player as fiction — and "mechanical" is wider
+than "number".** The raw d20 leaking into prose ("the high roll of nineteen") was the known
+case. Removing it by banding the roll through a rule table produced the *same failure in a new
+costume*: the model announced the band as a verdict — "The outcome is steady." A category word
+is as fiction-breaking as a number.
+
+**Therefore:** facts given to the narrator fall in two kinds — things that happened (narrate
+them) and categories the rules used (let them colour word choice, never name them). The
+narrator binding says so explicitly. Structurally, numbers the rules decided leave the prompt
+entirely and live in the trace instead (`workflow_rolled`), where the audit question "why did
+I get 3 food?" actually belongs. Player-facing amounts (`5 food`) stay — those are the
+outcome, not the machinery.
+
+**Evidence:** 175 passing tests, several written for these exact seams, caught neither. Both
+were found by running five intents × three narration levels against a real model and reading
+the output. Standing rule 4 again.
+
+---
+
 ## D17 — Benchmarking method: how to not fool yourself
 
 **Reference** (2026-07-16) — every item below cost us a wrong conclusion first

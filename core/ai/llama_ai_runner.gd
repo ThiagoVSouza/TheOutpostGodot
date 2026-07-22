@@ -41,8 +41,21 @@ func classify(family: PromptFamily, facts: Dictionary) -> String:
 
 
 func _user_prompt(family: PromptFamily, facts: Dictionary) -> String:
-	var allowed := ", ".join(Array(family.options))
-	return "Allowed labels: %s\nContext: %s\nLabel:" % [allowed, JSON.stringify(facts)]
+	return "%s\nContext: %s\nLabel:" % [_allowed_block(family), JSON.stringify(facts)]
+
+
+## The allowed set, with each label's meaning when the family supplies one. Descriptions matter
+## more than they look: with bare words the classifier reads "I sing to the goats" as `forage`
+## (goats → animals → food) rather than the catch-all, because nothing tells it the catch-all
+## exists for messages with no mechanical stake.
+func _allowed_block(family: PromptFamily) -> String:
+	if family.descriptions.is_empty():
+		return "Allowed labels: %s" % ", ".join(Array(family.options))
+	var lines: Array = ["Allowed labels:"]
+	for option in family.options:
+		var described := String(family.descriptions.get(option, ""))
+		lines.append("- %s: %s" % [option, described] if not described.is_empty() else "- %s" % option)
+	return "\n".join(lines)
 
 
 ## A GBNF grammar that admits exactly one of the options (D19): `root ::= "a" | "b" | ...`.
