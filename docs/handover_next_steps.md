@@ -4,11 +4,16 @@
 mid-milestone after a usage-limit cutoff. Follow this file top to bottom.
 Keep it updated as work lands: it is a living checklist, not an archive.
 
-Last updated: 2026-07-22 · State: **M3a is COMPLETE; M3b is COMPLETE** — the
-walking skeleton, the D17 gate, the playground, narration levels, and the narration
-quality pass all landed and were verified against real E2B. 175/175 tests green.
-**GATE 0 applies again before M4.** Sections below marked *(historical)* describe
-milestones already finished — they are kept for their gotchas, not as instructions.
+Last updated: 2026-07-22 · State: **M3a and M3b are COMPLETE. M4 (save/load) is in
+progress — B1 has landed, B2 is next.** 189/189 tests green. GATE 0 for M4 was
+satisfied on 2026-07-22; see `docs/plan.md` §M4 for the direction it settled.
+Sections below marked *(historical)* describe milestones already finished — they are
+kept for their gotchas, not as instructions.
+
+**Read §0a first, then the M4 section of `docs/plan.md`.** Do not resume prompt or
+narration tuning: the user's call on 2026-07-22 is that M3b's prompts, labels and
+balance tables are scaffolding the finished game will replace, so refining them
+further buys nothing. Build machinery, not content.
 
 ## 0. If you are the next agent, start exactly here
 
@@ -23,7 +28,44 @@ milestones already finished — they are kept for their gotchas, not as instruct
 4. Scope discipline still holds: **JSON canonical form only, no text parser** (D24,
    D28). The `nortrix` syntax in `docs/reference_dsl/` is reference, not a target.
 
-## 0a. Session log — 2026-07-22 (narration quality + a widened action set)
+## 0a. Session log — 2026-07-22 (M3b close-out, then M4 begins)
+
+### M4/B1 — the instance store (landed)
+
+**The hole B1 found, worth knowing about:** D25 made workflow instances resumable, A3
+proved a suspended one survives a JSON round-trip, and A4 shipped `confirm` — but
+**nothing owned a suspended instance.** `AiOrchestrator._finish` returned
+`pending_confirmation` and dropped it. So "resumable instances" was a tested capability
+with no owner, no way to answer a question, and nothing for a save to contain. Three
+milestones each did their part correctly and the seam between them was empty.
+
+`WorkflowInstanceStore` (`core/workflow/workflow_instance_store.gd`) is that owner, on
+the kernel as `workflow_instances`. It is deliberately **dumb** — remember / find /
+forget / serialize, never run anything. Resuming needs the executor and a trace, and a
+store that could run workflows would be a second, quieter orchestrator.
+
+`AiOrchestrator.resume(instance_id, outcome)` closes the loop through the same busy
+guard and `_finish` contract as a fresh turn, because it *is* a turn. Turn results now
+carry a `pending_instance` handle (empty on ordinary turns). The instance is forgotten
+*before* it runs, so a failed resume cannot leave an already-answered question sitting
+in the store; if the workflow suspends again, `_finish` remembers it anew.
+
+Orphans are handled explicitly rather than left to rot in every future save: answering
+twice fails `unknown_instance`, and a question whose workflow no longer exists (a module
+removed or renamed it since the save) is **dropped** with `unknown_workflow`.
+
+14 new tests (`tests/unit/test_workflow_instance_store.gd`,
+`tests/integration/test_pending_confirmation.gd`), including the milestone's headline:
+a pending question serialized out of one kernel, loaded into a genuinely fresh one, and
+answered there — applying exactly what it was going to apply.
+
+**Note on rule 4 (verify in the running app):** B1 has no player-facing surface yet, so
+there is nothing to drive by hand. That verification is **B4's** job, when load-on-boot
+and the confirmation UI exist. Don't record B1 as app-verified.
+
+---
+
+## 0a-bis. Session log — 2026-07-22 (narration quality + a widened action set)
 
 **What this session did:** closed out the three narration problems the previous
 session opened, widened the intent set from two labels to five, and re-verified the

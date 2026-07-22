@@ -268,14 +268,50 @@ fixed in code.
 
 ---
 
-## M4 — Save/load + migrations
+## M4 — Save/load + migrations (current milestone)
 
 **Goal:** state survives closing the app.
 
-- `core/save/save_manager.gd` is still a stub seam
-- Module-declared migrations (the brief requires this; cheaper now than retrofitted)
-- AI-trace persistence → replay, which **D4 makes genuinely achievable** (outcomes
-  are code, so a recorded session replays exactly)
+**GATE 0 satisfied 2026-07-22.** Chosen deliberately *because it is content-independent*:
+M3b's prompts, labels, instructions and balance tables are scaffolding that the finished
+game will replace, so refining them further buys nothing. Save/load is machinery that
+survives whatever the final workflows look like. Direction settled in that review:
+
+- **Multiple named slots**, not a single continuous save. The format therefore needs a
+  save *index*, not one file.
+- **A pending question is re-presented after a load**, not silently cancelled — A3 already
+  re-proves `resume_require` on wake and cancels on a declined confirm, so the safety this
+  needs is built.
+- **JSON**, not binary: the project is already JSON canonical form throughout (D24, traces,
+  instance snapshots), migrations over JSON are far cheaper to write and test, and a save
+  you can read in a text editor is a save you can debug.
+
+Tasks, one branch + PR each:
+
+- **B1 — instance store** — **done (2026-07-22)**. `WorkflowInstanceStore` on the kernel owns
+  suspended instances between the turn that suspended and the wake that resumes them.
+  **This was a real hole, not a formality:** D25 made instances resumable and A3 proved the
+  snapshot round-trips, but *nothing held one* — the executor returned a suspended instance
+  and `AiOrchestrator` discarded it, so the capability had no owner and there was nothing for
+  a save to contain. `AiOrchestrator.resume(instance_id, outcome)` closes the loop through
+  the same busy guard and result contract as a fresh turn, and turns now carry a
+  `pending_instance` handle. A pending question survives a serialize → fresh-kernel → resume
+  cycle. Orphan handling is explicit: answering twice fails `unknown_instance`, and a question
+  whose workflow no longer exists is dropped rather than carried into every future save.
+- **B2 — the real `SaveManager`** — format, atomic write, named slots under `user://saves/`
+  with an index. Captures `GameState`, `GlobalStore` (D31 says persisted with the save),
+  `GameClock.total_days`, the B1 instance store, and per-module data.
+- **B3 — module-declared migrations.** `ModuleManifest.version` already exists "for save
+  migrations". Must handle a module absent from the save, a module added since the save, and
+  a **save newer than the code** (refuse — never guess).
+- **B4 — wire it:** load on boot, autosave points, Android background/resume, and the
+  confirmation UI that re-presents a pending question.
+
+**Deferred within M4** (inherited, not forgotten): trace retention (A1 left it as "M4's
+problem" — dev builds write unbounded trace files into `user://`), scheduler re-arming of
+suspended workflows (A4), nested sub-workflow suspension (A3, `nested_suspension_unsupported`),
+and AI-trace persistence → replay, which **D4 makes genuinely achievable** (outcomes are code,
+so a recorded session replays exactly).
 
 **Independent of the AI work.** Unblocks Android backgrounding/resume, and makes the
 Back-button problem worth fixing (right now there is nothing to lose).
