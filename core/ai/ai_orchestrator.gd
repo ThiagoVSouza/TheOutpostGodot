@@ -107,6 +107,18 @@ func _finish(result: RefCounted, trace: AiTrace) -> Dictionary:
 			return _result(false, narrative, trace, applied, String(result.get("fail_code")))
 
 
+## Whether a pending instance can actually be resumed in this session — i.e. the workflow it
+## belongs to is registered. A suspended instance names its workflow by id, and **workflows are
+## registered during module load**, so one registered lazily at runtime will not exist after a
+## restart and its question becomes unanswerable until whatever registers it does so at boot.
+## UI should filter pending questions through this rather than offer one that cannot be honoured.
+func can_resume(instance_id: String) -> bool:
+	var instance := _kernel.workflow_instances.get_instance(instance_id)
+	if instance == null:
+		return false
+	return _kernel.workflow_registry.get_definition(instance.workflow_id) is Dictionary
+
+
 ## Answer a pending question and resume its instance (M4/B1 — coroutine, await it).
 ## [param outcome] carries the wake result; for a confirmation, `{confirmed: bool}`.
 ##
@@ -126,12 +138,15 @@ func resume(instance_id: String, outcome: Dictionary = {}) -> Dictionary:
 
 	var entry: Variant = _kernel.workflow_registry.get_definition(instance.workflow_id)
 	if not (entry is Dictionary):
-		# The workflow the save was made against is gone (a module removed or renamed it).
-		# Drop the instance rather than stranding an unanswerable question in every future save.
-		_kernel.workflow_instances.forget(instance_id)
+		# This build cannot resume it — usually a module that is disabled right now, sometimes
+		# one that renamed the workflow. **The instance is kept, not dropped** (D34: refuse,
+		# never discard). Discarding would destroy a pending action that re-enabling the module
+		# would have made answerable again, and the player never asked for that. UI is expected
+		# to skip presenting questions it cannot resume (see `can_resume`).
 		var gone := AiTrace.new()
 		gone.add("resume_unknown_workflow", {"workflow": instance.workflow_id, "instance": instance_id})
-		return _result(false, "That course of action is no longer available.", gone, [], "unknown_workflow")
+		return _result(false, "That course of action is not available in this session.", gone, [],
+			"unknown_workflow")
 
 	_busy = true
 	var trace := AiTrace.new()

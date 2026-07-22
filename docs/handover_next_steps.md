@@ -4,10 +4,12 @@
 mid-milestone after a usage-limit cutoff. Follow this file top to bottom.
 Keep it updated as work lands: it is a living checklist, not an archive.
 
-Last updated: 2026-07-22 · State: **M3a and M3b are COMPLETE. M4 (save/load) is in
-progress — B1, B2, B3 and B4a have landed; B4b (the confirmation UI + slot management)
-is next.** 234/234 tests green. **D34 (two persistence layers) is the newest decision and
-governs everything in the save path.** GATE 0 for M4 was
+Last updated: 2026-07-22 · State: **M3a, M3b and M4 are COMPLETE** (B1 instance store,
+B2 SaveManager, B3 migrations, B4a two-layer persistence, B4b confirmation UI).
+248/248 tests green. **Next is M5 — memory and retrieval; GATE 0 applies before it.**
+**D34 (two persistence layers) governs everything in the save path — read it first.**
+Note D34 also names the deferred M5 decision: memories want an append-only log, and SQLite
+stays deferred until a measurement says JSONL is not enough. GATE 0 for M4 was
 satisfied on 2026-07-22; see `docs/plan.md` §M4 for the direction it settled.
 Sections below marked *(historical)* describe milestones already finished — they are
 kept for their gotchas, not as instructions.
@@ -31,6 +33,42 @@ further buys nothing. Build machinery, not content.
    D28). The `nortrix` syntax in `docs/reference_dsl/` is reference, not a target.
 
 ## 0a. Session log — 2026-07-22 (M3b close-out, then M4 begins)
+
+### M4/B4b — the confirmation UI (landed) — **M4 is complete**
+
+The chat screen shows a pending question with Yes/No, **locks input until it is answered**
+(a `confirm` guards an action the rules have not applied yet — a turn running alongside it
+would leave the world in a state neither answer describes), **re-presents on entry** a question
+asked before the game was closed, and drops it on New game. Plus a slot dropdown with
+Load / New game, and a dev-only `dev_confirm` workflow so the path is drivable by hand.
+
+**The bug the real app found, which every test had missed — and it generalizes:**
+
+`dev_confirm` was originally registered *on demand* by the button. In a second process the
+workflow did not exist, so the re-presented question resolved to `unknown_workflow` and the
+player's pending action was **silently discarded**. The conversation read
+"That course of action is no longer available." after answering Yes.
+
+Two consequences, both now permanent:
+
+1. **Workflows must be registered during module load, at boot.** A suspended instance names its
+   workflow by id, so anything registered lazily at runtime cannot be resumed after a restart.
+   `dev_confirm` now registers in `base_game_module.register()` under `OS.is_debug_build()`.
+2. **`AiOrchestrator.resume` no longer discards an instance whose workflow is missing.** That
+   is D34's refuse-never-discard applied here: a disabled module would otherwise destroy a
+   pending action that re-enabling it would have made answerable again. New
+   `AiOrchestrator.can_resume(instance_id)` tells UI what it may offer; the screen skips
+   questions it cannot honour rather than showing a button that cannot work. **This reversed
+   B1's original behaviour** — if you read B1's notes, this supersedes them.
+
+**Known cosmetic gap:** a question's `scope` renders as raw JSON, so a value that round-tripped
+through the save shows as `{"amount":2.0}` — the standing A2 float gotcha, visible to the
+player. Formatting values by type is the i18n layer's job (`msg` is a localization key and
+`scope` its values, D24); not worth guessing at before translations are wired.
+
+Verified in the real app across two processes: ask → question shown, input locked, 6 parts
+checkpointed → relaunch → resumed from workspace, question re-presented, answered Yes, command
+applied, food granted, narration rendered.
 
 ### M4/B4a — two-layer persistence (landed) — **read D34 before touching this**
 
