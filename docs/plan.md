@@ -329,8 +329,26 @@ Tasks, one branch + PR each:
   *Not built: a migration chain for the core envelope (`SAVE_VERSION`). There are no v0 saves
   and no second version, so the mechanism would have zero users; the version check already
   refuses anything newer. Add the chain when `SAVE_VERSION` first moves.*
-- **B4 — wire it:** load on boot, autosave points, Android background/resume, and the
-  confirmation UI that re-presents a pending question.
+- **B4a — session lifecycle, two-layer** — **done (2026-07-22)**. Policy revised before merge
+  after the user challenged whole-file autosaving; the result is **D34**.
+  `SaveWorkspace` (`user://current/`) is the live game as **separate parts**, written at every
+  turn boundary and every OS lifecycle event but **only where the content changed**. A slot
+  file is a whole snapshot, written deliberately or on a long game-time cadence. Crash contract:
+  lose the turn in progress, nothing more.
+  On Android the OS kills backgrounded apps without warning, so the lifecycle write
+  (`APPLICATION_PAUSED`, close, back) is the only guaranteed one — and because a checkpoint
+  only writes what moved, it is cheap enough to always take. **No autosave interval**: a
+  checkpoint that writes nothing costs a comparison, so throttling could only add a way to lose
+  a turn.
+  Resume order is workspace → newest snapshot → new game; the workspace wins even against a
+  wall-clock-newer snapshot, because it *is* the game being played.
+  **The rule that matters most:** an older build meeting newer data **stops** and leaves it
+  completely untouched. The first implementation fell through to a fresh start, which cleared
+  the workspace — a downgrade would have silently destroyed a settlement.
+  `AtomicFile` now holds the durability logic (tmp → verify → `.bak` → rename) once, shared by
+  both layers.
+- **B4b — the confirmation UI** that re-presents a pending question (B1's `pending_instance`),
+  and the slot-management surface. Standing rule 4 applies to B1's path here.
 
 **Deferred within M4** (inherited, not forgotten): trace retention (A1 left it as "M4's
 problem" — dev builds write unbounded trace files into `user://`), scheduler re-arming of

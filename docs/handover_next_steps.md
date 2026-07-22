@@ -5,8 +5,9 @@ mid-milestone after a usage-limit cutoff. Follow this file top to bottom.
 Keep it updated as work lands: it is a living checklist, not an archive.
 
 Last updated: 2026-07-22 · State: **M3a and M3b are COMPLETE. M4 (save/load) is in
-progress — B1, B2 and B3 have landed; B4 (wire it up) is next and is where M4 becomes
-visible to the player.** 219/219 tests green. GATE 0 for M4 was
+progress — B1, B2, B3 and B4a have landed; B4b (the confirmation UI + slot management)
+is next.** 234/234 tests green. **D34 (two persistence layers) is the newest decision and
+governs everything in the save path.** GATE 0 for M4 was
 satisfied on 2026-07-22; see `docs/plan.md` §M4 for the direction it settled.
 Sections below marked *(historical)* describe milestones already finished — they are
 kept for their gotchas, not as instructions.
@@ -30,6 +31,73 @@ further buys nothing. Build machinery, not content.
    D28). The `nortrix` syntax in `docs/reference_dsl/` is reference, not a target.
 
 ## 0a. Session log — 2026-07-22 (M3b close-out, then M4 begins)
+
+### M4/B4a — two-layer persistence (landed) — **read D34 before touching this**
+
+**Its policy was rewritten before merge**, after the user challenged whole-file autosaving.
+The reasoning is D34; this is the operational summary.
+
+Two layers, opposite cost profiles:
+
+- **`SaveWorkspace`** (`user://current/`) — the live game as **separate parts**
+  (`world`/`globals`/`clock`/`instances`/`meta`/`module_<id>`). Written at every turn boundary
+  and every OS lifecycle event, but **only the parts whose content changed**. This is what
+  survives a crash. Contract: lose the turn in progress, nothing more.
+- **`SaveManager`** slot files — a whole snapshot the player named. Rare, deliberate.
+
+`AtomicFile` holds the durability logic (tmp → read back → `.bak` → rename) once, shared by
+both. `GameSession` is the policy; `GameKernel._notification` drives `APPLICATION_PAUSED`,
+`WM_CLOSE_REQUEST`, `WM_GO_BACK_REQUEST`.
+
+**Do not reintroduce these, they were removed on purpose:**
+
+- **No autosave interval.** A checkpoint that writes nothing costs a comparison, so throttling
+  could only add a way to lose a turn. (The earlier interval also hid a real bug:
+  `Time.get_ticks_msec()` is small in a short-lived process, so the *first* autosave — the one
+  that matters most — was silently skipped. Watch for that anywhere a tick interval defaults
+  to zero.)
+- **No dirty flags.** The workspace compares each part's serialized content. A flag someone
+  forgets to set is a lost turn, and the bug is invisible until a player loses progress.
+
+**The most dangerous bug in this milestone, caught before merge:** an older build meeting data
+from a newer one originally fell through to `start_new()`, which calls `workspace().clear()` —
+**a downgrade would have silently deleted the player's settlement.** Now `GameSession.REFUSALS`
+separates "unreadable by this build" (stop, touch nothing — reinstalling the newer build gets
+it back) from "genuinely damaged" (may be abandoned for a snapshot). If you add a new error
+code to the save path, decide which side of that line it falls on.
+
+Resume order: workspace → newest snapshot → new game. The workspace wins even against a
+wall-clock-newer snapshot, because it *is* the game being played.
+
+**Loading replaces, never merges — and there is a test that enforces it structurally.**
+`tests/integration/test_load_isolation.gd` enumerates every `GameKernel` service and **fails
+until each is classified** SAVED / ARMED_BY_PLAY / CONTENT / RUNTIME. If you add a kernel
+field, that test tells you so. It was written after review found two latent leaks of exactly
+the kind that makes players abandon a campaign: `Scheduler._by_day` (one-off events armed by
+play were neither saved nor cleared, so a day-500 event from one game stayed armed after
+loading a day-10 save from another) and `SaveManager._carried_modules` (a disabled DLC's data
+was carried into an unrelated *new* game). `Scheduler._monthly` is deliberately *not* reset —
+module-registered schedules are content, and clearing them would disable the month-end report
+for the rest of the process.
+
+**Two more standing points:**
+
+1. **The kernel owns the event subscription, not the session.** `GameSession` is RefCounted and
+   reaches the bus through the kernel, so a handler capturing it forms
+   `session → kernel → events → handler → session` — the leaking cycle the T1 notes warn about.
+   **Don't "tidy" this back into `GameSession._init`.**
+2. `autosave_enabled` **defaults** from `OUTPOST_TEST_RUN` rather than being gated by it, so
+   tests of this machinery can opt back in against scratch directories. A hard env gate made
+   the behaviour untestable.
+
+**Gotcha the live run caught (tests missed it):** resuming rewrote all six parts identically,
+doubling the I/O of every launch — precisely the write amplification the split exists to
+prevent. `SaveWorkspace.read_part` now records what it reads as already-written. There is a
+regression test.
+
+Verified in the real app across four processes: play → checkpoint (6 parts, then 0 on a
+repeat) → relaunch and resume → simulated downgrade refused with every file intact → resume
+again, still refused, still intact.
 
 ### M4/B3 — module-declared migrations (landed)
 
