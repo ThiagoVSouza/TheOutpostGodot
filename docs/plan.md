@@ -298,9 +298,19 @@ Tasks, one branch + PR each:
   `pending_instance` handle. A pending question survives a serialize → fresh-kernel → resume
   cycle. Orphan handling is explicit: answering twice fails `unknown_instance`, and a question
   whose workflow no longer exists is dropped rather than carried into every future save.
-- **B2 — the real `SaveManager`** — format, atomic write, named slots under `user://saves/`
-  with an index. Captures `GameState`, `GlobalStore` (D31 says persisted with the save),
-  `GameClock.total_days`, the B1 instance store, and per-module data.
+- **B2 — the real `SaveManager`** — **done (2026-07-22)**. One JSON file per slot under
+  `user://saves/`, capturing `GameState`, `GlobalStore` (D31), the clock, the B1 instance store
+  and per-module data with each module's manifest version stamped for B3.
+  **Two design calls worth keeping:** there is **no index file** — each save is
+  self-describing and `slots()` derives the list by scanning, which removes the entire class of
+  bug where an index disagrees with the files beside it; and **slot ids are opaque and
+  generated**, never derived from the player's name, so filenames stay out of the player's
+  hands (no sanitizing, no collisions between names that normalize alike, no unicode filename
+  surprises) and the name is just metadata the player may reuse freely.
+  Writes go through a temp file with the slot's previous contents kept as `.bak` and are
+  re-read before being trusted, so a crash can lose the newest save but never the slot. A save
+  from a newer build is **refused**, not guessed at. Verified across two separate Godot
+  processes against the real `user://`.
 - **B3 — module-declared migrations.** `ModuleManifest.version` already exists "for save
   migrations". Must handle a module absent from the save, a module added since the save, and
   a **save newer than the code** (refuse — never guess).

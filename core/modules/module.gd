@@ -21,3 +21,20 @@ func module_id() -> String:
 ## (kernel.screens, kernel.commands, kernel.events, ...).
 func register(_kernel: GameKernel) -> void:
 	pass
+
+
+## Module-owned save data (M4/B2). Anything a module keeps outside [GameState] and needs back
+## on load goes here; return an empty dictionary (the default) if there is nothing. Must be
+## JSON-serializable — the save file is text.
+##
+## The module's `manifest.version` is stamped alongside this in the save, which is what lets
+## B3 migrate old module data forward.
+func capture_save_data(_kernel: GameKernel) -> Dictionary:
+	return {}
+
+
+## Restore what [method capture_save_data] produced. [param data] is empty when the save
+## predates this module — a module added since the save must cope with that rather than assume
+## its keys exist.
+func restore_save_data(_kernel: GameKernel, _data: Dictionary) -> void:
+	pass
