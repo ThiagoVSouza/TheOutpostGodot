@@ -5,7 +5,7 @@ mid-milestone after a usage-limit cutoff. Follow this file top to bottom.
 Keep it updated as work lands: it is a living checklist, not an archive.
 
 Last updated: 2026-07-22 · State: **M3a and M3b are COMPLETE. M4 (save/load) is in
-progress — B1 has landed, B2 is next.** 189/189 tests green. GATE 0 for M4 was
+progress — B1 and B2 have landed, B3 (migrations) is next.** 202/202 tests green. GATE 0 for M4 was
 satisfied on 2026-07-22; see `docs/plan.md` §M4 for the direction it settled.
 Sections below marked *(historical)* describe milestones already finished — they are
 kept for their gotchas, not as instructions.
@@ -29,6 +29,42 @@ further buys nothing. Build machinery, not content.
    D28). The `nortrix` syntax in `docs/reference_dsl/` is reference, not a target.
 
 ## 0a. Session log — 2026-07-22 (M3b close-out, then M4 begins)
+
+### M4/B2 — the real SaveManager (landed)
+
+Named slots as one JSON file each under `user://saves/`. Two calls a future agent should
+not quietly reverse:
+
+- **No index file.** Each save is self-describing; `slots()` scans and parses. This
+  removes the whole class of bug where an index disagrees with the files beside it. With
+  the handful of slots a player keeps, parsing them is cheap — if that stops being true,
+  add a *cache*, but the files stay the source of truth.
+- **Slot ids are opaque and generated** (`slot_<unix>_<seq>`), never derived from the
+  player's name. Filenames never come from player input: no sanitizing, no collisions
+  between two names that normalize alike, no unicode filename surprises, no path
+  traversal. The name is metadata inside the file.
+
+Durability: write to `.tmp`, **re-read it before trusting it** (a full disk fails at
+flush — better to find out now than when the player loads), move the old file to `.bak`,
+then rename into place; on failure the backup is put back. `read_slot` falls back to
+`.bak`. A crash can lose the newest save but never the slot.
+
+A save from a newer build is **refused** (`save_from_newer_version`), never partially
+applied — loading it would quietly discard whatever that version added.
+
+New seams: `Module.capture_save_data()` / `restore_save_data()` (each module's manifest
+version is stamped in the save, which is what B3 migrates on), and `GameClock.to_dict/
+from_dict` — **restoring the clock fires no calendar events**, deliberately: replaying a
+year of `day_passed` on load would re-run every scheduled workflow the save already
+accounted for. Loading is not time passing.
+
+**Gotcha the live run caught (tests missed it):** JSON has no integer type, so slot
+metadata parses back as floats and a load menu would render "Day 11.0". `slots()` coerces
+`saved_at`/`total_days` to int. This is the standing A2 gotcha resurfacing in a new place
+— **expect it anywhere a number makes a round trip through a file.**
+
+Verified in the real app: two separate Godot processes against the real `user://` — one
+plays a turn and saves, the other boots cold and loads it back.
 
 ### M4/B1 — the instance store (landed)
 

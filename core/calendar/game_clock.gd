@@ -39,6 +39,17 @@ func day_of_month() -> int:
 	return ((total_days - 1) % DAYS_PER_MONTH) + 1
 
 
+## Save contract, mirroring [GameState] and [GlobalStore]. Restoring sets the day directly and
+## fires **no** calendar events: loading a save is not time passing, and replaying a year of
+## `day_passed` on load would re-run every scheduled workflow the save already accounted for.
+func to_dict() -> Dictionary:
+	return {"total_days": total_days}
+
+
+func from_dict(data: Dictionary) -> void:
+	total_days = maxi(int(data.get("total_days", 0)), 0)
+
+
 func _emit(event_name: String, payload: Dictionary) -> void:
 	if _events != null:
 		_events.emit(event_name, payload)

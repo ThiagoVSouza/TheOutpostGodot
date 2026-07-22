@@ -1,22 +1,273 @@
 class_name SaveManager
 extends RefCounted
 
-## Save/load and migrations. STUB SEAM — filled in milestone 1.
+## Named save slots on disk (M4/B2). One JSON file per slot under [member saves_dir], plus a
+## `.bak` of that slot's previous contents.
 ##
-## Will serialize [GameState] plus module save-data (with version tags) and run
-## migrations on load. For now it only exposes the seam so callers and tests can
-## reference the type; the real format/versioning is deferred.
+## **JSON, not binary** (M4 direction review): the project is already JSON canonical form
+## throughout — the DSL (D24), traces (D21), instance snapshots (§5.2) — migrations over JSON
+## are far cheaper to write and test, and a save you can read in a text editor is a save you
+## can debug.
+##
+## **There is no index file.** Each save is self-describing and [method slots] derives the list
+## by scanning the directory, which removes an entire class of bug: an index that disagrees
+## with the files beside it. With the handful of slots a player keeps, parsing them is cheap.
+## If that ever stops being true, add a cache then — but the files stay the source of truth.
+##
+## **Slot ids are opaque and generated**, never derived from the player's name for the save.
+## That keeps filenames out of the player's hands entirely: no sanitizing, no collision between
+## two names that normalize alike, no unicode filename surprises. The name is metadata inside
+## the file, and the player may rename or reuse it freely.
+##
+## Migrations are B3; this reads and writes [constant SAVE_VERSION] and **refuses** anything
+## newer (see [method read_slot]).
 
+## The core save format version, bumped when the envelope below changes shape. Per-module
+## versions are stamped separately, from each module's own manifest.
 const SAVE_VERSION: int = 1
 
+const EXTENSION := ".json"
+const BACKUP_SUFFIX := ".bak"
+const TEMP_SUFFIX := ".tmp"
 
-## Serialize game state to a dictionary. Real implementation adds module data + version.
-func capture(state: GameState) -> Dictionary:
-	# TODO(milestone-1): include per-module save-data and a migration version.
-	return {"version": SAVE_VERSION, "state": state.to_dict()}
+var saves_dir: String
+
+static var _seq: int = 0
 
 
-## Restore game state from a captured dictionary, running migrations as needed.
-func restore(state: GameState, data: Dictionary) -> void:
-	# TODO(milestone-1): run migrations from data["version"] to SAVE_VERSION.
-	state.from_dict(data.get("state", {}))
+func _init(dir: String = "user://saves") -> void:
+	saves_dir = dir.trim_suffix("/")
+
+
+# --- writing ---------------------------------------------------------------------------
+
+## Write a new slot named [param name]. Returns `{ok, slot_id, error}`.
+func save_new(kernel: GameKernel, name: String) -> Dictionary:
+	return save_slot(kernel, _new_slot_id(), name)
+
+
+## Write (or overwrite) the slot [param slot_id]. Returns `{ok, slot_id, error}`.
+func save_slot(kernel: GameKernel, slot_id: String, name: String) -> Dictionary:
+	if kernel == null:
+		return {"ok": false, "slot_id": slot_id, "error": "no_kernel"}
+	if not _is_safe_slot_id(slot_id):
+		return {"ok": false, "slot_id": slot_id, "error": "bad_slot_id"}
+	if not _ensure_dir():
+		return {"ok": false, "slot_id": slot_id, "error": "no_directory"}
+
+	var payload := capture(kernel, slot_id, name)
+	if not _write_atomically(_path_for(slot_id), JSON.stringify(payload, "\t")):
+		return {"ok": false, "slot_id": slot_id, "error": "write_failed"}
+	return {"ok": true, "slot_id": slot_id, "error": ""}
+
+
+## The whole save, as a dictionary. Separate from the file handling so a test — or a later
+## replay or cloud-sync path — can inspect exactly what would be written without touching disk.
+func capture(kernel: GameKernel, slot_id: String = "", name: String = "") -> Dictionary:
+	return {
+		"version": SAVE_VERSION,
+		"slot": {
+			"id": slot_id,
+			"name": name,
+			"saved_at": int(Time.get_unix_time_from_system()),
+			# Denormalized for the load menu, so listing slots never needs the whole save.
+			"total_days": kernel.clock.total_days if kernel.clock != null else 0,
+		},
+		"state": kernel.state.to_dict(),
+		"globals": kernel.globals.to_dict(),
+		"clock": kernel.clock.to_dict(),
+		# Suspended workflows are part of the world, not a detail of it: a save without them
+		# would silently drop whatever the player had been asked and not yet answered (B1).
+		"workflow_instances": kernel.workflow_instances.to_dict(),
+		"modules": _capture_modules(kernel),
+	}
+
+
+func _capture_modules(kernel: GameKernel) -> Dictionary:
+	var out: Dictionary = {}
+	for module: Module in kernel.modules.loaded_modules():
+		out[module.module_id()] = {
+			# Stamped even when a module saves nothing, because B3 migrates on this version and
+			# "the module was present, at version X" is itself worth recording.
+			"version": module.manifest.version if module.manifest != null else "0.0.0",
+			"data": module.capture_save_data(kernel),
+		}
+	return out
+
+
+# --- reading ---------------------------------------------------------------------------
+
+## Read a slot and apply it to [param kernel]. Returns `{ok, error, data}`.
+func load_slot(kernel: GameKernel, slot_id: String) -> Dictionary:
+	var read := read_slot(slot_id)
+	if not bool(read["ok"]):
+		return read
+	return restore(kernel, read["data"] as Dictionary)
+
+
+## Read and validate a slot without applying it. Falls back to the `.bak` when the main file is
+## missing or unreadable — the case a crash mid-save leaves behind.
+func read_slot(slot_id: String) -> Dictionary:
+	if not _is_safe_slot_id(slot_id):
+		return {"ok": false, "error": "bad_slot_id", "data": {}}
+	var parsed := _read_json(_path_for(slot_id))
+	if not bool(parsed["ok"]):
+		var backup := _read_json(_path_for(slot_id) + BACKUP_SUFFIX)
+		if not bool(backup["ok"]):
+			return {"ok": false, "error": String(parsed["error"]), "data": {}}
+		parsed = backup
+	var data: Dictionary = parsed["data"]
+	# Refuse a save written by a newer build rather than guessing at fields we do not know.
+	# Loading it anyway would quietly discard whatever that version added.
+	if int(data.get("version", 0)) > SAVE_VERSION:
+		return {"ok": false, "error": "save_from_newer_version", "data": {}}
+	return {"ok": true, "error": "", "data": data}
+
+
+## Apply an already-read save to the kernel. Returns `{ok, error, data}`.
+##
+## Order matters: the world first, then the workflows suspended inside it, so an instance that
+## re-proves its `resume_require` on wake (§5.3) checks the state it actually belongs to.
+func restore(kernel: GameKernel, data: Dictionary) -> Dictionary:
+	if kernel == null:
+		return {"ok": false, "error": "no_kernel", "data": {}}
+	if int(data.get("version", 0)) > SAVE_VERSION:
+		return {"ok": false, "error": "save_from_newer_version", "data": {}}
+
+	kernel.state.from_dict(data.get("state", {}) as Dictionary)
+	kernel.globals.from_dict(data.get("globals", {}) as Dictionary)
+	kernel.clock.from_dict(data.get("clock", {}) as Dictionary)
+	kernel.workflow_instances.from_dict(data.get("workflow_instances", {}) as Dictionary)
+
+	var modules: Dictionary = data.get("modules", {}) as Dictionary
+	for module: Module in kernel.modules.loaded_modules():
+		# A module absent from the save gets an empty dictionary rather than being skipped: a
+		# module added since the save still needs to hear about the load to set itself up.
+		var entry: Dictionary = modules.get(module.module_id(), {}) as Dictionary
+		module.restore_save_data(kernel, entry.get("data", {}) as Dictionary)
+
+	if kernel.events != null:
+		kernel.events.emit("game_loaded", {"slot": data.get("slot", {})})
+	return {"ok": true, "error": "", "data": data}
+
+
+# --- listing and deleting --------------------------------------------------------------
+
+## Every readable slot's metadata, newest first: `{id, name, saved_at, total_days, version}`.
+## Unreadable files are skipped rather than failing the listing — one corrupt save must not
+## make the load menu unusable.
+func slots() -> Array:
+	var out: Array = []
+	if not DirAccess.dir_exists_absolute(saves_dir):
+		return out
+	var dir := DirAccess.open(saves_dir)
+	if dir == null:
+		return out
+	for file in dir.get_files():
+		if not file.ends_with(EXTENSION):  # skips .bak and .tmp
+			continue
+		var slot_id := file.trim_suffix(EXTENSION)
+		var read := read_slot(slot_id)
+		if not bool(read["ok"]):
+			continue
+		var data: Dictionary = read["data"]
+		var meta: Dictionary = (data.get("slot", {}) as Dictionary).duplicate(true)
+		meta["id"] = slot_id  # the filename wins — it is what load_slot will be called with
+		meta["version"] = int(data.get("version", 0))
+		# JSON has no integer type, so every number parses back as a float (the standing A2
+		# gotcha). Coerced here rather than at each call site, or a load menu shows "Day 11.0".
+		meta["saved_at"] = int(meta.get("saved_at", 0))
+		meta["total_days"] = int(meta.get("total_days", 0))
+		out.append(meta)
+	out.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return int(a.get("saved_at", 0)) > int(b.get("saved_at", 0)))
+	return out
+
+
+func has_slot(slot_id: String) -> bool:
+	return _is_safe_slot_id(slot_id) and FileAccess.file_exists(_path_for(slot_id))
+
+
+## Delete a slot and its backup. Deleting a slot that is not there succeeds — the caller's
+## intent (that slot should not exist) is satisfied either way.
+func delete_slot(slot_id: String) -> bool:
+	if not _is_safe_slot_id(slot_id):
+		return false
+	var path := _path_for(slot_id)
+	for candidate in [path, path + BACKUP_SUFFIX, path + TEMP_SUFFIX]:
+		if FileAccess.file_exists(candidate):
+			DirAccess.remove_absolute(candidate)
+	return true
+
+
+# --- disk plumbing ---------------------------------------------------------------------
+
+## Write via a temp file, keeping the slot's previous contents as `.bak` until the new file is
+## in place. A crash can therefore lose the *newest* save but never destroy the slot: whatever
+## survives — new file or backup — is a complete save, never a half-written one.
+func _write_atomically(path: String, text: String) -> bool:
+	var temp := path + TEMP_SUFFIX
+	var f := FileAccess.open(temp, FileAccess.WRITE)
+	if f == null:
+		return false
+	f.store_string(text)
+	f.close()
+	# Read it back before trusting it: a full disk fails at flush, and finding that out now is
+	# much better than finding out when the player tries to load.
+	if not bool(_read_json(temp)["ok"]):
+		DirAccess.remove_absolute(temp)
+		return false
+
+	var backup := path + BACKUP_SUFFIX
+	if FileAccess.file_exists(path):
+		if FileAccess.file_exists(backup):
+			DirAccess.remove_absolute(backup)
+		# Rename rather than copy: the old bytes are never in two incomplete states at once.
+		if DirAccess.rename_absolute(path, backup) != OK:
+			DirAccess.remove_absolute(temp)
+			return false
+	if DirAccess.rename_absolute(temp, path) != OK:
+		# Put the previous save back — failing to write must not also lose what was there.
+		if FileAccess.file_exists(backup):
+			DirAccess.rename_absolute(backup, path)
+		return false
+	return true
+
+
+func _read_json(path: String) -> Dictionary:
+	if not FileAccess.file_exists(path):
+		return {"ok": false, "error": "not_found", "data": {}}
+	var text := FileAccess.get_file_as_string(path)
+	if text.is_empty():
+		return {"ok": false, "error": "empty_file", "data": {}}
+	# `JSON.parse_string` pushes an engine error on malformed input; a corrupt save is an
+	# expected condition here (that is what the backup is for), not something to log as a fault.
+	# The instance API reports the failure as a return value instead.
+	var json := JSON.new()
+	if json.parse(text) != OK or not (json.data is Dictionary):
+		return {"ok": false, "error": "corrupt_save", "data": {}}
+	return {"ok": true, "error": "", "data": json.data as Dictionary}
+
+
+func _path_for(slot_id: String) -> String:
+	return "%s/%s%s" % [saves_dir, slot_id, EXTENSION]
+
+
+func _new_slot_id() -> String:
+	SaveManager._seq += 1
+	return "slot_%d_%04d" % [int(Time.get_unix_time_from_system()), SaveManager._seq]
+
+
+## Ids are generated, so this guards against a caller passing something else through — most
+## importantly a path traversal (`../../secrets`) that would read or write outside the saves
+## directory. Dots are refused outright, which also keeps `.bak`/`.tmp` unaddressable as slots.
+func _is_safe_slot_id(slot_id: String) -> bool:
+	if slot_id.is_empty() or slot_id.length() > 64:
+		return false
+	return slot_id.is_valid_filename() and not slot_id.contains(".")
+
+
+func _ensure_dir() -> bool:
+	if DirAccess.dir_exists_absolute(saves_dir):
+		return true
+	return DirAccess.make_dir_recursive_absolute(saves_dir) == OK
