@@ -5,7 +5,8 @@ mid-milestone after a usage-limit cutoff. Follow this file top to bottom.
 Keep it updated as work lands: it is a living checklist, not an archive.
 
 Last updated: 2026-07-22 · State: **M3a and M3b are COMPLETE. M4 (save/load) is in
-progress — B1 and B2 have landed, B3 (migrations) is next.** 202/202 tests green. GATE 0 for M4 was
+progress — B1, B2 and B3 have landed; B4 (wire it up) is next and is where M4 becomes
+visible to the player.** 219/219 tests green. GATE 0 for M4 was
 satisfied on 2026-07-22; see `docs/plan.md` §M4 for the direction it settled.
 Sections below marked *(historical)* describe milestones already finished — they are
 kept for their gotchas, not as instructions.
@@ -29,6 +30,42 @@ further buys nothing. Build machinery, not content.
    D28). The `nortrix` syntax in `docs/reference_dsl/` is reference, not a target.
 
 ## 0a. Session log — 2026-07-22 (M3b close-out, then M4 begins)
+
+### M4/B3 — module-declared migrations (landed)
+
+`Module.save_migrations()` returns `SaveMigration` steps tagged with the `manifest.version`
+that introduced each; `SaveMigrator` applies every step newer than the version stamped in
+the save, oldest first. Each step therefore only ever knows about *its own* change, never
+the whole history — which is what keeps migrations writable years later.
+
+**Never edit a shipped migration step.** A player's save may sit on any past version;
+rewriting history is precisely what migrations exist to avoid.
+
+Decisions a future agent should not quietly reverse:
+
+- **Versions compare numerically per component**, not as strings. As strings "0.10.0" sorts
+  *before* "0.2.0", so a string comparison silently stops migrating at the tenth release.
+  Missing components read as 0 and a `-beta` suffix compares equal rather than throwing.
+- **Migrations run before anything is applied.** They are pure, so running them all up front
+  means a load happens completely or not at all; migrating as each module restored would
+  leave the world half-overwritten when step three of five failed. There is a test for this.
+- **No stamp ≠ version "0.0.0".** A module absent from the save (added since) migrates
+  nothing. Guessing 0.0.0 would replay its whole chain over empty data and hand it a
+  fabricated shape.
+- **Data of a module that is not loaded is carried forward untouched** across a save cycle
+  (`SaveManager._carried_modules`). Disabling a DLC, saving, and re-enabling it must not
+  erase what it owned. Deliberately *unmigrated* — this build cannot know what those shapes
+  mean, so it carries the bytes and lets the owning module migrate them when it returns.
+- A save from a **newer build of a module** is refused, matching B2's stance on the envelope.
+
+**Not built, on purpose:** a migration chain for the core envelope (`SAVE_VERSION`). There
+are no v0 saves and no second version, so it would be a mechanism with zero users; the
+version check already refuses anything newer. Build it when `SAVE_VERSION` first moves.
+
+Verified in the real app against the real `user://`: the stamp lands in the real file, an
+older module version with **no migrations declared** loads cleanly (the common case — most
+version bumps need no migration), and a save from a newer build is refused with a
+diagnostic naming both versions.
 
 ### M4/B2 — the real SaveManager (landed)
 

@@ -311,9 +311,24 @@ Tasks, one branch + PR each:
   re-read before being trusted, so a crash can lose the newest save but never the slot. A save
   from a newer build is **refused**, not guessed at. Verified across two separate Godot
   processes against the real `user://`.
-- **B3 — module-declared migrations.** `ModuleManifest.version` already exists "for save
-  migrations". Must handle a module absent from the save, a module added since the save, and
-  a **save newer than the code** (refuse — never guess).
+- **B3 — module-declared migrations** — **done (2026-07-22)**. `Module.save_migrations()`
+  returns [SaveMigration] steps tagged with the `manifest.version` that introduced each;
+  `SaveMigrator` applies every step newer than the version stamped in the save, oldest first,
+  so each step only ever knows about its own change. Versions compare **numerically per
+  component** — as strings "0.10.0" sorts before "0.2.0", which would silently stop migrating
+  at the tenth release.
+  **Migrations run before anything is applied**: they are pure, so a load either happens
+  completely or not at all. Migrating as each module restored would leave the world
+  half-overwritten when step three of five failed.
+  Lifecycle cases all decided rather than left to chance: a module with **no stamp** in the
+  save (added since) migrates nothing rather than replaying its history from "0.0.0"; a save
+  from a **newer build of a module** is refused; a step that returns garbage stops the load;
+  and data belonging to a module that is **not loaded right now is carried forward untouched**,
+  so disabling a DLC and saving does not erase what it owned — losing content by turning
+  something off is not a choice a player knowingly makes.
+  *Not built: a migration chain for the core envelope (`SAVE_VERSION`). There are no v0 saves
+  and no second version, so the mechanism would have zero users; the version check already
+  refuses anything newer. Add the chain when `SAVE_VERSION` first moves.*
 - **B4 — wire it:** load on boot, autosave points, Android background/resume, and the
   confirmation UI that re-presents a pending question.
 

@@ -38,3 +38,14 @@ func capture_save_data(_kernel: GameKernel) -> Dictionary:
 ## its keys exist.
 func restore_save_data(_kernel: GameKernel, _data: Dictionary) -> void:
 	pass
+
+
+## Declared shape changes this module's save data has been through (M4/B3), as [SaveMigration]
+## steps tagged with the `manifest.version` that introduced each. Order does not matter — the
+## [SaveMigrator] sorts them — and only steps newer than the version stamped in the save run.
+##
+## Add a step in the same commit as the shape change that needs it, and never edit a shipped
+## step: a player's save may be sitting on any past version, and rewriting history is exactly
+## the case migrations exist to avoid.
+func save_migrations() -> Array:
+	return []

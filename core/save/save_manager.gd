@@ -32,6 +32,10 @@ const TEMP_SUFFIX := ".tmp"
 
 var saves_dir: String
 
+## Module data from the last loaded save whose module is not loaded in this build — carried
+## forward untouched so the next save does not erase it. See [method restore].
+var _carried_modules: Dictionary = {}
+
 static var _seq: int = 0
 
 
@@ -84,7 +88,9 @@ func capture(kernel: GameKernel, slot_id: String = "", name: String = "") -> Dic
 
 
 func _capture_modules(kernel: GameKernel) -> Dictionary:
-	var out: Dictionary = {}
+	# Start from the data of modules that were in the loaded save but are not loaded now (see
+	# `restore`), so saving with a DLC disabled preserves rather than erases what it owned.
+	var out: Dictionary = _carried_modules.duplicate(true)
 	for module: Module in kernel.modules.loaded_modules():
 		out[module.module_id()] = {
 			# Stamped even when a module saves nothing, because B3 migrates on this version and
@@ -124,31 +130,84 @@ func read_slot(slot_id: String) -> Dictionary:
 	return {"ok": true, "error": "", "data": data}
 
 
-## Apply an already-read save to the kernel. Returns `{ok, error, data}`.
+## Apply an already-read save to the kernel. Returns `{ok, error, data, migrations}`.
 ##
-## Order matters: the world first, then the workflows suspended inside it, so an instance that
-## re-proves its `resume_require` on wake (§5.3) checks the state it actually belongs to.
+## **Migrations run before anything is applied** (M4/B3). They are pure — data in, data out —
+## so running them all up front means a load either happens completely or not at all; migrating
+## as each module is restored would leave the world half-loaded when step three of five failed.
+##
+## Then order matters: the world first, then the workflows suspended inside it, so an instance
+## that re-proves its `resume_require` on wake (§5.3) checks the state it actually belongs to.
 func restore(kernel: GameKernel, data: Dictionary) -> Dictionary:
 	if kernel == null:
-		return {"ok": false, "error": "no_kernel", "data": {}}
+		return {"ok": false, "error": "no_kernel", "data": {}, "migrations": {}}
 	if int(data.get("version", 0)) > SAVE_VERSION:
-		return {"ok": false, "error": "save_from_newer_version", "data": {}}
+		return {"ok": false, "error": "save_from_newer_version", "data": {}, "migrations": {}}
+
+	var saved_modules: Dictionary = data.get("modules", {}) as Dictionary
+	var migrated := _migrate_modules(kernel, saved_modules)
+	if not bool(migrated["ok"]):
+		return {"ok": false, "error": String(migrated["error"]), "data": {},
+			"migrations": migrated["applied"]}
 
 	kernel.state.from_dict(data.get("state", {}) as Dictionary)
 	kernel.globals.from_dict(data.get("globals", {}) as Dictionary)
 	kernel.clock.from_dict(data.get("clock", {}) as Dictionary)
 	kernel.workflow_instances.from_dict(data.get("workflow_instances", {}) as Dictionary)
 
-	var modules: Dictionary = data.get("modules", {}) as Dictionary
+	var module_data: Dictionary = migrated["data"]
 	for module: Module in kernel.modules.loaded_modules():
 		# A module absent from the save gets an empty dictionary rather than being skipped: a
 		# module added since the save still needs to hear about the load to set itself up.
-		var entry: Dictionary = modules.get(module.module_id(), {}) as Dictionary
-		module.restore_save_data(kernel, entry.get("data", {}) as Dictionary)
+		module.restore_save_data(kernel, module_data.get(module.module_id(), {}) as Dictionary)
+
+	# Hold on to data belonging to modules that are not loaded right now, so the next save
+	# writes it back untouched. Without this, disabling a DLC and saving would erase everything
+	# that DLC owned — the player would lose it by turning something off, which is not a choice
+	# anyone knowingly makes. Unmigrated on purpose: this build cannot know what those shapes
+	# mean, so it carries the bytes and lets the owning module migrate them when it returns.
+	_carried_modules = _orphan_modules(kernel, saved_modules)
 
 	if kernel.events != null:
 		kernel.events.emit("game_loaded", {"slot": data.get("slot", {})})
-	return {"ok": true, "error": "", "data": data}
+	return {"ok": true, "error": "", "data": data, "migrations": migrated["applied"]}
+
+
+## Run every loaded module's declared chain. Returns `{ok, data, applied, error}` where `data`
+## maps module id -> migrated save data, and `applied` maps module id -> the versions that ran.
+func _migrate_modules(kernel: GameKernel, saved_modules: Dictionary) -> Dictionary:
+	var out: Dictionary = {}
+	var applied: Dictionary = {}
+	for module: Module in kernel.modules.loaded_modules():
+		var id := module.module_id()
+		var entry: Dictionary = saved_modules.get(id, {}) as Dictionary
+		var module_data: Dictionary = entry.get("data", {}) as Dictionary
+		var current := module.manifest.version if module.manifest != null else "0.0.0"
+		# No stamp means the save predates this module; there is nothing to migrate forward, and
+		# guessing at "0.0.0" would replay the module's whole history over empty data.
+		if not entry.has("version"):
+			out[id] = module_data
+			continue
+		var result := SaveMigrator.migrate(module_data, String(entry["version"]), current,
+			module.save_migrations(), kernel.log, id)
+		if not bool(result["ok"]):
+			if kernel.log != null:
+				kernel.log.warn("SaveManager", "Cannot load save: module '%s' %s (save %s, build %s)"
+					% [id, result["error"], entry["version"], current])
+			return {"ok": false, "data": {}, "applied": applied, "error": String(result["error"])}
+		out[id] = result["data"]
+		if not (result["applied"] as Array).is_empty():
+			applied[id] = result["applied"]
+	return {"ok": true, "data": out, "applied": applied, "error": ""}
+
+
+## Entries in the save belonging to modules this build has not loaded.
+func _orphan_modules(kernel: GameKernel, saved_modules: Dictionary) -> Dictionary:
+	var out: Dictionary = {}
+	for id: String in saved_modules:
+		if not kernel.modules.is_loaded(id):
+			out[id] = (saved_modules[id] as Dictionary).duplicate(true)
+	return out
 
 
 # --- listing and deleting --------------------------------------------------------------
