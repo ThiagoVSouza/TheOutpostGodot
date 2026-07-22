@@ -29,7 +29,12 @@ func _ready() -> void:
 	Kernel.events.subscribe("workflow_emit", _on_workflow_emit)
 	# T5: reflect AI outage/recovery state as system messages + the Retry control.
 	Kernel.events.subscribe(AiAvailability.EVENT_NAME, _on_ai_availability_changed)
-	_append("[b]The Outpost[/b] — the game master awaits. Describe what you do.")
+	# Boot has already resumed the session by now, so say which settlement this is — opening
+	# into a loaded world with no acknowledgement reads as if nothing was saved.
+	if Kernel.session.has_slot():
+		_append("[b]%s[/b] — day %d. Welcome back." % [Kernel.session.slot_name, Kernel.clock.total_days])
+	else:
+		_append("[b]The Outpost[/b] — the game master awaits. Describe what you do.")
 	_refresh_resources()
 
 
@@ -78,6 +83,10 @@ func _build_ui() -> void:
 	advance.text = "Advance 1 month (dev)"
 	advance.pressed.connect(_on_advance_month)
 	dev_row.add_child(advance)
+	var save_button := Button.new()
+	save_button.text = "Save"
+	save_button.pressed.connect(_on_save)
+	dev_row.add_child(save_button)
 	var trace_toggle := CheckButton.new()
 	trace_toggle.text = "Show AI trace"
 	trace_toggle.toggled.connect(func(on: bool) -> void: _trace_label.visible = on)
@@ -129,6 +138,14 @@ func _set_busy(busy: bool) -> void:
 	_send_button.disabled = busy
 	if not busy:
 		_input.grab_focus()
+
+
+func _on_save() -> void:
+	var result: Dictionary = Kernel.session.save("manual")
+	if bool(result["ok"]):
+		_append("[color=gray]Saved '%s'.[/color]" % Kernel.session.slot_name)
+	else:
+		_append("[color=orange]System:[/color] Could not save (%s)." % result["error"])
 
 
 func _on_advance_month() -> void:

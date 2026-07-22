@@ -329,8 +329,23 @@ Tasks, one branch + PR each:
   *Not built: a migration chain for the core envelope (`SAVE_VERSION`). There are no v0 saves
   and no second version, so the mechanism would have zero users; the version check already
   refuses anything newer. Add the chain when `SAVE_VERSION` first moves.*
-- **B4 — wire it:** load on boot, autosave points, Android background/resume, and the
-  confirmation UI that re-presents a pending question.
+- **B4a — session lifecycle** — **done (2026-07-22)**. `GameSession` owns *which* slot the
+  player is in and *when* it gets written; `SaveManager` stays the mechanism. The boot flow
+  (not `GameKernel.boot()`) resumes the newest slot before the first screen renders — booting
+  is pure wiring, and when to resume is a product decision.
+  **The autosave policy is built around one fact:** on Android the OS can kill a backgrounded
+  app without warning and never asks first, so the save taken when we are *told* we are leaving
+  the foreground (`NOTIFICATION_APPLICATION_PAUSED`, plus close and back) is the only genuinely
+  guaranteed one. The turn-boundary autosave is an optimization that limits how much a hard
+  kill costs, and is coalesced to 20 s; lifecycle saves ignore the interval entirely.
+  Dirty tracking hangs off `command_applied` — the authoritative "world changed" signal, since
+  the brief mandates every mutation goes through the command bus — plus `day_passed`.
+  A new session **writes nothing until the first save**, so opening and closing the game leaves
+  no stray empty settlement; and a newest save that lists but will not load leaves the session
+  **detached**, so the next autosave creates a new slot instead of overwriting the file the
+  player may still want.
+- **B4b — the confirmation UI** that re-presents a pending question (B1's `pending_instance`),
+  and the slot-management surface. Standing rule 4 applies to B1's path here.
 
 **Deferred within M4** (inherited, not forgotten): trace retention (A1 left it as "M4's
 problem" — dev builds write unbounded trace files into `user://`), scheduler re-arming of

@@ -5,8 +5,8 @@ mid-milestone after a usage-limit cutoff. Follow this file top to bottom.
 Keep it updated as work lands: it is a living checklist, not an archive.
 
 Last updated: 2026-07-22 · State: **M3a and M3b are COMPLETE. M4 (save/load) is in
-progress — B1, B2 and B3 have landed; B4 (wire it up) is next and is where M4 becomes
-visible to the player.** 219/219 tests green. GATE 0 for M4 was
+progress — B1, B2, B3 and B4a have landed; B4b (the confirmation UI + slot management)
+is next.** 231/231 tests green. GATE 0 for M4 was
 satisfied on 2026-07-22; see `docs/plan.md` §M4 for the direction it settled.
 Sections below marked *(historical)* describe milestones already finished — they are
 kept for their gotchas, not as instructions.
@@ -30,6 +30,53 @@ further buys nothing. Build machinery, not content.
    D28). The `nortrix` syntax in `docs/reference_dsl/` is reference, not a target.
 
 ## 0a. Session log — 2026-07-22 (M3b close-out, then M4 begins)
+
+### M4/B4a — session lifecycle (landed)
+
+`GameSession` (`core/save/game_session.gd`, on the kernel as `session`) owns *which* slot the
+player is in and *when* it is written. `SaveManager` stays the mechanism; this is the policy.
+
+**The autosave policy follows from one fact:** on Android the OS can kill a backgrounded app
+without warning and never asks first. So the save taken when we are *told* we are leaving the
+foreground is the only genuinely guaranteed one — `GameKernel._notification` handles
+`APPLICATION_PAUSED`, `WM_CLOSE_REQUEST` and `WM_GO_BACK_REQUEST`. The turn-boundary autosave
+merely limits how much a hard kill costs, and is coalesced to `AUTOSAVE_INTERVAL` (20 s);
+lifecycle saves bypass the interval entirely.
+
+Other calls worth keeping:
+
+- **Resume happens in the boot flow, not `GameKernel.boot()`.** Booting stays pure wiring so
+  tests get a clean world, and *when* to resume is a product decision owned by whatever shows
+  the first screen. `boot.gd` resumes before the first screen renders, so the game opens
+  showing the player's world rather than flickering into it.
+- **A new session writes nothing until the first save.** Opening the game and closing it again
+  never leaves a stray empty settlement in the load menu.
+- **A newest save that lists but will not load leaves the session detached** (no slot). If it
+  adopted the slot, the next autosave would overwrite a file the player may still want.
+- Dirty tracking hangs off **`command_applied`** — the authoritative "the world changed"
+  signal, since the brief mandates every mutation goes through the command bus — plus
+  `day_passed` for time.
+
+**Two gotchas this cost:**
+
+1. **The kernel owns the event subscriptions, not the session.** `GameSession` is RefCounted
+   and reaches the bus through the kernel, so handing the bus a handler that captures it forms
+   `session → kernel → events → handler → session` — exactly the leaking cycle the T1 notes
+   warn about. The kernel is a Node with an explicit lifetime, so it subscribes and calls into
+   the session. **Don't "tidy" this back into `GameSession._init`.**
+2. **`Time.get_ticks_msec()` is small in a short process.** The autosave interval check
+   compared against an initial `0`, so in a 3-second test run (or a quick app launch) the
+   elapsed time never exceeded 20 s and the *first* autosave — the one that matters most —
+   was silently skipped. `_last_autosave_msec` starts at `-1` meaning "never saved". Watch for
+   this anywhere a tick-based interval has a zero default.
+
+Also: `autosave_enabled` **defaults** from `OUTPOST_TEST_RUN` rather than being gated by it, so
+tests of this machinery can opt back in against a scratch directory. A hard env gate made the
+behaviour untestable.
+
+Verified in the real app: two processes — one plays a turn, advances the clock and takes the
+lifecycle save; the other relaunches into the same settlement — plus a real `boot.tscn` run
+logging `Continued 'Ironhold'` and showing the chat screen.
 
 ### M4/B3 — module-declared migrations (landed)
 

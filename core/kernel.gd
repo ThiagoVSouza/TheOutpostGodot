@@ -27,6 +27,9 @@ var input_router: AiInputRouter
 var clock: GameClock
 var scheduler: Scheduler
 var saves: SaveManager
+## Which slot the player is in and when it gets written (M4/B4a). The boot flow starts it;
+## the kernel only drives the OS lifecycle saves (see [method _notification]).
+var session: GameSession
 
 # --- workflow DSL kernel (M3a: A2 validation layer + A3 runtime) ---
 var globals: GlobalStore
@@ -114,6 +117,21 @@ func boot() -> void:
 	clock = GameClock.new(events)
 	scheduler = Scheduler.new(events, self)
 	saves = SaveManager.new()
+	# Constructed, but deliberately does not load anything here: boot() must stay a pure
+	# wiring step so tests get a clean world, and *when* to resume is the boot flow's call.
+	session = GameSession.new(self)
+	# The kernel owns these subscriptions rather than the session doing it itself: the session
+	# is RefCounted and reaches the bus through the kernel, so a handler capturing it would form
+	# the leaking cycle the T1 notes warn about. This node's lifetime is explicit.
+	#
+	# `command_applied` is the authoritative "the world changed" signal — the brief mandates
+	# every state mutation goes through the command bus, so listening anywhere else would be
+	# listening to a subset. `day_passed` covers the other axis: time moving is a change even
+	# when no command ran. A completed turn is the natural autosave point — the world is
+	# consistent, the player is reading the reply, and nothing is mid-flight.
+	events.subscribe("command_applied", _on_world_changed)
+	events.subscribe("day_passed", _on_world_changed)
+	events.subscribe(AiInputRouter.EVENT_TURN_COMPLETED, _on_turn_completed_autosave)
 
 	# 8. AI orchestrator ties the above together (needs tools, command_registry, ai,
 	#    commands, workflows, scheduler, events).
@@ -135,9 +153,38 @@ func is_booted() -> bool:
 	return _booted
 
 
+func _on_world_changed(_payload: Dictionary) -> void:
+	if session != null:
+		session.mark_dirty()
+
+
+func _on_turn_completed_autosave(_payload: Dictionary) -> void:
+	if session != null:
+		session.autosave()
+
+
 func _exit_tree() -> void:
 	if is_instance_valid(llama_server_manager):
 		llama_server_manager.shutdown()
+
+
+## The last moments we are guaranteed to run code (M4/B4a). On Android the OS can kill a
+## backgrounded app without warning and never asks first, so the save taken when we are *told*
+## we are leaving the foreground is the only one that is genuinely guaranteed — the per-turn
+## autosave merely limits how much a hard kill can cost.
+##
+## `APPLICATION_PAUSED` is the Android/iOS background signal; `WM_CLOSE_REQUEST` is the desktop
+## window close; `WM_GO_BACK_REQUEST` is the Android back button, which can end the app.
+func _notification(what: int) -> void:
+	if session == null:
+		return
+	match what:
+		NOTIFICATION_APPLICATION_PAUSED:
+			session.save_on_lifecycle_event("app_paused")
+		NOTIFICATION_WM_CLOSE_REQUEST:
+			session.save_on_lifecycle_event("app_closing")
+		NOTIFICATION_WM_GO_BACK_REQUEST:
+			session.save_on_lifecycle_event("app_back")
 
 
 func _create_ai_backend() -> AiBackend:
