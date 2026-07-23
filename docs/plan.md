@@ -498,13 +498,18 @@ are all map-idle / map-moving / large-settlement.
 
 ## Unscheduled — cheap, self-contained, do anytime
 
-**App shell + new-game wizard** (from `docs/briefing1.md`): splash, loading screens,
-main menu (Continue / New / Load / Settings / Help / News / Account), and the
-new-game wizard declared in module configuration. Deterministic UI work with no
-unknowns — slot management partially exists since B4b — and it forces the
-module-config surface the DLC vision needs. Can run any time, in parallel with M5;
-the wizard's parameter hand-off to a new-game workflow is the only piece that touches
-the DSL, and that mechanism already exists (workflows take context).
+**App shell + new-game flow** — **first pass done (2026-07-23)**: the full flow **splash →
+loading → main menu → new game → game start** runs with placeholder UI. New pieces: a
+`ScreenRouter` (`core/navigation/`) since no navigation existed (boot mounted one screen);
+core app-shell screens (`core/screens/`, registered by `AppShell`); a `create_plan` command
+(the gap where nothing ever put a plan into `GameState["plans"]`); a `Module.seed_new_game`
+hook + `GameSession.begin_new_game` that seeds a **minimal placeholder living world** (hero from
+the wizard, a small cast with dispositions, resources, one ticking plot, an opening line) —
+scaffolding the authored content replaces. Also fixed a latent bug: `start_new` now resets the
+in-memory stores (state/globals/clock/instances), not just the workspace, so a mid-session new
+game is a clean world (D34). `OUTPOST_PLAYGROUND=1` still bypasses the shell. **Deferred:**
+module-pick screen + the module-config-driven multi-step wizard; a real narrated opening
+workflow; an in-play time-advance so plots tick during play; Settings/Help/News screens.
 
 **Android UI issues** (found during the milestone-1 deploy, deliberately not fixed):
 

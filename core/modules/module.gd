@@ -23,6 +23,15 @@ func register(_kernel: GameKernel) -> void:
 	pass
 
 
+## Seed this module's starting world when a new game begins (the in-game phase). Called once per
+## loaded module by [method GameSession.begin_new_game], after the workspace/state has been cleared,
+## with the new-game [param params] (e.g. `hero_name`). A module creates its starting cast, state and
+## plots here through the whitelisted commands (kernel.commands.execute) — the same choke point the
+## AI and workflows use. Default: no-op (a module that seeds nothing).
+func seed_new_game(_kernel: GameKernel, _params: Dictionary) -> void:
+	pass
+
+
 ## Module-owned save data (M4/B2). Anything a module keeps outside [GameState] and needs back
 ## on load goes here; return an empty dictionary (the default) if there is nothing. Must be
 ## JSON-serializable — the save file is text.
