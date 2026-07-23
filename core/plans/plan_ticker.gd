@@ -72,6 +72,7 @@ func _tick_one(plan_id: String, today: int) -> void:
 		"situation": String(plan.get("situation", "")),
 		"direction": String(direction.get("band", "calm")),  # the band word, never the raw number (D33)
 		"latest": _latest_development(plan, today),
+		"subjects": plan.get("subjects", []),  # what the tick's recorded memory is tagged with
 		"today": today,
 	}
 	var instance := WorkflowInstance.create(

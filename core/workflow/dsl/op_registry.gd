@@ -154,6 +154,16 @@ func _seed_core() -> void:
 	ai.local_ref_fields = PackedStringArray(["as"])
 	register(ai)
 
+	# Record a memory (M5, D37): append one English line to the game master's memory, tagged
+	# with the entities it concerns. `text`/`kind` are authored literals — the memory prose is
+	# authored, not a computed string and not (for now) a model call (D37); `subjects` and `day`
+	# are expressions (the entities and the game day the tick already knows). Non-authoritative,
+	# like a global write — it never produces a game number, so it is not a run_command.
+	var remember := OpSpec.new("remember", false, false, true, PackedStringArray(["text"]))
+	remember.literal_fields = PackedStringArray(["text", "kind"])
+	remember.expr_fields = PackedStringArray(["subjects", "day"])
+	register(remember)
+
 	var run := OpSpec.new("run", false, false, true, PackedStringArray(["workflow"]))
 	run.literal_fields = PackedStringArray(["workflow"])
 	run.args_fields = PackedStringArray(["args"])

@@ -272,6 +272,7 @@ func _plan_tick_workflow() -> Dictionary:
 			"situation": {"type": "string"},
 			"direction": {"type": "string"},
 			"latest": {"type": "string"},
+			"subjects": {"type": "array"},
 			"today": {"type": "int"},
 		},
 		"steps": [
@@ -280,8 +281,25 @@ func _plan_tick_workflow() -> Dictionary:
 			 "as": "$$transition"},
 			{"op": "run_command", "name": "apply_plan_transition",
 			 "args": {"plan_id": "@plan_id", "transition": "$$transition", "today": "@today"}},
+			# Record what happened so the next tick can retrieve it (D37). The memory is the
+			# *development* (what changed); the plan's situation carries the who — so a generic line
+			# tagged with the subjects reads coherently when retrieved beside the situation, and the
+			# DSL never has to assemble a string. `else` is the `hold` case.
+			{"op": "if", "cond": ["$$transition", "==", "escalate"],
+			 "then": [_remember_development("Tensions around the matter rose further.")],
+			 "elif": [
+				{"cond": ["$$transition", "==", "de_escalate"],
+				 "then": [_remember_development("Tensions around the matter eased.")]},
+				{"cond": ["$$transition", "==", "resolve"],
+				 "then": [_remember_development("The matter reached its conclusion.")]},
+			 ],
+			 "else": [_remember_development("Little changed in the matter this time.")]},
 		]
 	}
+
+
+func _remember_development(text: String) -> Dictionary:
+	return {"op": "remember", "text": text, "subjects": "@subjects", "day": "@today", "kind": "plan"}
 
 
 ## A tiny, validated workflow on the A3 kernel: read the food stores, emit a localizable

@@ -110,6 +110,49 @@ func test_a_tick_falls_back_when_nothing_is_remembered_yet() -> void:
 	assert_string_contains(latest, "nothing new", "a plan can tick before anything about it is on record")
 
 
+func test_a_tick_records_its_development_as_a_memory() -> void:
+	# The write side (D37): a tick leaves a memory of what changed, tagged with the plan's subjects.
+	var kernel := _kernel()
+	(kernel.ai_runner as FakeAiRunner).set_result("classify_plan_transition", "escalate")
+	_seed_steward(kernel)
+
+	await kernel.plan_ticker.tick_due(30)
+
+	var recalled := kernel.memories.retrieve(["steward"], 5, 30)
+	assert_eq(recalled.size(), 1, "the tick left one memory about its subjects")
+	assert_string_contains(String((recalled[0] as Dictionary)["text"]), "rose further",
+		"and the memory reflects the transition the model chose")
+
+
+func test_the_loop_is_self_sustaining() -> void:
+	# The whole point: a tick's development becomes the next tick's retrieved context, with no
+	# external writer. The plan feeds itself.
+	var kernel := _kernel()
+	(kernel.ai_runner as FakeAiRunner).set_result("classify_plan_transition", "escalate")
+	_seed_steward(kernel)
+
+	await kernel.plan_ticker.tick_due(30)  # records "rose further", re-arms its wake
+
+	var plan: Dictionary = _plans(kernel)["steward"]
+	var next_latest := kernel.plan_ticker._latest_development(plan, 90)
+	assert_string_contains(next_latest, "rose further",
+		"what the last tick recorded is what the next tick shows the model")
+
+
+func test_the_first_tick_records_but_reads_the_neutral_fallback() -> void:
+	# Ordering: the tick reads its development *before* it records this one, so a plan's very first
+	# tick still gets the fallback rather than reading a memory it is about to write.
+	var kernel := _kernel()
+	(kernel.ai_runner as FakeAiRunner).set_result("classify_plan_transition", "escalate")
+	_seed_steward(kernel)
+
+	var plan_before: Dictionary = _plans(kernel)["steward"]
+	assert_string_contains(kernel.plan_ticker._latest_development(plan_before, 30), "nothing new")
+
+	await kernel.plan_ticker.tick_due(30)
+	assert_eq(kernel.memories.count(), 1, "and after the tick there is exactly one memory")
+
+
 func test_the_day_passed_subscription_drives_ticks_from_the_clock() -> void:
 	# The production wiring: the ticker runs off the calendar, not only when a test calls it.
 	var kernel := _kernel()
