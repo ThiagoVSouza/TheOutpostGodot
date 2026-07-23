@@ -1,137 +1,219 @@
+# Briefing 1 — App Shell, Modules, and the Living World
 
-# Overall Game App characteristics
+**Status (2026-07-23):** Revised from the original draft (previous commit) after a review
+against `docs/decisions.md` and `docs/plan.md`. This is a **vision document and the design
+input for M5 (memories, plans, retrieval)** plus the game-shape reference for M7+. It is
+not a spec; where it conflicts with the decision log, the decision log wins.
 
-- The game is comprised of one core layer containing the base application in godot, ai models, overall game configuration and assets.
-    - The core game also contains the main screens and also common core logic
-    - It will also contain a core data (game lore, overall world rules, core definitions, etc)
-    - Free content updates will reside in the core module and will be promptly available to any DLC/module.
+**Two deliberate reframings from the original draft**, both to keep D4/D30 intact:
 
+1. The original said the AI may "create new workflows." The AI never authors or modifies
+   workflows at runtime — that would cross the D30 trust boundary (validation + capability
+   whitelist). Instead it **selects and parameterizes from a library of authored plot/workflow
+   templates**, always through closed sets with per-label descriptions (D33).
+2. The original had the AI "read this in context to judge and decide what is going on, next
+   steps." Open-ended judgment is exactly what D4 removed. Plan advancement is a **workflow
+   whose AI steps are grammar-constrained closed choices** (escalate / hold / de-escalate /
+   mutate / resolve); rule tables own every number.
 
-- It also contains a list of DLC / modules that a player may have purchased.
-    - Each DLC is Game play mode or angle of playing the game, for example next one will be "Adventure Company", which instead of controlling a domain, you will be managing a party. It will have different logic but will share all core foundations (it may or may not have exclusive screens)
-    - The game ships from day 1 with at least one DLC/Module which is "The Outpost" 
-    - Each dlc/module has its own assets (images, sounds, workflows, memories, configurations)
-    
-- We may in the future move into creating separated games from the DLC. Ie: we keep the core module but the first module that comes with it is the "Adventure Company" and the user may buy "the outpost" as a dlc for this game. (This is just a possibility as I dont think anyone tried this before as far as I know - but in any case we cant, at least keep it as the outpost as main game and others as dlcs)
+---
 
-- Besides DLcs we will eventually release free content update. This can inlcude new assets, evetns, and even game rules/screens
+# Overall app structure: core + modules
 
-# Core game Flow
+- **One core layer**: the base Godot application, AI models, overall game configuration and
+  shared assets.
+    - The core also contains the main screens and common core logic.
+    - It carries the core data: game lore, overall world rules, core definitions.
+    - Free content updates land in the core and are promptly available to every DLC/module.
 
-1. Splash screen shows with Company Logo (I am leaning on changing this to Pangea Games from NTX Games)
+- **A list of DLC/modules** the player may have purchased.
+    - Each DLC is a game-play mode or angle on the game. The next one will be **"Adventure
+      Company"**: instead of governing a domain you manage a party. Different logic, same
+      core foundations; it may or may not have exclusive screens.
+    - The game ships from day 1 with at least one module: **"The Outpost"**.
+    - Each module owns its assets: images, sounds, workflows, memories, configuration.
+    - *Already built:* `ModuleRegistry` + `.tres` manifests (M1); per-module save data with
+      module-declared migrations (M4/B3), including the rule that data belonging to a module
+      that is not currently loaded is carried forward untouched — turning a DLC off never
+      loses what it owned.
 
-2. A loading screen shows (just a background image with a bottom progress bar).
-    - In this step every asset that needs to be loaded to render the main Menu (all images, AI model (?), sounds/music, configurations, etc )
-    - In this loading phase we may have a check for updated versions or content. (Some content like new DSL may not require updating the app itself and just some new content like assets, dsl, data, lore, etc) (We will try to use main stores way of delivering this rather than creating our own distribution backend/cdn)
-    - Main settings are loaded and applied 
+- **Possible future:** repackage so the core ships with a different lead module — e.g.
+  "Adventure Company" as the main game and "The Outpost" purchasable as its DLC. As far as I
+  know nobody has tried this shape. B3 makes it technically free; the real question is store
+  and business packaging, and it deserves its own decision entry when it becomes concrete.
+  Until then, The Outpost is the main game and everything else is DLC.
 
-3. Main menu has option to continue last game, new game, load game and settings, help, news, some social media links and account. 
+- Besides DLC we will eventually release **free content updates**: new assets, events, even
+  game rules/screens. Delivering content without an app update is the open D13 question
+  (Play Asset Delivery / iOS ODR size limits); the content format (`.tres`/JSON) already
+  supports it — delivery is the unknown, not representation.
 
-# How a new game should flow:
+# Core game flow (the app shell)
 
-1. USer clicks in the new game main menu item.
-    - App should check list of DLCS available.
+1. **Splash screen** with the company logo (leaning toward rebranding NTX Games → Pangea
+   Games).
 
-2. A screen containing option to pick game mode/dlc to play. In case the user only have one game this screen may be skipped and go to next point.
+2. **Loading screen** (background image + bottom progress bar).
+    - Load everything the main menu needs: images, sounds/music, configurations — and the AI
+      model. Boot is the right moment to pay the one-time system-prompt ingest so later
+      turns hit the prefix cache warm (D8).
+    - A check for updated versions or content can live here. Some content (new DSL content,
+      assets, data, lore) should not require updating the app itself. Prefer the stores'
+      delivery mechanisms over building our own distribution backend/CDN (D13).
+    - Main settings are loaded and applied.
 
-3. Once the game/dlc is chosen the app should check the configuration of this module.
-    - In this configuration there should be an initialization flow/configuration which will show what will be in the game "new game wizard".
-    - The app should transition to a loading screen loading all assets necessary to show the wizard only.
-    - The wizard screen is displayed and all the steps are composed as in the configuration.
+3. **Main menu**: Continue last game, New Game, Load Game, Settings, Help, News, social
+   media links, Account.
 
-4. Once the user finishs the wizard and in the final button clicks start then the game will transition to a loading screen
-    - IN this screen first it will load all the assets necessary to run the game per se:
-        - The core Game assets necessary to start the game are loaded to memory
-        - Current game files/folder is emptied from any previous content (Also all cache is cleared if any exists)
-        - Current Game memory and JSON files are created empty
-        - Game Map and main screens/engine is loaded
-        - A new current game map file is created. 
-    - THen the new game workflow is run:
-        - this workflow will receive the parameters picked in the initialization wizard (ie: what is the hero name, what is the background, flag colors and emblem chosen, and any other configuration)
-        - This workflow will right away modify a few things, for example will set a few game states (outpost location on map, how much gold, hero character is created), will add some memories based on the choices, etc.
-    - Then it will start a new workflow that will set the current game: ie in the outpost it will start a new event where the chat is opened a dynamic image is shown on top with the throne room and then it will start with the king granting the outpost and giving instructions and letting the user do his first chat interation with the king and or the game itself.
+# How a new game flows
 
-    - This start workflow will also start the main game quest (and maybe some sub quests). This is different from hard coded linear quests from standard games. 
-        - For example the main quest is a Kings order to take over the outpost and solidify it in 5 years.
-            - This will be assessed in 5 years, so there is an event that needs to trigger in 5 years for checking this.
-            - The assessment will be done by the Kings Steward. This assessment may be based on his personal interests and/or disposition towards the player´s hero.
-    * I will explain how plans and memories work below.
+1. Player clicks **New Game**; the app checks the list of installed modules.
 
-# What A current running game will have
+2. A **mode/module picker** screen. If the player owns only one module, skip straight to
+   step 3.
 
-Here are some overall game flows that are important for how we structure memory/workflows, lore, etc.
+3. The chosen module's configuration declares its **"new game wizard"**:
+    - The app transitions to a loading screen that loads only the wizard's assets.
+    - The wizard screen renders its steps exactly as declared in the module configuration
+      (wizard-as-configuration — the same pattern as the `.tres` manifests).
 
-1. Main & side quests
+4. The player finishes the wizard and clicks **Start** → loading screen:
+    - Load the core game assets needed to run the game proper.
+    - Reset the live workspace (`user://current/`, D34) — **replace, never merge** (B4a
+      already enforces this on load); clear any caches; create the fresh per-game memory and
+      JSON files and the new game map file.
+    - Run the module's **new-game workflow** on the existing DSL executor, receiving the
+      wizard's parameters (hero name, background, flag colors and emblem, and any other
+      choices). It sets initial state — outpost location on the map, starting gold, the hero
+      character — and writes the initial memories those choices imply.
+    - **Dispatch** into the module's **opening workflow**: in The Outpost, a new event opens
+      the chat with a dynamic throne-room image, the king grants the outpost and gives
+      instructions, and the player has their first chat interaction with the king and the
+      game itself.
+    - The opening workflow also **starts the main quest** (and possibly sub-quests). This is
+      different from the hardcoded linear quests of standard games:
+        - Example: the King orders the player to take over the outpost and solidify it in
+          five years. The assessment fires in five years — a scheduled workflow suspended on
+          `wait_game_time` (the mechanism exists and is restart-safe: A3/B1; the missing
+          prerequisite is scheduler re-arming of suspended workflows, deferred from A4).
+        - The assessment is performed by the King's Steward, and may be colored by his
+          personal interests and his disposition toward the player's hero — that disposition
+          is plan/memory state, described below.
 
-The main quest in the Outpost will be the consolidation of the outpost, first it is to consolidate and estabilish a secure and stable outpots, then expading it to a setlement and then finally make it into a formal province.
+# What a running game contains
 
-This main quest will need to be flexible, like what if the user do not achieve stage 1? It will need to be reassed again or the king may just fire the PLayer and the Game is over if he accepts.
-PLayer may choose to ignore and rebel against the king, maybe seek independence so steering the main quest in na new direction or even ending it.
+Overall flows that shape how memory, workflows and lore are structured.
 
-The main quest might have attached sub quests. For example the steward is responsible to assessing the progress for the King. There could be a sub plot going on where the steward is corrupt. This needs to be factored and maybe a plan on itself trackign intentions, facts that have happened and maybe a master direction where this event is going (like is the steward trying to extort the player? did they antagonize each other and he is trying a payback like hiring some mercenaries to atack the player outpost? etc...)
+1. **Main & side quests**
 
-The religous head of the state church may be angry at the outpost and influence the King´s decision on how the outpost is going and its promotion and funding. 
+   The Outpost's main quest is consolidation: first a secure, stable outpost, then expansion
+   into a settlement, finally promotion to a formal province.
 
-2. Events
+   It must be flexible. What if the player misses stage 1? It gets reassessed, or the King
+   simply dismisses the player — game over if he accepts it. The player may ignore the
+   mandate or rebel, seeking independence — steering the main quest in a new direction or
+   ending it entirely.
 
-Each event can be simple or very complex with multiple steps.
-For example it can be: a wolf killed some sheeps in a farm. And it generates a memory tracking this and the location where the wolf is. And the user may or may not act on it.
-This may trigger peasents trying to kill the beast or asking the player to solve this issue.
-Player may ignore the event copmletely (And maybe suffere consequences).
-Some evnts can be multiple steps, like: bandits planned to rob region and roads. This may trigger events when someone passes there, may include the creation of a hideout base.
-There could also be some situation brewing, like some peasents are planning a revolt. They may have several options like sabotage, corruption, killings, etc. And X ammount of time the event will be retriggered to see if something else should happen baased on the level of unhappines. The player may intervene and based on the intervention the event may mutate (end conflict, escalate it, consiliate, etc). This mutations happen on memory level and planning level.
+   Sub-quests attach to it. The Steward assessing progress for the King could be corrupt —
+   a plot of its own tracking intentions, facts that have happened, and a direction (is he
+   extorting the player? did they antagonize each other and he is hiring mercenaries as
+   payback?). The head of the state church may resent the outpost and lean on the King's
+   decisions about its promotion and funding. **All of these are plans** (see below), not
+   hardcoded quest scripts.
 
-3. Character Intentions
+2. **Events**
 
-Character will have intentions and plans associated with their history, personality and events happening.
-For example A captain in the guard may be plotting a coup in the outpost.
-Or a merchant is seeking to stabilish a new trade route.
-A character may be content and not aiming anything , or be ambicious and looking to increase his position or his house´s.
-A tribal leader may be seeking revenge agains another enemy tribe. 
+   Events range from simple to multi-step. A wolf killed sheep at a farm → a memory tracks
+   it, with the wolf's location. Peasants may hunt the beast or ask the player to solve it;
+   the player may ignore it completely (and maybe suffer consequences). Multi-step: bandits
+   plan to rob the region's roads — encounters trigger when someone passes, a hideout gets
+   established. A brewing situation: peasants planning a revolt have options (sabotage,
+   corruption, killings); the event re-triggers every so often to check whether unhappiness
+   has moved it. The player may intervene, and the intervention mutates the plot — end it,
+   escalate it, conciliate. Mutations happen at the memory and plan level.
 
-4. Nations/Group directions
+3. **Character intentions**
 
-There can also be cases where inanimate things may have plans and directions.
-For example a neighbor tribe may be willing to increase the relatioship with the outpost.
-A group of bandits may be looking for things to loot. Or might have been hired to attack the outpost (they may fullfill or not it and might think on how to proceed).
+   Characters carry intentions and plans grounded in their history, personality and current
+   events. A guard captain plotting a coup. A merchant angling for a new trade route. A
+   content character aiming at nothing; an ambitious one working to raise his position or
+   his house's. A tribal leader seeking revenge against an enemy tribe.
 
-5. Combat
+4. **Group/nation directions**
 
-Military action will also be very interesting for this. THe player may send a team of hunters to kill a pack of wolves. HE may give directions but in the situation it may react and mutate, maybe they find other things and have to handle it.
+   Groups can hold plans too. A neighboring tribe wants closer ties with the outpost. A
+   bandit company looks for loot — or was hired to attack the outpost, and may or may not
+   follow through (and deliberates about how).
 
-General combat can be also complex like player give orders to man the wall with archers, and this order needs to be tracked. 
+5. **Combat**
 
-He may also order a captain to take some soldiers and attack a neighbor tribe. He may give specific orders and these need to be tracked. Maybe the captain will not follow or ignore the orders. He may adjust to ground events, etc.
+   Orders are tracked state. The player sends hunters after a wolf pack with directions;
+   on the ground the situation reacts and mutates — they may find something else and have
+   to handle it. "Man the wall with archers" persists until countermanded. A captain sent
+   against a neighboring tribe with specific orders may follow them, ignore them, or adapt
+   to ground events. Orders are plan entries; deviations are plan-tick transitions.
 
-===
+---
 
-# Plans, Memories & Orchestration 
+# Plans, memories & orchestration
 
-1. I believe we need to track "things" happening via plans. Plans can be linked to events, characters, locations, and anything else.
-They can be just plain files (or db entries) listing events that happened, goals, what is going on, etc.
-Ai will read this in context to judge and decide what is going on, next steps, which tools to call to trigger new associated events, create new workflows, update memories, etc.
+1. **A plan is structured state that code owns**: facts that happened, goals, current
+   stance/direction, linked entities (events, characters, locations, anything else), and a
+   next wake time. Stored as plain JSON files, the project's canonical form (D24, D21) —
+   readable in a text editor, debuggable like a save.
 
-2. Plans can be running outside player scope, like something is happening in the capital unrelated to him. This will be a background plan/event/intention.
+2. **Plans advance via plan ticks**: scheduled workflows that retrieve the plan plus the
+   relevant memories and ask the AI to choose the next transition from a closed, described
+   set (D33) — escalate / hold / de-escalate / mutate into another template / resolve. Each
+   transition's consequences are authored workflow logic; new sub-plots come from the
+   **authored template library** ("extortion attempt", "revenge raid", "revolt brewing",
+   "trade route bid", …), parameterized by the AI from closed choices. The AI never emits a
+   number (D4) and never authors a workflow (D30) — it steers between rails the content
+   authors laid down, which is what keeps a 2B on-device model coherent over months of game
+   time.
 
+3. **Plans can run outside the player's scope** — something happening in the capital,
+   unrelated to him — as background plans. Ticks ride the game-time scheduler at a coarse
+   cadence (month-end class, not per-turn) with a per-tick model-call budget, prioritizing
+   plans near the player.
 
-===
+---
 
-# Data
+# Data & retrieval
 
-As we have different interaction with AI in our workflow system we need a different system of data.
+Different AI interactions in the workflow system need a shared retrieval mechanism.
 
-1. One example is an multi step indexed system.
-- For example in an orchestration needs  to find all information relevant to make a decision.
-- This information should be sent to ai as context for it to judge the next step, difficulty, any action to be taken, an event to be fired, creation of a new workflow, etc.
-- For example it can have an index containing the keys and what they represent. Orchestration will feed a list of this first index and then AI will say: fetch all secondary indexes for A and C. Then the tool fetchs sub indexes for A and C and feed again to ai and AI will then say: now give me all data regarding subindexed A1,A3, and C5.
-Then this data will be used to create the final context for A prompt that will update memory, plans, or even be used to create a new workflow.
+1. **Multi-step indexed retrieval.** When an orchestration needs the information relevant
+   to a decision, it feeds the AI a first-level index of keys and what they represent; the
+   AI answers "fetch the sub-indexes for A and C"; the tool feeds those back; the AI answers
+   "now give me A1, A3 and C5". That data becomes the context for the final prompt that
+   updates memory or plans or selects the next template. Every hop is a model call (~0.85 s
+   warm on desktop; D8's prefix cache is what makes re-sent context affordable), so indexes
+   should be designed so **one hop usually suffices** — the quality of the index
+   *descriptions* matters more than the cleverness of the schema.
 
-2. Alternatively we can have an sqlite for fast searching instead of multiple json files. Maybe add several columns as indexes and maybe one table explaining what each index can contain. and this is fed to AI.
+2. **SQLite is the fallback**, not the starting point. Godot has no built-in SQLite, so it
+   would mean the godot-sqlite GDExtension. Files-first, per the D21 precedent for traces;
+   revisit only when file-scan scale measurably hurts.
 
-===
+---
 
 # Final goal
 
-The plan is very unusual and is aiming very high. This is probably a task never attempt before in gaming. But I feel it is achievable if we mix can mix the right Ai,Orchestration, Memories, game rukes and game structure.
+The plan is very unusual and aims very high — probably never attempted in gaming at this
+scale and direction. But it is achievable if we combine the right AI, orchestration,
+memories, game rules and game structure.
 
-We need to ensure it is open and flexible enough on how to do this. It will most likely lots of testing and modifications. If the "Lego" blocks are in place this step will be theone remaining and I expect it to be more on me and manual (And also with beta testing with users).
+The system must stay open and flexible, because this will take a lot of testing and
+modification. The "Lego" blocks are largely in place — the DSL kernel, the ribosome
+orchestrator, saves and migrations. The remaining step is content and tuning, and that is
+expected to be mostly manual work by me, together with beta testing with users.
+
+**Prerequisites this review identified, in order:**
+
+- Scope **M5 as memories + plans + retrieval**, with this document as its design input.
+- Promote the deferred debts this vision depends on: scheduler re-arming of suspended
+  workflows (A4), nested sub-workflow suspension (A3), trace retention (A1).
+- **First M5 code task:** extend `tools/measure_classification.gd` with a plan-tick
+  decision family (with per-label descriptions, D33) and measure it on E2B **before**
+  designing the plan format — per D17's lesson, measure before building on a guess.
