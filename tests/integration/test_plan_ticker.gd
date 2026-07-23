@@ -88,6 +88,28 @@ func test_the_model_only_picks_a_label_every_number_is_the_rules() -> void:
 	assert_eq(int((_plans(kernel)["steward"]["direction"] as Dictionary)["intensity"]), 28)
 
 
+func test_a_tick_shows_the_model_the_latest_memory_about_its_subjects() -> void:
+	# The stub is gone (D37): the "latest development" a tick feeds the model is now the most
+	# recent memory about the plan's subjects, retrieved by entity-tag + recency.
+	var kernel := _kernel()
+	_seed_steward(kernel)  # subjects: ["steward", "lord"]
+	kernel.memories.record("The lord refused the steward's demand before the whole court.", ["lord"], 20)
+	kernel.memories.record("An older, unrelated grievance.", ["steward"], 5)
+
+	var plan: Dictionary = _plans(kernel)["steward"]
+	var latest := kernel.plan_ticker._latest_development(plan, 30)
+	assert_string_contains(latest, "refused the steward's demand", "the newest matching memory")
+
+
+func test_a_tick_falls_back_when_nothing_is_remembered_yet() -> void:
+	var kernel := _kernel()
+	_seed_steward(kernel)
+
+	var plan: Dictionary = _plans(kernel)["steward"]
+	var latest := kernel.plan_ticker._latest_development(plan, 30)
+	assert_string_contains(latest, "nothing new", "a plan can tick before anything about it is on record")
+
+
 func test_the_day_passed_subscription_drives_ticks_from_the_clock() -> void:
 	# The production wiring: the ticker runs off the calendar, not only when a test calls it.
 	var kernel := _kernel()

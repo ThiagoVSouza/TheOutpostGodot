@@ -28,6 +28,9 @@ var clock: GameClock
 var scheduler: Scheduler
 ## Runs due background plans off the game clock (M5, D36). Stateless — plans live in [member state].
 var plan_ticker: PlanTicker
+## The game master's memory (M5, D37): an append-only, English, entity-tagged log. Persists as its
+## own JSONL in the workspace dir, so [method SaveWorkspace.clear] wipes it on a new game or load.
+var memories: MemoryStore
 var saves: SaveManager
 ## The game in progress, on disk as separate parts — the cheap, frequent write (M4/B4a).
 var workspace: SaveWorkspace
@@ -122,6 +125,10 @@ func boot() -> void:
 	scheduler = Scheduler.new(events, self)
 	saves = SaveManager.new()
 	workspace = SaveWorkspace.new()
+	# The game master's memory (M5, D37): its own append-only JSONL in the workspace dir, so a new
+	# game or a load wipes it with the rest of the workspace (D34's replace-never-merge, for free).
+	# In-memory only under the test runner, so an automated run never writes into a real user://.
+	memories = MemoryStore.new("%s/memories.jsonl" % workspace.dir, not is_test_run)
 	# Constructed, but deliberately does not load anything here: boot() must stay a pure
 	# wiring step so tests get a clean world, and *when* to resume is the boot flow's call.
 	session = GameSession.new(self)

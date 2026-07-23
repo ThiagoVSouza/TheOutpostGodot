@@ -47,6 +47,7 @@ Measurements: `docs/benchmarks/milestone1_results.md`. Architecture: `docs/initi
 | **D34** | Two persistence layers: a live workspace and rare whole snapshots | **Decided** |
 | **D35** | Internals are English; translation is a deferred, post-orchestration step (amends D29) | **Decided** |
 | **D36** | Plan format: numeric-intensity direction with hysteresis; universal transitions, code-owned mutation | **Decided** |
+| **D37** | Memory retrieval: entity-tag + recency now; the AI drill-down deferred | **Decided** |
 | **D17** | Benchmarking method — how to not fool yourself | Reference |
 
 Roadmap and current status: `docs/plan.md`.
@@ -1230,6 +1231,40 @@ machinery: clock → due plan → classify → nudge + hysteresis band → code-
 saved in GameState, all FakeAiRunner-tested (20 new tests). **Still stubbed:** the "latest
 development" a tick shows the model is a placeholder — real retrieval from memory is the next M5
 piece (and it must arrive in English, D35). Builds on D4/D30/D34/D35; amends nothing.
+
+---
+
+## D37 — Memory retrieval: entity-tag + recency now; the AI drill-down deferred
+
+**Decided** (2026-07-23) — GATE 0 review for the memory subsystem (M5)
+
+The game master's memory is an append-only log of English (D35) events, each tagged with the
+entities it concerns. Retrieval — the piece that feeds a plan tick (and later a turn) the relevant
+past — is **entity-tag + recency**: given a plan's subjects, return the most recent memories that
+share one, newest first. One hop, **no model call**, deterministic and unit-testable.
+
+**Why not the briefing's multi-step drill-down yet.** The briefing sketched an AI-navigated index
+(index → sub-index → entries, the model choosing what to fetch). It is more flexible but it is
+several grammar-constrained model calls per retrieval and a much larger build — and on a phone,
+per-retrieval model calls are the cost that matters. The M5 note is "design so one hop usually
+suffices"; entity tags make one hop suffice when the entities are known, which for a plan they
+always are (its subjects). The drill-down is deferred until a measurement shows tag+recency misses
+what a plan needed — measure before building, the standing M5 discipline.
+
+Rejected alongside it: **keyword/text match** (lexical, misses paraphrase, and needs a query-term
+source when the entities are already known), and **embedding similarity** (a second on-device
+model competing for the exact memory budget that killed E4B, D5).
+
+**Storage (D34, which named this).** Memories are an **append-only JSONL** in the workspace dir —
+not a whole-part rewrite, and not in the GameState snapshot — because a settlement's thousands of
+memories must not be re-serialized every turn. Living there means `SaveWorkspace.clear()` wipes
+them on a new game or a load for free (replace-never-merge, D34), and they survive a normal
+close/reopen because the workspace file persists.
+
+**This slice:** the store + retrieval + the wire into the plan tick (its "latest development" stub
+is gone). **Deferred:** the memory *write-behind* — memories generated from player turns and events
+by an AI summarizer (D35's post-orchestration stage) — and slot-snapshot inclusion, so a *named*
+save does not carry its memories yet (loading one starts from an empty log). Builds on D34/D35/D36.
 
 ---
 

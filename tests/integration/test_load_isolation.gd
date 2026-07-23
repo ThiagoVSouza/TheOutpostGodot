@@ -30,9 +30,13 @@ const CONTENT: Array[String] = ["command_registry", "tools", "modules", "screens
 	"workflow_registry", "dsl_functions", "dsl_tables", "prompt_families"]
 
 ## RUNTIME — infrastructure with no game state: transports, buses, loggers, policy objects.
+## `memories` sits here like `workspace`/`saves`/`trace_writer`: the field is a file-backed store,
+## and its data lives in an append-only JSONL in the workspace dir (M5, D37). The workspace
+## lifecycle governs replacement — `SaveWorkspace.clear()` removes the file and `GameSession`
+## clears the store's cache on a new game or a load — so a game's memories never bleed into another.
 const RUNTIME: Array[String] = ["log", "events", "commands", "ai", "ai_availability",
 	"llama_server_manager", "ai_orchestrator", "trace_writer", "input_router", "saves",
-	"workspace", "session", "narrator", "narration", "ai_runner", "plan_ticker"]
+	"workspace", "session", "narrator", "narration", "ai_runner", "plan_ticker", "memories"]
 
 
 func after_each() -> void:

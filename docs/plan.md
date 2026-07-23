@@ -409,10 +409,17 @@ building it twice.
   FakeAiRunner-driven; 20 new tests, 268 green. The ticker serializes ticks (a suspend-at-`ai`
   vs `clock.advance(n)` race a test caught). **Still stubbed:** the "latest development" a tick
   shows the model is a placeholder — real memory retrieval (in English, D35) is the next piece.
-- **Memories** — D4's other AI job: read/write memory; the brief's "retrieve relevant
-  memories and game knowledge". D8's prefix caching is what makes a large retrieved
-  context affordable (~20x). **Stored in English (D35):** retrieval on a small local
-  model can't match across languages, so a mixed-language store silently loses recall.
+- **Memories + retrieval** — **store + read side done (2026-07-23, D37)**. `MemoryStore`:
+  an append-only English (D35) JSONL log in the workspace dir (D34 named this — not a
+  whole-part rewrite, not the GameState snapshot; `SaveWorkspace.clear()` wipes it on new
+  game/load for free, and it survives a close/reopen). Retrieval is **entity-tag + recency**
+  (D37): given a plan's subjects, the most recent memories that share one — one hop, no model
+  call, deterministic. Wired into the plan tick, whose "latest development" stub is now gone.
+  9 new tests, 277 green. D8's prefix caching is what makes a large retrieved context
+  affordable (~20x). **Deferred:** the memory *write-behind* (memories generated from turns and
+  events by an AI summarizer — D35's post-orchestration stage) and slot-snapshot inclusion (a
+  named save doesn't carry its memories yet). The AI drill-down (briefing) is deferred until a
+  measurement shows tag+recency isn't enough.
 - **English-only internals + a background write-behind stage (D35).** Non-English input
   is translated at the boundary before it is stored or retrieved; only `narrate`
   localizes out. Translation, memory writes and plan updates are **deferred to a
