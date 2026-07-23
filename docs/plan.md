@@ -347,8 +347,17 @@ Tasks, one branch + PR each:
   the workspace — a downgrade would have silently destroyed a settlement.
   `AtomicFile` now holds the durability logic (tmp → verify → `.bak` → rename) once, shared by
   both layers.
-- **B4b — the confirmation UI** that re-presents a pending question (B1's `pending_instance`),
-  and the slot-management surface. Standing rule 4 applies to B1's path here.
+- **B4b — the confirmation UI + slot management** — **done (2026-07-22)**. The chat screen
+  shows a pending question with Yes/No and **locks input until it is answered** — a `confirm`
+  guards an action the rules have not applied yet, so a turn running alongside it would leave
+  the world in a state neither answer describes. A question asked before the game was closed is
+  **re-presented on entry** (the GATE 0 call for M4), and dropped when a new game starts (D34's
+  load-leak rule reaching the UI). Plus a slot dropdown with Load / New game, and a dev-only
+  workflow that stops to ask so the path is drivable in the running app.
+  **This closes B1's standing-rule-4 debt:** confirm → suspend → store → save → restart →
+  re-present → resume was correct in tests since B1 but had never been driven by anything a
+  player touches. It is now, and it found a real bug — see the handover.
+  **M4 is complete.**
 
 **Deferred within M4** (inherited, not forgotten): trace retention (A1 left it as "M4's
 problem" — dev builds write unbounded trace files into `user://`), scheduler re-arming of

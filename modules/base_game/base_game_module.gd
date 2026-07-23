@@ -57,11 +57,33 @@ func register(kernel: GameKernel) -> void:
 	kernel.workflow_registry.register(_gather_workflow("hunt"))
 	kernel.workflow_registry.register(_rest_workflow())
 	kernel.workflow_registry.register(_build_workflow())
+	# Verification scaffolding, not game content: a workflow that stops to ask, so the
+	# confirm → suspend → resume path is drivable in the running app until authored content
+	# uses `confirm` for real. Registered **at boot** rather than on demand — a suspended
+	# instance names its workflow by id, so one registered lazily cannot be resumed after a
+	# restart, and the player's pending question becomes unanswerable.
+	if OS.is_debug_build():
+		kernel.workflow_registry.register(_dev_confirm_workflow())
 
 	kernel.log.info(
 		"BaseGame",
 		"Registered dice tool, grant_resource command, chat screen, month-end + orchestration workflows"
 	)
+
+
+## Dev-only (see `register`): stops to ask, then grants if the player agrees.
+func _dev_confirm_workflow() -> Dictionary:
+	return {
+		"op": "workflow", "id": "dev_confirm", "version": 1, "origin": "base_game", "params": {},
+		"steps": [
+			{"op": "confirm", "msg": "dev.confirm_grant", "scope": {"resource": "food", "amount": 2}},
+			{"op": "run_command", "name": "grant_resource",
+			 "args": {"resource": "food", "amount": 2}},
+			{"op": "narrate", "instruction": "the stores are quietly topped up",
+			 "context": {"outcome": "two units of food were added"},
+			 "verbosity": "short", "language": "en"},
+		]
+	}
 
 
 ## Balance data (D24): every number a turn can produce lives here, editable without a rebuild.

@@ -83,20 +83,30 @@ func test_the_same_question_cannot_be_answered_twice() -> void:
 	assert_eq(_food(kernel), 4, "the exactly-once guarantee holds — no double grant")
 
 
-func test_a_question_whose_workflow_is_gone_is_dropped_not_stranded() -> void:
+func test_a_question_this_session_cannot_answer_is_kept_not_discarded() -> void:
 	var kernel := _kernel()
 	var asked: Dictionary = await kernel.ai_orchestrator.handle_message("burn the granary")
-	# Stand in for loading a save whose module has since removed or renamed that workflow.
-	var orphan := kernel.workflow_instances.get_instance(String(asked["pending_instance"]))
-	orphan.workflow_id = "a_workflow_that_no_longer_exists"
+	var handle := String(asked["pending_instance"])
+	# Stands in for a module being disabled, or a workflow registered at runtime that therefore
+	# does not exist after a restart — found in the real app, not in tests.
+	var orphan := kernel.workflow_instances.get_instance(handle)
+	orphan.workflow_id = "a_workflow_this_session_does_not_have"
 
-	var answered: Dictionary = await kernel.ai_orchestrator.resume(
-		String(asked["pending_instance"]), {"confirmed": true})
+	var answered: Dictionary = await kernel.ai_orchestrator.resume(handle, {"confirmed": true})
 
 	assert_false(bool(answered["ok"]))
 	assert_eq(String(answered["error"]), "unknown_workflow")
-	assert_eq(kernel.workflow_instances.count(), 0,
-		"an unanswerable question is dropped, not carried into every future save")
+	assert_false(kernel.ai_orchestrator.can_resume(handle), "UI is told not to offer it")
+	# D34's rule reaching here: discarding would destroy a pending action that re-enabling the
+	# module would have made answerable again, and the player never asked for that.
+	assert_eq(kernel.workflow_instances.count(), 1, "the player's pending action is kept")
+
+	# Registering the workflow makes it answerable again.
+	orphan.workflow_id = ENTRY
+	assert_true(kernel.ai_orchestrator.can_resume(handle))
+	var retried: Dictionary = await kernel.ai_orchestrator.resume(handle, {"confirmed": true})
+	assert_true(bool(retried["ok"]))
+	assert_eq(_food(kernel), 4)
 
 
 func test_a_pending_question_survives_a_restart() -> void:
