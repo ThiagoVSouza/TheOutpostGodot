@@ -396,9 +396,19 @@ building it twice.
   character" from a description) — code-own it or replace with concrete named transitions;
   (3) give plan **direction hysteresis** so a lone temp-0 mis-tick (seen ~1/6 at boundaries)
   self-corrects instead of collapsing the plot.
-- **Design the plan format** (next) — on the three findings above. A plan owns `situation`
-  + `direction` (structured, code-owned) and a next wake; ticks feed retrieved memory as the
-  variable narrative. This is the first task behind GATE 0's task-level review.
+- **Design the plan format** — **done (2026-07-23, D36)**. GATE 0 review settled two forks:
+  direction is a **numeric intensity (0–100) with split-threshold hysteresis bands** (a lone
+  ~1/6 mis-tick can't flip the band), and a **universal transition set**
+  (escalate/hold/de_escalate/resolve) with plot mutation **owned by code** in the template
+  (`mutate` dropped — a 2B never picked it). A plan is a JSON object under `GameState["plans"]`,
+  mutated only via the whitelisted `apply_plan_transition` command.
+- **Plan-format walking skeleton** — **done (2026-07-23)**. The corrupt-steward template end to
+  end: a `PlanTicker` (stateless; plans are in GameState, saved by B2) runs due plans off the
+  clock → the `plan_tick` workflow classifies a transition → the command owns the numbers
+  (bounded nudge, hysteresis band, code-owned revenge spawn). Pure `Plans` logic +
+  FakeAiRunner-driven; 20 new tests, 268 green. The ticker serializes ticks (a suspend-at-`ai`
+  vs `clock.advance(n)` race a test caught). **Still stubbed:** the "latest development" a tick
+  shows the model is a placeholder — real memory retrieval (in English, D35) is the next piece.
 - **Memories** — D4's other AI job: read/write memory; the brief's "retrieve relevant
   memories and game knowledge". D8's prefix caching is what makes a large retrieved
   context affordable (~20x). **Stored in English (D35):** retrieval on a small local

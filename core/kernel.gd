@@ -26,6 +26,8 @@ var trace_writer: AiTraceWriter
 var input_router: AiInputRouter
 var clock: GameClock
 var scheduler: Scheduler
+## Runs due background plans off the game clock (M5, D36). Stateless — plans live in [member state].
+var plan_ticker: PlanTicker
 var saves: SaveManager
 ## The game in progress, on disk as separate parts — the cheap, frequent write (M4/B4a).
 var workspace: SaveWorkspace
@@ -140,6 +142,11 @@ func boot() -> void:
 	# 8b. Input-source seam (D18): all player text — typed, voice, replay — reaches
 	#     the orchestrator through this router, never directly from a control.
 	input_router = AiInputRouter.new(self)
+
+	# 8c. Background plans (M5, D36): runs due plan ticks off the clock. Stateless — plans live
+	#     in GameState — and separate from the Scheduler because a tick needs its plan's id as
+	#     context, where the scheduler runs param-less definitions.
+	plan_ticker = PlanTicker.new(self)
 
 	# 9. Discover + load modules; each registers its content through the seams above.
 	modules.load_all(self)

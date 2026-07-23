@@ -46,6 +46,7 @@ Measurements: `docs/benchmarks/milestone1_results.md`. Architecture: `docs/initi
 | **D33** | A closed set needs label meanings; mechanical terms never reach the player | **Decided** |
 | **D34** | Two persistence layers: a live workspace and rare whole snapshots | **Decided** |
 | **D35** | Internals are English; translation is a deferred, post-orchestration step (amends D29) | **Decided** |
+| **D36** | Plan format: numeric-intensity direction with hysteresis; universal transitions, code-owned mutation | **Decided** |
 | **D17** | Benchmarking method — how to not fool yourself | Reference |
 
 Roadmap and current status: `docs/plan.md`.
@@ -1188,6 +1189,47 @@ useful to know before the plan format is designed.
 sanely?" — mostly yes), not the primary signal. The signal that drives the plan format is the
 English-only, phrasing-varied test. The three format findings there stand: they came from the
 English runs (see the benchmark doc).
+
+---
+
+## D36 — Plan format: numeric-intensity direction with hysteresis; universal transitions, code-owned mutation
+
+**Decided** (2026-07-23) — GATE 0 direction review for M5, built on the plan-tick measurement's findings
+
+A background plan (the briefing's living world: character intentions, faction directions, the
+corrupt-steward class of sub-quest) is a JSON object under `GameState["plans"][id]` — saved by B2
+for free, and mutated **only** through a whitelisted command (D4/D30). Its shape, and the two
+decisions the review settled:
+
+**Direction is a number, not a name (Fork 1).** `direction: {intensity: 0..100, band}`. A tick
+nudges intensity in bounded steps (±12); the named band (calm/tense/boiling) comes from **split
+rise/fall thresholds** — hysteresis. Each fall point sits a full nudge below its rise point
+(boiling at 70, back to tense only below 58), so a lone temp-0 mis-tick — the plan-tick
+measurement saw ~1/6 at boundaries — cannot flip the band and back. The format is answering a
+measured failure, not a guess. The band is also all the model is shown of the direction; the raw
+intensity never reaches a prompt (D33).
+
+**One universal transition set; plot mutation is code (Fork 2).** Every tick classifies from
+`escalate | hold | de_escalate | resolve`. `mutate` is dropped, because the measurement showed a
+2B never picks "the plot changes character" from a description. A plot changing character
+(extortion → revenge) is detected **in code**, in the plan's template, when its own conditions hold
+— for the shipped template, an extortion reaching boiling once the lord has publicly humiliated the
+steward spawns a revenge sub-plan, once. The model's job stays the small, measured-stable one; code
+owns when a new plot begins.
+
+**A runner, not the scheduler.** Ticks run off the game clock through a `PlanTicker` — stateless
+(plans are in GameState), separate from the `Scheduler` because a tick needs its plan's id as
+context where the scheduler runs param-less definitions. A tick is an authored workflow (`ai
+classify → run_command apply_plan_transition`); the command owns every number via pure `Plans`
+logic. **The ticker serializes:** a tick suspends at its `ai` step but `clock.advance(n)` emits
+`day_passed` n times, so overlapping handlers would read pre-tick state and tick a plan several
+times — a drain guard collapses the burst to the latest day (a test caught this, not a review).
+
+**First slice (this decision's PR):** one template end to end — the corrupt steward — proving the
+machinery: clock → due plan → classify → nudge + hysteresis band → code-owned revenge spawn →
+saved in GameState, all FakeAiRunner-tested (20 new tests). **Still stubbed:** the "latest
+development" a tick shows the model is a placeholder — real retrieval from memory is the next M5
+piece (and it must arrive in English, D35). Builds on D4/D30/D34/D35; amends nothing.
 
 ---
 
