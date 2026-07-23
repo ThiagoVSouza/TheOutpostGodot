@@ -75,13 +75,15 @@ var _narrator: DslNarrator
 var _prompt_families: PromptFamilyRegistry
 var _ai_runner: DslAiRunner
 var _narration: NarrationSettings
+var _memories: MemoryStore
 
 
 func _init(state: GameState, command_registry: CommandRegistry, commands: CommandBus,
 		events: EventBus, globals: GlobalStore, functions: DslFunctionRegistry,
 		tables: DslTableRegistry, workflows: WorkflowRegistry = null,
 		narrator: DslNarrator = null, prompt_families: PromptFamilyRegistry = null,
-		ai_runner: DslAiRunner = null, narration: NarrationSettings = null) -> void:
+		ai_runner: DslAiRunner = null, narration: NarrationSettings = null,
+		memories: MemoryStore = null) -> void:
 	_state = state
 	_command_registry = command_registry
 	_commands = commands
@@ -96,6 +98,8 @@ func _init(state: GameState, command_registry: CommandRegistry, commands: Comman
 	_ai_runner = ai_runner if ai_runner != null else FakeAiRunner.new()
 	# Defaults are the shipped preference, so an unwired executor narrates exactly as authored.
 	_narration = narration if narration != null else NarrationSettings.new()
+	# Null-safe: a workflow with no `remember` op runs fine without a store wired (the op guards).
+	_memories = memories
 
 
 ## Convenience constructor from a booted kernel.
@@ -103,7 +107,7 @@ static func for_kernel(kernel: GameKernel) -> WorkflowExecutor:
 	return WorkflowExecutor.new(kernel.state, kernel.command_registry, kernel.commands,
 		kernel.events, kernel.globals, kernel.dsl_functions, kernel.dsl_tables,
 		kernel.workflow_registry, kernel.narrator, kernel.prompt_families, kernel.ai_runner,
-		kernel.narration)
+		kernel.narration, kernel.memories)
 
 
 ## Run [param instance] against [param definition] (a validated `steps` tree). [param trace]
@@ -268,6 +272,8 @@ func _exec_statement(stmt: Dictionary, instance: WorkflowInstance, ctx: Workflow
 			return _exec_emit(stmt, ctx, result, trace)
 		"narrate":
 			return await _exec_narrate(stmt, ctx, instance, result, trace)
+		"remember":
+			return _exec_remember(stmt, ctx, trace)
 		"ai":
 			return await _exec_ai(stmt, ctx, instance, trace)
 		"if":
@@ -326,6 +332,23 @@ func _exec_emit(stmt: Dictionary, ctx: WorkflowRuntimeContext, result: RunResult
 		_events.emit("workflow_emit", record)
 	if trace != null:
 		trace.add("workflow_emit", record)
+	return {"action": Action.CONTINUE}
+
+
+## Record a memory (M5, D37): one authored English line into the game master's memory, tagged with
+## the entities it concerns and dated by the day the tick knows. Non-authoritative — no game number
+## is decided here (D4), so it does not go through the CommandBus; it is the memory counterpart of a
+## global write. Null-safe: a workflow can carry `remember` even where no store is wired.
+func _exec_remember(stmt: Dictionary, ctx: WorkflowRuntimeContext, trace: AiTrace) -> Dictionary:
+	var text := String(stmt["text"])
+	var subjects_v: Variant = _eval(stmt.get("subjects", []), ctx)
+	var subjects: Array = subjects_v if subjects_v is Array else []
+	var day := int(_eval(stmt.get("day", 0), ctx))
+	var kind := String(stmt.get("kind", "event"))
+	if _memories != null:
+		_memories.record(text, subjects, day, kind)
+	if trace != null:
+		trace.add("workflow_remembered", {"text": text, "subjects": subjects, "day": day, "kind": kind})
 	return {"action": Action.CONTINUE}
 
 

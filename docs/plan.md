@@ -416,10 +416,16 @@ building it twice.
   (D37): given a plan's subjects, the most recent memories that share one — one hop, no model
   call, deterministic. Wired into the plan tick, whose "latest development" stub is now gone.
   9 new tests, 277 green. D8's prefix caching is what makes a large retrieved context
-  affordable (~20x). **Deferred:** the memory *write-behind* (memories generated from turns and
-  events by an AI summarizer — D35's post-orchestration stage) and slot-snapshot inclusion (a
-  named save doesn't carry its memories yet). The AI drill-down (briefing) is deferred until a
-  measurement shows tag+recency isn't enough.
+  affordable (~20x).
+- **The `remember` write op + a self-sustaining plan loop** — **done (2026-07-23, D37)**. A new
+  effectful DSL op `remember` appends an authored English line to the store, tagged with the
+  entities an expression supplies (authored text, no model call — the review's chosen mode). The
+  plan tick records each development it produces, tagged with the plan's subjects, so **a tick's
+  development is the next tick's retrieved context** — the plan feeds itself with no external
+  writer. 3 more tests, 280 green. **Deferred:** the *AI-summarized* write-behind (memories from
+  player turns/events by a summarizer — D35's stage; `remember` gains an AI mode there), and
+  slot-snapshot inclusion (a named save doesn't carry its memories yet). The AI drill-down
+  (briefing) stays deferred until a measurement shows tag+recency isn't enough.
 - **English-only internals + a background write-behind stage (D35).** Non-English input
   is translated at the boundary before it is stored or retrieved; only `narrate`
   localizes out. Translation, memory writes and plan updates are **deferred to a

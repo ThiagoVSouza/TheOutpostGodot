@@ -1261,10 +1261,19 @@ memories must not be re-serialized every turn. Living there means `SaveWorkspace
 them on a new game or a load for free (replace-never-merge, D34), and they survive a normal
 close/reopen because the workspace file persists.
 
-**This slice:** the store + retrieval + the wire into the plan tick (its "latest development" stub
-is gone). **Deferred:** the memory *write-behind* — memories generated from player turns and events
-by an AI summarizer (D35's post-orchestration stage) — and slot-snapshot inclusion, so a *named*
-save does not carry its memories yet (loading one starts from an empty log). Builds on D34/D35/D36.
+**The read side** was the store + retrieval + the wire into the plan tick (its "latest development"
+stub is gone). **The write side** followed as the **`remember` op**: an effectful, statement-only
+DSL op that appends one authored English line to the store, tagged with the entities an expression
+supplies (`text`/`kind` are authored literals — the memory prose is authored, not a computed string
+and, for now, not a model call; that mode was the review's choice). The plan tick now records the
+development it produced each tick — a generic line (the plan's situation carries the who, so the
+DSL never assembles a string) tagged with the plan's subjects — so **a tick's development is the
+next tick's retrieved context and the plan loop is self-sustaining** with no external writer.
+
+**Deferred:** the *AI-summarized* write-behind — memories generated from player turns and events by
+a summarizer (D35's post-orchestration stage; the `remember` op gains an AI mode there, additively)
+— and slot-snapshot inclusion, so a *named* save does not carry its memories yet (loading one starts
+from an empty log). Builds on D34/D35/D36.
 
 ---
 
