@@ -12,7 +12,8 @@ Decisions and their evidence: `docs/decisions.md`. Measurements:
 gates. **GATE 0 there is binding: no production code before a direction review
 with the user.**
 
-Last updated: 2026-07-20 (M2 complete and verified; M3 split into M3a/M3b)
+Last updated: 2026-07-23 (M5 rescoped to memories + plans + retrieval per
+`docs/briefing1.md`; app shell added to Unscheduled)
 
 ---
 
@@ -370,13 +371,44 @@ Back-button problem worth fixing (right now there is nothing to lose).
 
 ---
 
-## M5 — Memory and retrieval
+## M5 — Memories, plans, and retrieval
 
-**Goal:** the game master remembers.
+**Goal:** the game master remembers, and the world carries agendas of its own.
 
-- D4's other AI job: read/write memory
-- The brief's "retrieve relevant memories and game knowledge"
-- D8's prefix caching is what makes a large retrieved context affordable (~20x)
+**Rescoped 2026-07-23.** `docs/briefing1.md` (revised on PR #36) is this milestone's
+design input. Plans and memories are **one subsystem, not two**: a plan is structured
+memory with an agenda and a next wake time. The scope grew from "memory and retrieval"
+to include plans because the briefing's living world — character intentions, faction
+directions, background plots, the corrupt-steward class of sub-quest — all reduces to
+the same storage + tick machinery, and building memory without the agenda field means
+building it twice.
+
+- **Measure first (D17's lesson):** extend `tools/measure_classification.gd` with a
+  plan-tick decision family — closed transitions (escalate / hold / de-escalate /
+  mutate / resolve) with per-label descriptions (D33) — and run it on E2B **before**
+  the plan format is designed. An unmeasured guess here is the +17/+20/+15 mistake
+  one level up.
+- **Memories** — D4's other AI job: read/write memory; the brief's "retrieve relevant
+  memories and game knowledge". D8's prefix caching is what makes a large retrieved
+  context affordable (~20x).
+- **Plans** — JSON files that *code owns* (facts, goals, stance/direction, linked
+  entities, next wake), advanced by scheduled **plan-tick workflows**. The AI chooses
+  transitions from closed described sets and parameterizes plots from an **authored
+  template library**; it never authors workflows (D30) and never emits numbers (D4).
+  Background plans tick on a coarse game-time cadence with a per-tick model-call
+  budget, prioritizing plans near the player.
+- **Retrieval** — the briefing's multi-step indexed drill-down (index → sub-index →
+  entries). Every hop is a model call, so indexes are designed so one hop usually
+  suffices; description quality over schema cleverness. **Files-first** (D21
+  precedent); SQLite means the godot-sqlite GDExtension and stays deferred until a
+  measurement says JSON scanning hurts.
+- **Promoted prerequisites** (were M4 deferrals, now blocking): scheduler re-arming
+  of suspended workflows (A4), nested sub-workflow suspension (A3), trace
+  retention (A1).
+
+**GATE 0 applies.** The direction *input* is settled (the briefing1 review,
+2026-07-23), but the task-level direction review with the user is still owed before
+M5 production code — the measurement task above is exempt, per the M3b precedent.
 
 ---
 
@@ -407,6 +439,14 @@ are all map-idle / map-moving / large-settlement.
 ---
 
 ## Unscheduled — cheap, self-contained, do anytime
+
+**App shell + new-game wizard** (from `docs/briefing1.md`): splash, loading screens,
+main menu (Continue / New / Load / Settings / Help / News / Account), and the
+new-game wizard declared in module configuration. Deterministic UI work with no
+unknowns — slot management partially exists since B4b — and it forces the
+module-config surface the DLC vision needs. Can run any time, in parallel with M5;
+the wizard's parameter hand-off to a new-game workflow is the only piece that touches
+the DSL, and that mechanism already exists (workflows take context).
 
 **Android UI issues** (found during the milestone-1 deploy, deliberately not fixed):
 
