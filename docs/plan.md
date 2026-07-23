@@ -447,9 +447,22 @@ building it twice.
   suffices; description quality over schema cleverness. **Files-first** (D21
   precedent); SQLite means the godot-sqlite GDExtension and stays deferred until a
   measurement says JSON scanning hurts.
+- **Entity/character engine** — **done (2026-07-23, D38)**. The world's cast — characters,
+  factions, locations — as authoritative state under `GameState["entities"]`, mutated only
+  via whitelisted commands (`create_entity`, `adjust_disposition`) and saved by B2.
+  Disposition-toward-the-player is the modelled relationship (the briefing's assessment
+  mechanic). `Entities.resolve`/`names` turns a plan's or memory's `subjects` ids into named
+  characters. **Engine, not content** (user's call): no cast seeded, no scenario authored —
+  those come with in-game testing. 10 tests, 290 green.
 - **Promoted prerequisites** (were M4 deferrals, now blocking): scheduler re-arming
   of suspended workflows (A4), nested sub-workflow suspension (A3), trace
   retention (A1).
+
+**Living-world blocks complete (2026-07-23):** plans (D36), memories (D37), entities (D38),
+and the commands/ops that move them. **Next is a joint step — not more plumbing:** wire a new
+game that seeds a starting world (cast + an opening plot), drive it in the real game flow, then
+adjust and author content. The AI/workflow/memory subsystems are deliberately not to be
+deep-polished further before that in-game testing (user's steer, 2026-07-23).
 
 **GATE 0 applies.** The direction *input* is settled (the briefing1 review,
 2026-07-23), but the task-level direction review with the user is still owed before
