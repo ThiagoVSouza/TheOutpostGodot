@@ -383,11 +383,22 @@ directions, background plots, the corrupt-steward class of sub-quest — all red
 the same storage + tick machinery, and building memory without the agenda field means
 building it twice.
 
-- **Measure first (D17's lesson):** extend `tools/measure_classification.gd` with a
-  plan-tick decision family — closed transitions (escalate / hold / de-escalate /
-  mutate / resolve) with per-label descriptions (D33) — and run it on E2B **before**
-  the plan format is designed. An unmeasured guess here is the +17/+20/+15 mistake
-  one level up.
+- **Measure first (D17's lesson)** — **done (2026-07-23)**: `tools/measure_classification.gd`
+  gained an `OUTPOST_MEASURE=plan_tick` mode — the five closed transitions (escalate /
+  hold / de_escalate / mutate / resolve) with per-label descriptions (D33), each scenario
+  holding its structured fields constant and varying only the narrative across 2 phrasings
+  × en/pt/es. Run on E2B: **`docs/benchmarks/plan_tick_stability.md`**. Result: cross-language
+  stability holds (10/12 triples identical across languages, no three-way split — the old
+  catastrophic failure does not reproduce), but plan-tick is harder than difficulty and the
+  measurement earned **three format decisions**, which the design task below now inherits:
+  (1) keep the structured-fields-constant / narrative-varies shape — it anchored the model
+  hard; (2) **`mutate` is the weak label** (never fired; a 2B won't detect "the plot changes
+  character" from a description) — code-own it or replace with concrete named transitions;
+  (3) give plan **direction hysteresis** so a lone temp-0 mis-tick (seen ~1/6 at boundaries)
+  self-corrects instead of collapsing the plot.
+- **Design the plan format** (next) — on the three findings above. A plan owns `situation`
+  + `direction` (structured, code-owned) and a next wake; ticks feed retrieved memory as the
+  variable narrative. This is the first task behind GATE 0's task-level review.
 - **Memories** — D4's other AI job: read/write memory; the brief's "retrieve relevant
   memories and game knowledge". D8's prefix caching is what makes a large retrieved
   context affordable (~20x).
