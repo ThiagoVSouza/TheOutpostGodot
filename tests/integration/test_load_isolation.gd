@@ -32,7 +32,7 @@ const CONTENT: Array[String] = ["command_registry", "tools", "modules", "screens
 ## RUNTIME — infrastructure with no game state: transports, buses, loggers, policy objects.
 const RUNTIME: Array[String] = ["log", "events", "commands", "ai", "ai_availability",
 	"llama_server_manager", "ai_orchestrator", "trace_writer", "input_router", "saves",
-	"workspace", "session", "narrator", "narration", "ai_runner"]
+	"workspace", "session", "narrator", "narration", "ai_runner", "plan_ticker"]
 
 
 func after_each() -> void:

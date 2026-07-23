@@ -21,6 +21,9 @@ func register(kernel: GameKernel) -> void:
 
 	# Whitelist the only resource-mutating command the AI/workflows may produce.
 	kernel.command_registry.register("grant_resource", GrantResourceCommand.from_args)
+	# The only sanctioned way a background plan's direction changes (M5, D36) — it owns the
+	# intensity nudge, the hysteresis band and the code-owned plot mutation via pure Plans logic.
+	kernel.command_registry.register("apply_plan_transition", ApplyPlanTransitionCommand.from_args)
 
 	# Start screen: the plain chat, or the dev playground (chat + live trace breakdown) when
 	# OUTPOST_PLAYGROUND=1. The first screen registered as start wins.
@@ -50,6 +53,20 @@ func register(kernel: GameKernel) -> void:
 			"general": "anything else, including idle talk, questions, feelings and whimsy — "
 				+ "choose this whenever the message is not clearly one of the actions above",
 		}))
+	# The closed transition set a background plan advances by (M5, D36, Fork 2). One universal set
+	# for every plan — `mutate` is deliberately absent, because the plan-tick measurement showed a
+	# 2B never picks "the plot changes character" from a description; that is code's job, in the
+	# command's template logic. The descriptions matter for the same reason as the intent set (D33):
+	# `hold`, `de_escalate` and `resolve` all look like "nothing much happened" without a meaning.
+	kernel.prompt_families.register(PromptFamily.new("classify_plan_transition",
+		Plans.TRANSITIONS,
+		{
+			"escalate": "the situation intensifies — those involved push harder, raise the stakes, "
+				+ "or move toward open conflict",
+			"hold": "nothing decisive changed; the situation continues roughly as it was",
+			"de_escalate": "tension eases — those involved back down, are appeased, or the threat recedes",
+			"resolve": "the situation has reached its end — settled, concluded, or no longer active",
+		}))
 	_register_tables(kernel)
 	# The entry workflow (the one hardcoded id) and the intent workflows it dispatches to.
 	kernel.workflow_registry.register(_entry_workflow())
@@ -57,6 +74,10 @@ func register(kernel: GameKernel) -> void:
 	kernel.workflow_registry.register(_gather_workflow("hunt"))
 	kernel.workflow_registry.register(_rest_workflow())
 	kernel.workflow_registry.register(_build_workflow())
+	# The tick every background plan runs (M5, D36): classify the transition from the closed set,
+	# then let the command own the numbers. One workflow serves every template because plot
+	# mutation lives in the command, not here (Fork 2).
+	kernel.workflow_registry.register(_plan_tick_workflow())
 	# Verification scaffolding, not game content: a workflow that stops to ask, so the
 	# confirm → suspend → resume path is drivable in the running app until authored content
 	# uses `confirm` for real. Registered **at boot** rather than on demand — a suspended
@@ -234,6 +255,31 @@ func _build_workflow() -> Dictionary:
 				 "context": {"outcome": "the work does not begin"},
 				 "verbosity": "short", "language": "en"}
 			 ]}
+		]
+	}
+
+
+## A background plan's tick (M5, D36). The ticker passes the plan's fields as params; the model
+## reads the situation and the band *word* (never the raw intensity, D33) and picks one transition
+## from the closed set; the command applies it — bounded nudge, hysteresis band, code-owned plot
+## mutation, next wake — so no number here is the model's. This is the plan-format walking
+## skeleton: real "latest developments" from memory retrieval are the next M5 piece.
+func _plan_tick_workflow() -> Dictionary:
+	return {
+		"op": "workflow", "id": "plan_tick", "version": 1, "origin": "base_game",
+		"params": {
+			"plan_id": {"type": "string", "required": true},
+			"situation": {"type": "string"},
+			"direction": {"type": "string"},
+			"latest": {"type": "string"},
+			"today": {"type": "int"},
+		},
+		"steps": [
+			{"op": "ai", "family": "classify_plan_transition",
+			 "facts": {"situation": "@situation", "direction": "@direction", "latest": "@latest"},
+			 "as": "$$transition"},
+			{"op": "run_command", "name": "apply_plan_transition",
+			 "args": {"plan_id": "@plan_id", "transition": "$$transition", "today": "@today"}},
 		]
 	}
 
