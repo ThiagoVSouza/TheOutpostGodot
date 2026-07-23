@@ -19,6 +19,23 @@ prompt. Holding the structure constant and varying only the narrative is deliber
 narrative is the part a real tick will draw from retrieved memory, so it is the part whose
 stability actually matters.
 
+## Framing — which rows are the signal (D35)
+
+This run predates **D35** (internals are English; input is translated at the boundary before it is
+stored or retrieved). Under D35 a plan tick never sees non-English text — a plan's
+`latest_development` comes from a memory, and memories are stored in English. So the two axes here
+carry different weight:
+
+- **The English phrasing axis is the primary signal** — does the same English situation, worded
+  two ways, get the same transition? This is what a real tick faces, and it is what the format
+  decisions below rest on.
+- **The pt/es rows are defense-in-depth** — "if a stray non-English string leaks past the
+  boundary, does it still classify sanely?" Reassuring (see the cross-language result), but not
+  the question the plan format answers.
+
+The three format findings below all come from the English runs and English phrasing sensitivity,
+so D35 does not weaken them.
+
 ## Result
 
 | Scenario (guessed) | en · en | pt · pt | es · es | within-scenario |
@@ -85,8 +102,10 @@ split.
   variance (phrasing, language) moved the verdict only twice in 36.
 
 ## Verdict
-Grammar-constrained plan-tick classification is **stable enough across language to build on**, but
-less so than difficulty, and the instability is concentrated where the design can route around it:
-drop or code-own `mutate`, write phrasings/plans that don't smuggle meaning changes, and give plan
+Grammar-constrained plan-tick classification is **stable enough to build on**. Under D35 the
+primary result is English phrasing stability (the format findings above); the cross-language rows
+are defense-in-depth and reassuring — the old catastrophic per-language divergence does not
+reproduce. The residual instability is concentrated where the design can route around it: drop or
+code-own `mutate`, write phrasings/plans that don't smuggle meaning changes, and give plan
 direction hysteresis so a single mis-tick doesn't matter. Measure the ladder before trusting it in
 balance. Next M5 step: design the plan format on these three findings.

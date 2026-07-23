@@ -43,6 +43,9 @@ Measurements: `docs/benchmarks/milestone1_results.md`. Architecture: `docs/initi
 | **D30** | The orchestrator is a fixed executor; guardrails, classification and narration are workflows (the "ribosome" model) | **Decided** |
 | **D31** | Global variables: a writable, non-authoritative, persisted workflow scope beside game state | **Decided** |
 | **D32** | Two workflow composition modes: call/return (`run`) and hand-off (`dispatch`) | **Decided** |
+| **D33** | A closed set needs label meanings; mechanical terms never reach the player | **Decided** |
+| **D34** | Two persistence layers: a live workspace and rare whole snapshots | **Decided** |
+| **D35** | Internals are English; translation is a deferred, post-orchestration step (amends D29) | **Decided** |
 | **D17** | Benchmarking method — how to not fool yourself | Reference |
 
 Roadmap and current status: `docs/plan.md`.
@@ -799,7 +802,11 @@ it is what makes authored content verifiable without launching the game.
 
 ## D29 — Orchestration reasons in English; only narration is localized
 
-**Decided** (2026-07-20)
+**Decided** (2026-07-20) — **extended by D35** (2026-07-23): internal *artifacts* (memories,
+plan facts, retrieval keys) are English too, and input is translated at the boundary before it is
+stored or retrieved, deferred to a post-orchestration background stage. The consequence line
+below ("classification quality on non-English input is a thing to measure") is the D29 stance;
+D35 narrows where raw non-English text is allowed to reach.
 
 **The evidence:** Bonsai-4B produced three different outcomes for the same action in
 Portuguese, Spanish and French (D4). Language was changing mechanics.
@@ -1116,6 +1123,71 @@ The structural guard is `tests/integration/test_load_isolation.gd`, which enumer
 `GameKernel` service and **fails until each is classified** as SAVED, ARMED_BY_PLAY, CONTENT or
 RUNTIME. Adding a kernel field without deciding which it is was how both leaks got in; this
 makes forgetting loud instead of silent.
+
+---
+
+## D35 — Internals are English; translation is a deferred, post-orchestration step
+
+**Decided** (2026-07-23) — user-raised while reviewing the plan-tick stability measurement
+
+**Amends D29.** D29 said the pipeline *reasons* in English but still reads the player's raw
+foreign-language message. D35 goes one step further: **every internal artifact the AI produces —
+memories, plan facts, retrieval keys — is written in English**, and non-English input is
+translated at the boundary before it is ever stored or retrieved. Only `narrate` localizes back
+out (D29 unchanged there).
+
+**Why — retrieval, and it is an M5-specific force.** Classification does not need this: it is
+grammar-constrained and measured language-robust (10/12 stable across languages,
+`docs/benchmarks/plan_tick_stability.md`). Retrieval does. A small local model with a
+keyword/index scheme (D21/D34, files-first) cannot reliably match an English query against a
+Portuguese memory. A mixed-language memory store silently loses recall — the exact capability M5
+exists to build. One reasoning language for the *store* is what keeps retrieval coherent.
+
+**Placement — deferred by default, folded-in as the fallback.** The player waits for exactly one
+thing: the narration. The critical path is `input → classify → adjudicate → narrate → show`;
+translating-for-storage, memory writes and plan updates are **write-behind** bookkeeping that runs
+*after* the narration is on screen. So translation is effectively free on the critical path, and
+English-speaking players pay nothing. The one time English is needed *this turn* — an adjudication
+that must retrieve English memory to decide the outcome the player is waiting on — get the
+translation from the classify call you are already making (a structured `{translation, intent}`
+grammar) rather than a second call. Even then it is often avoidable: the retrieval query can be
+built from the already-English classified intent and structured facts instead of the raw
+utterance.
+
+**Three requirements make the background stage safe** (design them in, do not bolt them on):
+
+1. **A durable raw-event record, written synchronously before any AI step** — no model call, just
+   "player said X (pt), intent=forage, outcome=+5 food". It lives in the D34 workspace. If the
+   background translation or memory-write later fails (a T5 outage), it is retried from this
+   record instead of being lost. Without it, a backgrounded write that fails is silent data loss.
+2. **A consistency-window answer.** Memory writes land after narration, so a player who acts again
+   immediately could have the next turn's *retrieval* miss the just-happened memory. This turn's
+   facts are carried in-memory into the next turn's context directly, so recall does not depend on
+   the background write having flushed. The window is small for a seconds-between-turns game, but
+   it is real.
+3. **Store both forms.** The raw player-language utterance is kept for provenance, trace and
+   replay; the English canonical form is what retrieval and reasoning run against and is
+   authoritative. Text is cheap (files-first, D21); the raw form is never matched against, only
+   kept.
+
+**Structure.** The background stage runs on the **Scheduler**, which A4 already made capable of
+running DSL workflows off the turn — "after narration, schedule a post-turn bookkeeping workflow"
+reuses existing machinery (D30: it is authored content, not orchestrator code). This pulls the A4
+deferral (scheduled workflows that suspend are not re-armed yet) onto M5's critical path, which is
+useful to know before the plan format is designed.
+
+**Considered and rejected:**
+- **Folding translation into the classify call on every turn** — rejected as the *default*: it
+  needs a structured grammar and lengthens the decode on every turn, including the many turns that
+  store nothing. Kept only as the synchronous fallback above.
+- **A dedicated synchronous translate call** — rejected: it blocks the player on a step that is
+  rarely needed synchronously, for no perceived benefit over write-behind.
+
+**Consequence for the measurement.** The plan-tick benchmark's cross-language rows become
+*defense-in-depth* ("if a stray non-English string leaks past the boundary, does it still classify
+sanely?" — mostly yes), not the primary signal. The signal that drives the plan format is the
+English-only, phrasing-varied test. The three format findings there stand: they came from the
+English runs (see the benchmark doc).
 
 ---
 

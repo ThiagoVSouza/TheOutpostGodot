@@ -401,7 +401,18 @@ building it twice.
   variable narrative. This is the first task behind GATE 0's task-level review.
 - **Memories** — D4's other AI job: read/write memory; the brief's "retrieve relevant
   memories and game knowledge". D8's prefix caching is what makes a large retrieved
-  context affordable (~20x).
+  context affordable (~20x). **Stored in English (D35):** retrieval on a small local
+  model can't match across languages, so a mixed-language store silently loses recall.
+- **English-only internals + a background write-behind stage (D35).** Non-English input
+  is translated at the boundary before it is stored or retrieved; only `narrate`
+  localizes out. Translation, memory writes and plan updates are **deferred to a
+  post-orchestration stage** so the player only ever waits for the narration — folded
+  into the classify call only on the rare turn that needs English *this turn*. Three
+  requirements: a synchronous no-AI raw-event record in the D34 workspace (so a failed
+  background write is retryable), this turn's facts carried in-memory into the next turn
+  (the consistency window), and both raw + English forms stored (English authoritative).
+  The stage runs on the **Scheduler** (A4), which is why the A4 re-arm deferral below is
+  now on M5's critical path.
 - **Plans** — JSON files that *code owns* (facts, goals, stance/direction, linked
   entities, next wake), advanced by scheduled **plan-tick workflows**. The AI chooses
   transitions from closed described sets and parameterizes plots from an **authored
