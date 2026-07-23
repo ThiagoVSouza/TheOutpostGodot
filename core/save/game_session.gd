@@ -119,6 +119,9 @@ func start_new(name: String = DEFAULT_SLOT_NAME) -> void:
 	# one's armed events or carried module data is the load-leak that makes players restart.
 	_kernel.saves.forget_carried()
 	_kernel.scheduler.reset_scheduled_by_play()
+	# workspace().clear() already removed the memory log file; this drops the in-memory cache too,
+	# so the new game does not remember the previous one's events (D34: replace, never merge).
+	_kernel.memories.clear()
 	slot_id = ""
 	slot_name = name
 	_last_snapshot_day = 0
@@ -136,6 +139,9 @@ func load_slot(id: String) -> Dictionary:
 	slot_name = String(meta.get("name", DEFAULT_SLOT_NAME))
 	_last_snapshot_day = _kernel.clock.total_days
 	workspace().clear()
+	# A slot snapshot does not carry memories yet (deferred, D37), so loading one starts from an
+	# empty log rather than keeping the outgoing game's — leaking those would be the load-merge bug.
+	_kernel.memories.clear()
 	_write_all_parts()
 	session_changed.emit(slot_id, slot_name)
 	return loaded

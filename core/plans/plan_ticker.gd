@@ -67,15 +67,11 @@ func _tick_one(plan_id: String, today: int) -> void:
 		return
 
 	var direction: Dictionary = plan.get("direction", {})
-	var history: Array = plan.get("history", [])
-	var latest := "the situation continues"  # a real development comes from memory retrieval (next M5 piece)
-	if not history.is_empty():
-		latest = String((history[history.size() - 1] as Dictionary).get("transition", latest))
 	var params := {
 		"plan_id": plan_id,
 		"situation": String(plan.get("situation", "")),
 		"direction": String(direction.get("band", "calm")),  # the band word, never the raw number (D33)
-		"latest": latest,
+		"latest": _latest_development(plan, today),
 		"today": today,
 	}
 	var instance := WorkflowInstance.create(
@@ -84,3 +80,13 @@ func _tick_one(plan_id: String, today: int) -> void:
 		params,
 		hash("%s:%d" % [plan_id, today]))
 	await WorkflowExecutor.for_kernel(_kernel).run(def as Dictionary, instance)
+
+
+## The development the tick shows the model: the most recent memory about this plan's subjects,
+## retrieved by entity-tag + recency (D37). Falls back to a neutral line when nothing is on record
+## yet — a plan can tick before anything about it has been remembered.
+func _latest_development(plan: Dictionary, today: int) -> String:
+	var recent: Array = _kernel.memories.retrieve(plan.get("subjects", []), 1, today)
+	if recent.is_empty():
+		return "nothing new has reached the outpost about this"
+	return String((recent[0] as Dictionary).get("text", ""))
