@@ -10,6 +10,7 @@ extends Control
 ## The UI is built in code to keep the scene file trivial.
 
 var _source: AiInputSource
+var _day_label: Label
 var _resource_label: Label
 var _log_label: RichTextLabel
 var _input: LineEdit
@@ -49,6 +50,7 @@ func _ready() -> void:
 		_append("[color=wheat]%s[/color]" % opening)
 	else:
 		_append("[b]The Outpost[/b] — the game master awaits. Describe what you do.")
+	_refresh_day()
 	_refresh_resources()
 	_refresh_slots()
 	# The GATE 0 call for M4: a question the player was asked before they closed the game is
@@ -70,8 +72,24 @@ func _build_ui() -> void:
 	vbox.add_theme_constant_override("separation", 8)
 	margin.add_child(vbox)
 
+	var status_row := HBoxContainer.new()
+	status_row.add_theme_constant_override("separation", 16)
+	vbox.add_child(status_row)
+	_day_label = Label.new()
+	status_row.add_child(_day_label)
 	_resource_label = Label.new()
-	vbox.add_child(_resource_label)
+	_resource_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	status_row.add_child(_resource_label)
+
+	# Time is turn-driven, but the player owns when it passes: nothing here costs a day, and this
+	# control lets a day go by so background plots tick (M5/D36). Sits in the play area, not the
+	# dev row — it is a real game action, not a debug shortcut.
+	var time_row := HBoxContainer.new()
+	vbox.add_child(time_row)
+	var pass_day := Button.new()
+	pass_day.text = "Let a day pass"
+	pass_day.pressed.connect(_on_pass_day)
+	time_row.add_child(pass_day)
 
 	_log_label = RichTextLabel.new()
 	_log_label.bbcode_enabled = true
@@ -115,10 +133,6 @@ func _build_ui() -> void:
 
 	var dev_row := HBoxContainer.new()
 	vbox.add_child(dev_row)
-	var advance := Button.new()
-	advance.text = "Advance 1 month (dev)"
-	advance.pressed.connect(_on_advance_month)
-	dev_row.add_child(advance)
 	var save_button := Button.new()
 	save_button.text = "Save"
 	save_button.pressed.connect(_on_save)
@@ -297,6 +311,7 @@ func _on_load() -> void:
 		return
 	_clear_question()
 	_append("[i]— Loaded '%s', day %d —[/i]" % [Kernel.session.slot_name, Kernel.clock.total_days])
+	_refresh_day()
 	_refresh_resources()
 	# A loaded game brings its own unanswered question, if it had one.
 	_present_oldest_pending()
@@ -307,6 +322,7 @@ func _on_new_game() -> void:
 	Kernel.session.start_new()
 	_clear_question()
 	_append("[i]— A new settlement —[/i]")
+	_refresh_day()
 	_refresh_resources()
 	_refresh_slots()
 	_set_busy(false)
@@ -321,9 +337,17 @@ func _on_save() -> void:
 		_append("[color=orange]System:[/color] Could not save (%s)." % result["error"])
 
 
-func _on_advance_month() -> void:
-	_append("[i]— A month passes —[/i]")
-	Kernel.clock.advance(GameClock.DAYS_PER_MONTH)
+## Let one day of game time pass. Time is turn-driven and the player triggers it explicitly
+## (the chosen model): advancing the clock fires `day_passed`, which the [PlanTicker] handles off
+## its own subscription — a due plot ticks in the background and surfaces as a chronicle line via
+## `workflow_emit`, so no awaiting is needed here. Blocked while a turn or question is in flight,
+## for the same reason input is: the world must not move under an unresolved action.
+func _on_pass_day() -> void:
+	if Kernel.ai_orchestrator.is_busy() or not _pending_instance.is_empty():
+		return
+	Kernel.clock.advance(1)
+	_append("[i]— The day passes. Day %d. —[/i]" % Kernel.clock.total_days)
+	_refresh_day()
 	_refresh_resources()
 
 
@@ -354,6 +378,10 @@ func _on_ai_availability_changed(payload: Dictionary) -> void:
 			if int(payload.get("attempts_used", 0)) > 0:
 				_append("[color=orange]System:[/color] Game master connection restored.")
 			_retry_button.visible = false
+
+
+func _refresh_day() -> void:
+	_day_label.text = "Day %d" % Kernel.clock.total_days
 
 
 func _refresh_resources() -> void:

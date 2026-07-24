@@ -113,8 +113,10 @@ func seed_new_game(kernel: GameKernel, params: Dictionary) -> void:
 	bus.execute(CreateEntityCommand.new("outpost", Entities.LOCATION, "The Outpost"))
 	bus.execute(GrantResourceCommand.new("food", 20))
 	bus.execute(GrantResourceCommand.new("gold", 10))
+	# Due in a few days, not a full month: the plot should visibly tick within a short hands-on
+	# session so the living-world loop can be watched end to end (placeholder pacing).
 	bus.execute(CreatePlanCommand.new("steward_extortion", "steward_extortion", "plan_tick",
-		["steward", "hero"], "The King's Steward is pressuring the outpost for bribes.", 30))
+		["steward", "hero"], "The King's Steward is pressuring the outpost for bribes.", 3))
 	kernel.state.set_value("opening_line",
 		"The King has granted you the outpost, %s. Make it endure — you have five years." % hero_name)
 
@@ -308,6 +310,10 @@ func _plan_tick_workflow() -> Dictionary:
 			 "as": "$$transition"},
 			{"op": "run_command", "name": "apply_plan_transition",
 			 "args": {"plan_id": "@plan_id", "transition": "$$transition", "today": "@today"}},
+			# Surface the tick as a chronicle line (key + values, i18n discipline D24) so a plot
+			# advancing in the background is visible in-game, not only in the trace.
+			{"op": "emit", "msg": "base_game.plan_ticked",
+			 "values": {"situation": "@situation", "transition": "$$transition"}},
 			# Record what happened so the next tick can retrieve it (D37). The memory is the
 			# *development* (what changed); the plan's situation carries the who — so a generic line
 			# tagged with the subjects reads coherently when retrieved beside the situation, and the

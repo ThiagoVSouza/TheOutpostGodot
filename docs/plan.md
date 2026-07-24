@@ -507,9 +507,18 @@ hook + `GameSession.begin_new_game` that seeds a **minimal placeholder living wo
 the wizard, a small cast with dispositions, resources, one ticking plot, an opening line) —
 scaffolding the authored content replaces. Also fixed a latent bug: `start_new` now resets the
 in-memory stores (state/globals/clock/instances), not just the workspace, so a mid-session new
-game is a clean world (D34). `OUTPOST_PLAYGROUND=1` still bypasses the shell. **Deferred:**
-module-pick screen + the module-config-driven multi-step wizard; a real narrated opening
-workflow; an in-play time-advance so plots tick during play; Settings/Help/News screens.
+game is a clean world (D34). `OUTPOST_PLAYGROUND=1` still bypasses the shell.
+
+**In-play time-advance — done (2026-07-24):** time is turn-driven and the player passes it
+explicitly (chosen model over auto-per-turn/hybrid). The chat screen's dev "advance 1 month"
+button is now a real **"Let a day pass"** control + a day indicator; advancing the clock fires
+`day_passed`, the `PlanTicker` ticks due plots off its own subscription, and each tick surfaces a
+`base_game.plan_ticked` chronicle line (i18n key + values, D24) so a background plot moving is
+visible in-game. The seeded `steward_extortion` plot's wake dropped 30 → **3 days** so the loop is
+observable in a short hands-on session (placeholder pacing). New end-to-end test drives the real
+seed through real clock advances; 301 green. **Still deferred:** module-pick screen + the
+module-config-driven multi-step wizard; a real narrated opening workflow; Settings/Help/News
+screens.
 
 **Android UI issues** (found during the milestone-1 deploy, deliberately not fixed):
 

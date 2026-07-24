@@ -39,14 +39,42 @@ func test_begin_new_game_seeds_the_cast_resources_and_a_ticking_plot() -> void:
 	# Starting resources.
 	assert_eq(int((kernel.state.get_value("resources", {}) as Dictionary).get("food", 0)), 20)
 
-	# One background plot, already due at its wake so the ticker will run it.
+	# One background plot, due within a few days so it ticks in a short hands-on session (the
+	# placeholder pacing that makes the living-world loop observable in-game).
 	var plans: Dictionary = kernel.state.get_value("plans", {})
 	assert_true(plans.has("steward_extortion"), "a starting plot exists")
-	assert_false(Plans.due(plans, 30).is_empty(), "and it is due at its wake day")
+	assert_true(Plans.due(plans, 2).is_empty(), "not yet due on day 2")
+	assert_false(Plans.due(plans, 3).is_empty(), "due by day 3")
 
 	# The opening the game screen shows, and the announcement.
 	assert_string_contains(String(kernel.state.get_value("opening_line", "")), "Livia")
 	assert_eq(started.size(), 1, "new_game_started fired once")
+
+
+func test_letting_days_pass_ticks_the_seeded_plot_in_play() -> void:
+	# The in-play time-advance deliverable end to end: a freshly seeded game, then game days pass
+	# (as the "let a day pass" control does — via the clock, not a direct ticker call), and the
+	# seeded plot ticks on its own subscription and surfaces a chronicle emit.
+	var kernel := _kernel()
+	(kernel.ai_runner as FakeAiRunner).set_result("classify_plan_transition", "escalate")
+	var chronicled: Array = []
+	kernel.events.subscribe("workflow_emit", func(p: Dictionary) -> void: chronicled.append(p))
+
+	kernel.session.begin_new_game({"hero_name": "Livia"})
+	var before := int((kernel.state.get_value("plans", {})["steward_extortion"]["direction"]
+		as Dictionary)["intensity"])
+
+	kernel.clock.advance(3)  # reach the plot's wake day
+	# The tick suspends a frame at its ai step (FakeAiRunner yields), so let it finish.
+	for _i in range(5):
+		await get_tree().process_frame
+
+	var after := int((kernel.state.get_value("plans", {})["steward_extortion"]["direction"]
+		as Dictionary)["intensity"])
+	assert_gt(after, before, "the seeded plot escalated as the days passed")
+	var ticked := chronicled.filter(func(p: Dictionary) -> bool:
+		return String(p.get("msg", "")) == "base_game.plan_ticked")
+	assert_false(ticked.is_empty(), "the tick surfaced a chronicle line in play")
 
 
 func test_begin_new_game_replaces_a_previous_game() -> void:
