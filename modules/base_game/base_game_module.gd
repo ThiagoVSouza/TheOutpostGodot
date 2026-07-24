@@ -111,11 +111,12 @@ func register(kernel: GameKernel) -> void:
 ## workflow over them on first entry to a fresh game.
 func seed_new_game(kernel: GameKernel, params: Dictionary) -> void:
 	var hero_name := String(params.get("hero_name", "Marcus"))
+	var outpost_name := String(params.get("outpost_name", "The Outpost"))
 	var bus := kernel.commands
 	bus.execute(CreateEntityCommand.new("hero", Entities.CHARACTER, hero_name, 0, ["founder"]))
 	bus.execute(CreateEntityCommand.new("king", Entities.CHARACTER, "The King", 10))
 	bus.execute(CreateEntityCommand.new("steward", Entities.CHARACTER, "The Steward", -10, ["greedy"]))
-	bus.execute(CreateEntityCommand.new("outpost", Entities.LOCATION, "The Outpost"))
+	bus.execute(CreateEntityCommand.new("outpost", Entities.LOCATION, outpost_name))
 	bus.execute(GrantResourceCommand.new("food", 20))
 	bus.execute(GrantResourceCommand.new("gold", 10))
 	# Due in a few days, not a full month: the plot should visibly tick within a short hands-on
@@ -125,6 +126,17 @@ func seed_new_game(kernel: GameKernel, params: Dictionary) -> void:
 	# The facts the opening narration will dress (D4: code decides, the narrator only tells). The
 	# chat screen plays the `opening` workflow over these on first entry to a fresh game.
 	kernel.state.set_value("opening", {"hero": hero_name, "years": 5})
+	# The wizard's remaining choices don't drive any system yet (no economy/map, no narrator
+	# verbosity knob) — stashed as a profile so that content has somewhere to read them from
+	# without another seed-shape change once it exists.
+	kernel.state.set_value("profile", {
+		"background": String(params.get("background", "")),
+		"outpost_location": String(params.get("outpost_location", "")),
+		"sex": String(params.get("sex", "male")),
+		"verbosity": String(params.get("verbosity", "average")),
+	})
+	if params.has("outpost_flag"):
+		kernel.state.set_value("outpost_flag", params["outpost_flag"])
 
 
 ## Dev-only (see `register`): stops to ask, then grants if the player agrees.

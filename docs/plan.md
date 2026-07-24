@@ -12,8 +12,8 @@ Decisions and their evidence: `docs/decisions.md`. Measurements:
 gates. **GATE 0 there is binding: no production code before a direction review
 with the user.**
 
-Last updated: 2026-07-23 (M5 rescoped to memories + plans + retrieval per
-`docs/briefing1.md`; app shell added to Unscheduled)
+Last updated: 2026-07-24 (overworld map + flag component ported from the legacy system; the
+new-game wizard built on top of them)
 
 ---
 
@@ -524,9 +524,48 @@ the opening's **facts** (`opening = {hero, years}`, D4 — code decides), base_g
 single-beat `opening` workflow (`narrate` over those facts), and the chat screen runs it through the
 executor on first entry to a fresh game, renders the prose, and clears the facts so it does not
 replay on remount. Falls back to a plain line if the narrator returns nothing (outage/stub). A
-fuller multi-beat opening can grow in the workflow without touching the screen. 302 green. **Still
-deferred:** module-pick screen + the module-config-driven multi-step wizard; Settings/Help/News
-screens.
+fuller multi-beat opening can grow in the workflow without touching the screen. 302 green.
+
+**Overworld map: first pass — done (2026-07-24, PR #47).** The legacy Tauri overworld ported to
+Godot: a corner-blending auto-tiler in the original, this first pass renders the **base biome
+layer** it composes over. `core/map/MapVariation` ports the legacy per-cell hash byte-for-byte
+(locked to JS-generated reference vectors); `core/map/TerrainMap` decodes the terrain-set + map
+JSON; `core/map/OverworldMapView` culls/fits/pans/zooms. base_game's `MapOverlay` hosts it as a
+**child overlay** from the chat screen (the router is stateless, so routing away would drop the
+chat log). 32 biome textures + a demo map ported to `modules/base_game/assets/map/`. 20 new tests,
+311 green at merge. **Deferred:** corner-blend mask overlays, tile decorations, season tint; tying
+the map to gameplay (outpost position, travel) — polish over this base layer, not urgent.
+
+**Flag component — done (2026-07-24, PR #48).** The legacy flag-compositing system (base cloth →
+tinted pattern → tinted emblem → fold-shading effect, one shader pass) ported as a reusable
+widget ahead of the wizard: `FlagValue` (design data, round-trips the legacy JSON unchanged) +
+`FlagView` (a texture-cached `ColorRect` that live-renders a `FlagValue` in one draw call). 14
+patterns, 13 emblems, base+effect cloth textures under `modules/base_game/assets/`. 315 green at
+merge.
+
+**New-game wizard — done (2026-07-24).** The legacy 4-step flow (Background → Location → Identity
+→ Settings), captured from the legacy Tauri wizard config and rebuilt as one screen
+(`core/screens/new_game_screen.gd`) with internal step state rather than one router screen per
+step, since the accumulated selections need to survive the walk without being threaded through
+`on_enter` params at every hop. Background (5 cards: merchant/knight/noble/mercenary/scholar) and
+Location (4 cards: coast/valley/forest/mountains) are simple card-selects — legacy background art
+per card was not ported, text only. Identity collects hero name, sex, outpost name (with a
+randomize button over the legacy name list), and a flag designer built on `FlagView` — three
+`ColorPickerButton`s (cloth/pattern/emblem) plus prev/next cycling through patterns and emblems,
+mirroring `flag_preview.gd`'s dev-preview logic. Settings picks narration verbosity
+(short/average/long). Finishing hands a fuller `fields` map to `begin_new_game`; base_game's
+`seed_new_game` now names the outpost entity from it and stashes background/location/sex/verbosity
+under `GameState["profile"]` and the flag under `GameState["outpost_flag"]` — **not yet consumed
+by any system** (no economy/map/narrator-verbosity hookup exists to read them), the same
+"stash the facts, let content read them later" shape the opening's facts already use. 5 new
+integration tests drive the real screen through the autoload `Kernel` (the `test_confirmation_ui`
+pattern), including a full walk to `begin_new_game` asserting the collected fields landed. 320
+green. **Verified headless only** — the flow was driven and asserted via GUT (no push_errors
+constructing `FlagView`/`ColorPickerButton`/`GridContainer` nodes or wiring the steps), not
+eyeballed in a running window; a manual click-through in the editor is still owed before calling
+the layout itself solid. **Still deferred:** module-pick screen + a module-config-driven wizard
+(nothing to configure yet — this wizard's fields are all base_game's); Settings/Help/News screens;
+legacy background art per card.
 
 **Overworld map — first pass (2026-07-24):** ported the legacy Tauri overworld into Godot. The
 old renderer is a corner-blending auto-tiler (mask atlases, biome priorities, tile compositor,
