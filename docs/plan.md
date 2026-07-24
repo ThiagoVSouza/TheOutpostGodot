@@ -528,6 +528,28 @@ fuller multi-beat opening can grow in the workflow without touching the screen. 
 deferred:** module-pick screen + the module-config-driven multi-step wizard; Settings/Help/News
 screens.
 
+**Overworld map — first pass (2026-07-24):** ported the legacy Tauri overworld into Godot. The
+old renderer is a corner-blending auto-tiler (mask atlases, biome priorities, tile compositor,
+season tint); this pass draws the **base biome layer** — each cell's biome texture with the
+deterministic per-cell variant. `core/map/`: `MapVariation` (the `variation.ts` hash ported
+byte-for-byte, locked to reference vectors in tests), `TerrainMap` (decodes the terrain-set +
+map-layer JSON, ported from `mapData.ts`), `OverworldMapView` (a `Control` that culls to the view
+rect, fits, and supports drag-pan + wheel-zoom). Assets copied to
+`modules/base_game/assets/map/` (32 biome textures 256², the demo map + terrain JSON). base_game
+`MapOverlay` loads the data/textures and hosts the view; the chat screen opens it as a **child
+overlay** (the `ScreenRouter` is stateless, so routing away would drop the chat log). 20 map tests,
+311 green. **Deferred (the blending polish over this base layer):** corner-blend mask overlays,
+whole-tile ground decorations, season tint; a proper routed map screen once the router grows a
+stack; wiring the map to gameplay (the outpost's position, travel).
+
+**New-game wizard — flow captured, not yet built:** the legacy new-game is a 4-step content-driven
+wizard — **Background** (merchant/knight/noble/mercenary/scholar, each with starting bonuses),
+**Location** (coast/valley/forest/mountains, difficulty/fertility/barbarians), **Identity** (hero
+name, sex, outpost name, flag designer), **Settings** — collecting a `fields` map handed to
+begin-new-game. Screens are JSON (`heading`/`card-choice`/`field`/`choice`/`flag-designer` body
+types). This is the shape the deferred module-config wizard should take: the current single-field
+new-game screen grows into this multi-step flow, its `fields` feeding `seed_new_game`.
+
 **Android UI issues** (found during the milestone-1 deploy, deliberately not fixed):
 
 | Issue | Note |

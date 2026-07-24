@@ -9,6 +9,8 @@ extends Control
 ## button to advance the calendar so the month-end workflow can be observed.
 ## The UI is built in code to keep the scene file trivial.
 
+const MapOverlay := preload("res://modules/base_game/screens/map_overlay.gd")
+
 var _source: AiInputSource
 var _day_label: Label
 var _resource_label: Label
@@ -115,6 +117,10 @@ func _build_ui() -> void:
 	pass_day.text = "Let a day pass"
 	pass_day.pressed.connect(_on_pass_day)
 	time_row.add_child(pass_day)
+	var map_button := Button.new()
+	map_button.text = "Map"
+	map_button.pressed.connect(_on_open_map)
+	time_row.add_child(map_button)
 
 	_log_label = RichTextLabel.new()
 	_log_label.bbcode_enabled = true
@@ -367,6 +373,16 @@ func _on_save() -> void:
 ## its own subscription — a due plot ticks in the background and surfaces as a chronicle line via
 ## `workflow_emit`, so no awaiting is needed here. Blocked while a turn or question is in flight,
 ## for the same reason input is: the world must not move under an unresolved action.
+## Open the overworld map over the running game (a child overlay, not a route — see MapOverlay).
+## No-op if it is already open.
+func _on_open_map() -> void:
+	if has_node("MapOverlay"):
+		return
+	var overlay := MapOverlay.new()
+	overlay.name = "MapOverlay"
+	add_child(overlay)
+
+
 func _on_pass_day() -> void:
 	if Kernel.ai_orchestrator.is_busy() or not _pending_instance.is_empty():
 		return
