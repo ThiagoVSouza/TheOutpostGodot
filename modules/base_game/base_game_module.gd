@@ -24,6 +24,10 @@ func register(kernel: GameKernel) -> void:
 	# The only sanctioned way a background plan's direction changes (M5, D36) — it owns the
 	# intensity nudge, the hysteresis band and the code-owned plot mutation via pure Plans logic.
 	kernel.command_registry.register("apply_plan_transition", ApplyPlanTransitionCommand.from_args)
+	# The world's cast engine (M5/M7): bring an entity into being, and move its disposition toward
+	# the player. The whitelisted mechanisms; the actual cast is content authored later.
+	kernel.command_registry.register("create_entity", CreateEntityCommand.from_args)
+	kernel.command_registry.register("adjust_disposition", AdjustDispositionCommand.from_args)
 
 	# Start screen: the plain chat, or the dev playground (chat + live trace breakdown) when
 	# OUTPOST_PLAYGROUND=1. The first screen registered as start wins.

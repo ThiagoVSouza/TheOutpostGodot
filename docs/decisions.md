@@ -48,6 +48,7 @@ Measurements: `docs/benchmarks/milestone1_results.md`. Architecture: `docs/initi
 | **D35** | Internals are English; translation is a deferred, post-orchestration step (amends D29) | **Decided** |
 | **D36** | Plan format: numeric-intensity direction with hysteresis; universal transitions, code-owned mutation | **Decided** |
 | **D37** | Memory retrieval: entity-tag + recency now; the AI drill-down deferred | **Decided** |
+| **D38** | Entity/character model: authoritative, command-mutated, engine-not-content | **Decided** |
 | **D17** | Benchmarking method — how to not fool yourself | Reference |
 
 Roadmap and current status: `docs/plan.md`.
@@ -1274,6 +1275,33 @@ next tick's retrieved context and the plan loop is self-sustaining** with no ext
 a summarizer (D35's post-orchestration stage; the `remember` op gains an AI mode there, additively)
 — and slot-snapshot inclusion, so a *named* save does not carry its memories yet (loading one starts
 from an empty log). Builds on D34/D35/D36.
+
+---
+
+## D38 — Entity/character model: authoritative, command-mutated, engine-not-content
+
+**Decided** (2026-07-23) — direction: build the cast *engine*, author no cast
+
+The world's cast — characters, factions, locations — is authoritative game state under
+`GameState["entities"][id]`, saved by B2 with the rest, and mutated only through whitelisted
+commands (D4): `create_entity` and `adjust_disposition`. An entity is
+`{id, type, name, disposition(-100..100 toward the player), traits, status}`.
+
+**Why here, why now.** Plans and memories already carried `subjects: [entity ids]`, but those ids
+had no identity — the steward plot's "steward" was a bare string. Entities give them one: a name, a
+type, a disposition. `Entities.resolve` / `Entities.names` is the seam that turns a plan's subjects
+into named characters for context or display.
+
+**Deliberately the engine, not content** (the user's call). No cast is seeded and no scenario is
+authored — a module or a new-game workflow creates entities through the commands when content and
+in-game testing begin. Disposition-toward-the-player is the one relationship modelled now (the
+briefing's five-year-assessment mechanic); entity-to-entity relationships, richer attributes, and
+factions' internal state are later blocks, added when content needs them.
+
+**Next: go in-game.** With the living-world blocks in place — plans (D36), memories (D37), entities
+(D38), and the commands and ops that move them — the next phase is wiring a new game that seeds a
+starting world and driving it in the real game flow, then adjusting and authoring content. That is
+a joint step with the user, not more plumbing.
 
 ---
 
