@@ -40,8 +40,13 @@ func _ready() -> void:
 	Kernel.events.subscribe(AiAvailability.EVENT_NAME, _on_ai_availability_changed)
 	# Boot has already resumed the session by now, so say which settlement this is — opening
 	# into a loaded world with no acknowledgement reads as if nothing was saved.
+	var opening := String(Kernel.state.get_value("opening_line", ""))
 	if Kernel.session.has_slot():
 		_append("[b]%s[/b] — day %d. Welcome back." % [Kernel.session.slot_name, Kernel.clock.total_days])
+	elif not opening.is_empty():
+		# A fresh game seeded an opening (the in-game phase). Placeholder for a real narrated
+		# opening workflow (throne room, the king's charge).
+		_append("[color=wheat]%s[/color]" % opening)
 	else:
 		_append("[b]The Outpost[/b] — the game master awaits. Describe what you do.")
 	_refresh_resources()

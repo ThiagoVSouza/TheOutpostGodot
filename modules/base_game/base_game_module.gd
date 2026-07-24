@@ -28,6 +28,9 @@ func register(kernel: GameKernel) -> void:
 	# the player. The whitelisted mechanisms; the actual cast is content authored later.
 	kernel.command_registry.register("create_entity", CreateEntityCommand.from_args)
 	kernel.command_registry.register("adjust_disposition", AdjustDispositionCommand.from_args)
+	# Bring a background plan into being (M5) — the whitelisted way a plot first enters the world,
+	# used by the new-game seed below.
+	kernel.command_registry.register("create_plan", CreatePlanCommand.from_args)
 
 	# Start screen: the plain chat, or the dev playground (chat + live trace breakdown) when
 	# OUTPOST_PLAYGROUND=1. The first screen registered as start wins.
@@ -94,6 +97,26 @@ func register(kernel: GameKernel) -> void:
 		"BaseGame",
 		"Registered dice tool, grant_resource command, chat screen, month-end + orchestration workflows"
 	)
+
+
+## Seed a placeholder starting world for a new game (the in-game phase). **Scaffolding, clearly
+## marked** — like `_dev_confirm_workflow`, it exists so the full flow reaches a real, living game
+## start until authored content replaces it. Everything goes through the whitelisted CommandBus (D4):
+## a small cast with dispositions, starting resources, and one background plot that will tick as the
+## clock advances. The opening line is a placeholder for a real narrated opening workflow.
+func seed_new_game(kernel: GameKernel, params: Dictionary) -> void:
+	var hero_name := String(params.get("hero_name", "Marcus"))
+	var bus := kernel.commands
+	bus.execute(CreateEntityCommand.new("hero", Entities.CHARACTER, hero_name, 0, ["founder"]))
+	bus.execute(CreateEntityCommand.new("king", Entities.CHARACTER, "The King", 10))
+	bus.execute(CreateEntityCommand.new("steward", Entities.CHARACTER, "The Steward", -10, ["greedy"]))
+	bus.execute(CreateEntityCommand.new("outpost", Entities.LOCATION, "The Outpost"))
+	bus.execute(GrantResourceCommand.new("food", 20))
+	bus.execute(GrantResourceCommand.new("gold", 10))
+	bus.execute(CreatePlanCommand.new("steward_extortion", "steward_extortion", "plan_tick",
+		["steward", "hero"], "The King's Steward is pressuring the outpost for bribes.", 30))
+	kernel.state.set_value("opening_line",
+		"The King has granted you the outpost, %s. Make it endure — you have five years." % hero_name)
 
 
 ## Dev-only (see `register`): stops to ask, then grants if the player agrees.
