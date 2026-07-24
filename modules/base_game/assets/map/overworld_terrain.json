@@ -1,0 +1,25 @@
+{
+  "id": "overworld",
+  "tileSizePx": 128,
+  "biomes": [
+    {
+      "name": "grass",
+      "priority": 1,
+      "textures": ["assets/map/grass_01.png", "assets/map/grass_02.png", "assets/map/grass_03.png", "assets/map/grass_04.png"]
+    },
+    { "name": "savanah", "priority": 2, "textures": ["assets/map/savanah_01.png", "assets/map/savanah_02.png", "assets/map/savanah_03.png", "assets/map/savanah_04.png"] },
+    { "name": "swamp", "priority": 3, "textures": ["assets/map/swamp_01.png", "assets/map/swamp_02.png", "assets/map/swamp_03.png", "assets/map/swamp_04.png"] },
+    { "name": "tundra", "priority": 4, "textures": ["assets/map/tundra_01.png", "assets/map/tundra_02.png", "assets/map/tundra_03.png", "assets/map/tundra_04.png"] },
+    { "name": "desert", "priority": 5, "textures": ["assets/map/desert_01.png", "assets/map/desert_02.png", "assets/map/desert_03.png", "assets/map/desert_04.png"] },
+    { "name": "sand", "priority": 6, "textures": ["assets/map/sand_01.png", "assets/map/sand_02.png", "assets/map/sand_03.png", "assets/map/sand_04.png"] },
+    {
+      "name": "ocean",
+      "priority": 7,
+      "textures": ["assets/map/ocean_01.png", "assets/map/ocean_02.png", "assets/map/ocean_03.png", "assets/map/ocean_04.png"],
+      "decorations": [
+        { "name": "beach", "atlases": ["assets/map/beach_layer1.png"] }
+      ]
+    }
+  ],
+  "mask": { "atlases": ["assets/map/general_mask1.png"] }
+}

@@ -1,0 +1,54 @@
+{
+  "id": "overworld-demo",
+  "name": "Overworld Demo",
+  "terrainSet": "overworld",
+  "width": 40,
+  "height": 28,
+  "tileWorldMeters": 20,
+  "seed": 1311768467,
+  "layers": [
+    {
+      "id": "terrain",
+      "type": "terrain",
+      "palette": {
+        "g": "grass",
+        "v": "savanah",
+        "w": "swamp",
+        "t": "tundra",
+        "d": "desert",
+        "s": "sand",
+        "o": "ocean"
+      },
+      "cells": [
+        "oooooooooooooooooooooooooooooooooooooooo",
+        "oooooooooooooooooooooooooooooooooooooooo",
+        "oooooooooooooooooooooooooooooooooooooooo",
+        "oooggggggggggggggggggooooooooooooooooooo",
+        "oooggggggggggggggggggooottttttddddddoooo",
+        "oooggggggggggggggggggooottttttddddddoooo",
+        "ooogggvvvvvvvggggggggooottttttddddddoooo",
+        "ooogggvvvvvvvggggggggooottttttddddddoooo",
+        "ooogggvvvvvvvggggggggooottdtttddddddoooo",
+        "ooogggvvvgvvvggggggggooottttttddddddoooo",
+        "ooogggvvvvvvvggggggggooottttttddddddoooo",
+        "ooogggvvvvvvvggggggggooottttttddddddoooo",
+        "ooogggvvvvvvvgggggggssssstttttddddddoooo",
+        "ooogggggggggggggggggsssssdddddddddddoooo",
+        "oooggggggwwwwwwwwggggoooddddddddddddoooo",
+        "oooggggggwwwwwwwwggggoooddddddddddddoooo",
+        "oooggggggwwwgwwwwggggoooddddddddddddoooo",
+        "oooggggggwwwwwwwwggggoooddddddddddddoooo",
+        "oooggggggwwwwwwwwggggoooddddddddddddoooo",
+        "oooggggggwwwwwwwwggggoooddddddddddddoooo",
+        "oooggggggggggggggggggoooddddddddddddoooo",
+        "oooggggggggggggggggggooooooooooooooooooo",
+        "oooggggggggggggggggggooooooooooooooooooo",
+        "ooooooooooooooooooooogoooooooooooooooooo",
+        "oooooooooooooooooooooogooooooooooooooooo",
+        "oooooooooooooooooooooooooooooooooooooooo",
+        "oooooooooooooooooooooooooooooooooooooooo",
+        "oooooooooooooooooooooooooooooooooooooooo"
+      ]
+    }
+  ]
+}
