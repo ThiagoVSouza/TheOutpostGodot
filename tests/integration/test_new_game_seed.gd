@@ -46,8 +46,10 @@ func test_begin_new_game_seeds_the_cast_resources_and_a_ticking_plot() -> void:
 	assert_true(Plans.due(plans, 2).is_empty(), "not yet due on day 2")
 	assert_false(Plans.due(plans, 3).is_empty(), "due by day 3")
 
-	# The opening the game screen shows, and the announcement.
-	assert_string_contains(String(kernel.state.get_value("opening_line", "")), "Livia")
+	# The facts the narrated opening will dress (the screen plays the `opening` workflow over them),
+	# and the announcement.
+	var opening: Dictionary = kernel.state.get_value("opening", {})
+	assert_eq(String(opening.get("hero", "")), "Livia", "the opening carries the hero's name")
 	assert_eq(started.size(), 1, "new_game_started fired once")
 
 
@@ -75,6 +77,25 @@ func test_letting_days_pass_ticks_the_seeded_plot_in_play() -> void:
 	var ticked := chronicled.filter(func(p: Dictionary) -> bool:
 		return String(p.get("msg", "")) == "base_game.plan_ticked")
 	assert_false(ticked.is_empty(), "the tick surfaced a chronicle line in play")
+
+
+func test_the_opening_workflow_narrates_over_the_seeded_facts() -> void:
+	# What the chat screen plays on first entry to a fresh game: the authored `opening` workflow
+	# narrates over the seed's facts (D30 — the opening is a workflow, not a static string, and the
+	# narrator is handed the decided facts rather than inventing them, D4).
+	var kernel := _kernel()
+	kernel.session.begin_new_game({"hero_name": "Livia"})
+	var facts: Dictionary = kernel.state.get_value("opening", {})
+	var definition: Variant = kernel.workflow_registry.get_definition("opening")
+	assert_true(definition is Dictionary, "base_game authors an opening workflow")
+
+	var instance := WorkflowInstance.create("opening", 1, facts, 0)
+	var result: RefCounted = await WorkflowExecutor.for_kernel(kernel).run(
+		definition as Dictionary, instance, AiTrace.new())
+
+	var prose := String(result.get("narration"))
+	assert_false(prose.is_empty(), "the opening produced narration")
+	assert_string_contains(prose, "Livia", "the narrator was handed the hero's name")
 
 
 func test_begin_new_game_replaces_a_previous_game() -> void:

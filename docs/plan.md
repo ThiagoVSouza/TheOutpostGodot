@@ -516,8 +516,16 @@ button is now a real **"Let a day pass"** control + a day indicator; advancing t
 `base_game.plan_ticked` chronicle line (i18n key + values, D24) so a background plot moving is
 visible in-game. The seeded `steward_extortion` plot's wake dropped 30 → **3 days** so the loop is
 observable in a short hands-on session (placeholder pacing). New end-to-end test drives the real
-seed through real clock advances; 301 green. **Still deferred:** module-pick screen + the
-module-config-driven multi-step wizard; a real narrated opening workflow; Settings/Help/News
+seed through real clock advances; 301 green.
+
+**Narrated opening — done (2026-07-24):** a fresh game plays a narrated opening once (the throne
+room, the king's charge) instead of a static line. Narration is a workflow (D30): the seed stashes
+the opening's **facts** (`opening = {hero, years}`, D4 — code decides), base_game authors a
+single-beat `opening` workflow (`narrate` over those facts), and the chat screen runs it through the
+executor on first entry to a fresh game, renders the prose, and clears the facts so it does not
+replay on remount. Falls back to a plain line if the narrator returns nothing (outage/stub). A
+fuller multi-beat opening can grow in the workflow without touching the screen. 302 green. **Still
+deferred:** module-pick screen + the module-config-driven multi-step wizard; Settings/Help/News
 screens.
 
 **Android UI issues** (found during the milestone-1 deploy, deliberately not fixed):

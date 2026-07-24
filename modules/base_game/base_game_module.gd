@@ -85,6 +85,10 @@ func register(kernel: GameKernel) -> void:
 	# then let the command own the numbers. One workflow serves every template because plot
 	# mutation lives in the command, not here (Fork 2).
 	kernel.workflow_registry.register(_plan_tick_workflow())
+	# The narrated opening a fresh game plays once (the throne room, the king's charge). Narration
+	# is a workflow (D30), not a static string: the seed decides the facts (who, how long), the
+	# narrator only dresses them (D4).
+	kernel.workflow_registry.register(_opening_workflow())
 	# Verification scaffolding, not game content: a workflow that stops to ask, so the
 	# confirm → suspend → resume path is drivable in the running app until authored content
 	# uses `confirm` for real. Registered **at boot** rather than on demand — a suspended
@@ -103,7 +107,8 @@ func register(kernel: GameKernel) -> void:
 ## marked** — like `_dev_confirm_workflow`, it exists so the full flow reaches a real, living game
 ## start until authored content replaces it. Everything goes through the whitelisted CommandBus (D4):
 ## a small cast with dispositions, starting resources, and one background plot that will tick as the
-## clock advances. The opening line is a placeholder for a real narrated opening workflow.
+## clock advances. It also stashes the opening's facts; the chat screen plays the narrated `opening`
+## workflow over them on first entry to a fresh game.
 func seed_new_game(kernel: GameKernel, params: Dictionary) -> void:
 	var hero_name := String(params.get("hero_name", "Marcus"))
 	var bus := kernel.commands
@@ -117,8 +122,9 @@ func seed_new_game(kernel: GameKernel, params: Dictionary) -> void:
 	# session so the living-world loop can be watched end to end (placeholder pacing).
 	bus.execute(CreatePlanCommand.new("steward_extortion", "steward_extortion", "plan_tick",
 		["steward", "hero"], "The King's Steward is pressuring the outpost for bribes.", 3))
-	kernel.state.set_value("opening_line",
-		"The King has granted you the outpost, %s. Make it endure — you have five years." % hero_name)
+	# The facts the opening narration will dress (D4: code decides, the narrator only tells). The
+	# chat screen plays the `opening` workflow over these on first entry to a fresh game.
+	kernel.state.set_value("opening", {"hero": hero_name, "years": 5})
 
 
 ## Dev-only (see `register`): stops to ask, then grants if the player agrees.
@@ -333,6 +339,25 @@ func _plan_tick_workflow() -> Dictionary:
 
 func _remember_development(text: String) -> Dictionary:
 	return {"op": "remember", "text": text, "subjects": "@subjects", "day": "@today", "kind": "plan"}
+
+
+## The narrated opening a fresh game plays once. A single `narrate` beat: the king receives the
+## newcomer and charges them to hold the outpost. The facts (who, how long) are the seed's; the
+## narrator dresses them into the scene (D4). Placeholder-authored — a fuller multi-beat opening
+## (arrival, the court, the charge) can grow here without touching the screen that plays it.
+func _opening_workflow() -> Dictionary:
+	return {
+		"op": "workflow", "id": "opening", "version": 1, "origin": "base_game",
+		"params": {"hero": {"type": "string"}, "years": {"type": "int"}},
+		"steps": [
+			{"op": "narrate",
+			 "instruction": "the king receives the newcomer in his throne room and charges them to "
+				+ "hold the frontier outpost and make it endure for the years of their mandate",
+			 "context": {"hero": "@hero", "years": "@years", "setting": "the king's throne room",
+				"charge": "hold the outpost and make it endure"},
+			 "verbosity": "long", "language": "en"}
+		]
+	}
 
 
 ## A tiny, validated workflow on the A3 kernel: read the food stores, emit a localizable
