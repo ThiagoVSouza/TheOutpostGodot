@@ -122,10 +122,31 @@ func start_new(name: String = DEFAULT_SLOT_NAME) -> void:
 	# workspace().clear() already removed the memory log file; this drops the in-memory cache too,
 	# so the new game does not remember the previous one's events (D34: replace, never merge).
 	_kernel.memories.clear()
+	# A new game is a clean world, so reset the authoritative *in-memory* stores too — not only the
+	# on-disk workspace. Otherwise starting a new game mid-session inherits the previous game's state,
+	# globals, day and pending questions (D34: replace, never merge). Mirrors SaveManager.restore's
+	# reset set; empty dicts default each store to its initial state.
+	_kernel.state.from_dict({})
+	_kernel.globals.from_dict({})
+	_kernel.clock.from_dict({})
+	_kernel.workflow_instances.from_dict({})
 	slot_id = ""
 	slot_name = name
 	_last_snapshot_day = 0
 	session_changed.emit(slot_id, slot_name)
+
+
+## Begin a new game and seed its starting world (the in-game phase). Clears the previous game
+## ([method start_new]), then lets each loaded module create its own starting cast/state/plots
+## through [method Module.seed_new_game], announces `new_game_started`, and checkpoints so the fresh
+## world survives a crash before the first turn. [param params] carries the new-game choices
+## (e.g. `hero_name`) collected by the new-game screen.
+func begin_new_game(params: Dictionary = {}) -> void:
+	start_new(String(params.get("hero_name", DEFAULT_SLOT_NAME)))
+	for module: Module in _kernel.modules.loaded_modules():
+		module.seed_new_game(_kernel, params)
+	_kernel.events.emit("new_game_started", params)
+	checkpoint("new_game")
 
 
 ## Load a slot snapshot over the current game. The workspace is replaced wholesale — a leftover

@@ -18,6 +18,8 @@ var command_registry: CommandRegistry
 var tools: ToolRegistry
 var modules: ModuleRegistry
 var screens: ScreenRegistry
+## Runtime screen navigation (the in-game boot flow). Stateless — swaps the one mounted screen.
+var router: ScreenRouter
 var ai: AiBackend
 var ai_availability: AiAvailability
 var llama_server_manager: LlamaServerManager
@@ -91,6 +93,11 @@ func boot() -> void:
 	tools = ToolRegistry.new()
 	modules = ModuleRegistry.new(log)
 	screens = ScreenRegistry.new()
+	# Screen navigation + the core app-shell screens (splash → loading → menu → new game → load).
+	# Registered before modules so the router can reach them; the boot scene sets the host and the
+	# first screen. Modules still register their own game screens (e.g. base_game.chat).
+	router = ScreenRouter.new(screens)
+	AppShell.register_screens(self)
 
 	# 6. AI seam — FakeAiBackend by default; real backends swap in later. Availability
 	#    implements the T5 outage policy (D16 amendment); a provider closure keeps it
