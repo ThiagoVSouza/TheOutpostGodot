@@ -39,24 +39,49 @@ func _ready() -> void:
 	Kernel.events.subscribe("workflow_emit", _on_workflow_emit)
 	# T5: reflect AI outage/recovery state as system messages + the Retry control.
 	Kernel.events.subscribe(AiAvailability.EVENT_NAME, _on_ai_availability_changed)
-	# Boot has already resumed the session by now, so say which settlement this is — opening
-	# into a loaded world with no acknowledgement reads as if nothing was saved.
-	var opening := String(Kernel.state.get_value("opening_line", ""))
-	if Kernel.session.has_slot():
-		_append("[b]%s[/b] — day %d. Welcome back." % [Kernel.session.slot_name, Kernel.clock.total_days])
-	elif not opening.is_empty():
-		# A fresh game seeded an opening (the in-game phase). Placeholder for a real narrated
-		# opening workflow (throne room, the king's charge).
-		_append("[color=wheat]%s[/color]" % opening)
-	else:
-		_append("[b]The Outpost[/b] — the game master awaits. Describe what you do.")
+	# Status is shown before the greeting so day/resources are up even while a narrated opening
+	# (an AI await) is still resolving.
 	_refresh_day()
 	_refresh_resources()
 	_refresh_slots()
+	# Boot has already resumed the session by now, so say which settlement this is — opening
+	# into a loaded world with no acknowledgement reads as if nothing was saved.
+	if Kernel.session.has_slot():
+		_append("[b]%s[/b] — day %d. Welcome back." % [Kernel.session.slot_name, Kernel.clock.total_days])
+	elif not (Kernel.state.get_value("opening", {}) as Dictionary).is_empty():
+		# A fresh game carries the opening's facts; play the narrated opening over them.
+		await _play_opening()
+	else:
+		_append("[b]The Outpost[/b] — the game master awaits. Describe what you do.")
 	# The GATE 0 call for M4: a question the player was asked before they closed the game is
 	# put back in front of them, not silently cancelled. B1 kept the instance; this is the half
 	# that lets them actually answer it.
 	_present_oldest_pending()
+
+
+## Play the narrated opening for a fresh game (the throne room, the king's charge). Narration is a
+## workflow (D30), so this runs the authored `opening` workflow through the executor and renders its
+## prose — the same seam a turn narrates through, not a hardcoded string. Input is locked while it
+## resolves (a real narrator is an AI await); the opening facts are cleared afterward so it does not
+## replay if the screen remounts within the session.
+func _play_opening() -> void:
+	var facts: Dictionary = Kernel.state.get_value("opening", {})
+	var definition: Variant = Kernel.workflow_registry.get_definition("opening")
+	if not (definition is Dictionary):
+		_append("[b]The Outpost[/b] — the game master awaits. Describe what you do.")
+		return
+	_set_busy(true)
+	var instance := WorkflowInstance.create(
+		"opening", int((definition as Dictionary).get("version", 1)), facts, 0)
+	var result: RefCounted = await WorkflowExecutor.for_kernel(Kernel).run(
+		definition as Dictionary, instance, AiTrace.new())
+	var prose := String(result.get("narration"))
+	if prose.is_empty():
+		# The narrator produced nothing (an outage, or the base stub): a fresh game still opens.
+		prose = "The King has granted you the outpost. Make it endure."
+	_append("[color=wheat]%s[/color]" % prose)
+	Kernel.state.set_value("opening", {})  # played once; do not replay on remount
+	_set_busy(false)
 
 
 func _build_ui() -> void:
