@@ -586,10 +586,46 @@ asserted headless.
 - `GameSession` now names the keys both ends agree on (`PROFILE_STATE_KEY`, `PROFILE_VERBOSITY`,
   `OUTPOST_FLAG_STATE_KEY`): the core wizard collects the answers, a module writes them into state
   while seeding, and core reads back the parts it owns — by constant, not by matching literals.
-- **Still not consumed:** `background` and `outpost_location`. What each should change about the
-  start (resources, cast, the seeded plot) is a **content decision, not a wiring one** — the legacy
-  per-card "starts with…" text in `content/base/screens/new-game*.json` is the design source, and it
-  needs the user's call before anything is coded against it.
+- ~~**Still not consumed:** `background` and `outpost_location`~~ **Wired (2026-07-25), see below.**
+
+**Background + location now drive the start — done (2026-07-25).** The last two wizard answers
+were reviewed against the legacy Tauri wizard's actual "starts with" data (`new-game-setup.json`,
+an `apply_effect_set` workflow keyed by background/location) before coding anything, per the
+content-decision gate #50 raised. The legacy numbers assume a full economy (population
+happiness/loyalty/trust, a tech tree, per-tick production, a wood/stone/leather/coins palette) —
+none of which exists in this port — so the numbers are a rescaled, **deliberately provisional**
+first pass onto what actually exists (`food`/`gold`, entity traits/disposition, the memory store),
+explicitly agreed with the user as being about proving the wiring works, not locking in a balance.
+
+- **One table, `base_game_module.gd`'s `BACKGROUND_EFFECTS`/`LOCATION_EFFECTS`,** keyed by the
+  wizard's own ids: an optional resource grant (on top of the flat starting grant), an optional
+  disposition nudge to an *existing* entity (only where the flavor text plausibly implies a
+  relationship — Knight→king, Noble→steward; the other three touch no relationship rather than
+  inventing one), a trait, and one origin-memory line. Every number and string lives in the table;
+  `seed_new_game` and the new `_apply_start_effect` helper never branch on the id directly, so
+  retuning the balance is a one-place edit.
+- **Memories, not just state.** Each choice records one line via `MemoryStore` (background tagged
+  to `hero`, location tagged to `outpost`, `kind: "origin"`) — the M5 memory system's first content
+  about how the game itself started, not only about the steward plot. This was `briefing1.md`'s
+  original vision for the wizard ("writes the initial memories those choices imply"), previously
+  unbuilt.
+- **Deliberately still not touched:** `outpost_location` → map placement. `BaseGameMap
+  .HABITABLE_BIOMES` has no forest/mountain biome in the demo terrain set, so there is nothing to
+  honour the choice with yet — placement stays the existing "nearest habitable cell to centre" rule
+  regardless of location, unchanged from before this work. New resource types (`wood`/`stone`) were
+  also deliberately left out — technically cheap (`GrantResourceCommand`'s resource name is
+  free-form and the status line already renders whatever keys exist) but currently inert, since
+  nothing spends them yet.
+- **Tests read the table, not literal numbers** (the user's explicit structural ask): every new
+  test picks *whichever* background/location entry has the field it's exercising and asserts the
+  resulting state matches that entry's own values — a resource/disposition test compares against a
+  same-seed baseline with no choice made and checks the *delta* equals the table's `amount`/
+  `disposition_delta`, so retuning the table (or the flat starting grant) never requires rewriting
+  a test. One additional test drives every single background/location id and asserts zero
+  `command_rejected` events, catching a bad `disposition_target` typo without a per-entry
+  assertion. 8 new tests, 370 green. **Verified live** (a throwaway driver script, deleted after):
+  Knight + Mountains produced exactly the combined expected state — food 30, gold 15, hero traits
+  `[founder, knight]`, king disposition 15, and both origin memories recorded and correctly tagged.
 
 **`tools/capture_screens.gd` (new).** Mounts each registered screen in a real window, renders it and
 saves a PNG (`user://screens/`, or `OUTPOST_CAPTURE_DIR`). It exists because "verified headless
@@ -706,6 +742,24 @@ name, sex, outpost name, flag designer), **Settings** — collecting a `fields` 
 begin-new-game. Screens are JSON (`heading`/`card-choice`/`field`/`choice`/`flag-designer` body
 types). This is the shape the deferred module-config wizard should take: the current single-field
 new-game screen grows into this multi-step flow, its `fields` feeding `seed_new_game`.
+
+**Video settings: window mode + V-Sync — done (2026-07-25).** The two controls #52 called out as
+"cheapest to make real next" are now wired, following the same shape as narration/audio:
+`AppSettings` gained `window_mode()`/`vsync_mode()` (persisted in the `video` section of
+`settings.cfg`, unknown stored values refused back to a known default rather than trusted) and
+`apply_video()`, which pushes them onto the real `DisplayServer` — guarded by
+`DisplayServer.get_name() == "headless"` so the test runner's dummy driver never gets a real call,
+the same shape as the trace writer/audio/persistence test-runner guards. Called at boot (right
+after `apply_audio`) and whenever the settings screen's two now-live Video-tab rows change.
+"Borderless" is windowed + the borderless flag (not a resize to the monitor); "Fullscreen" is
+Godot's own `WINDOW_MODE_FULLSCREEN`. **Verified against a real window**, not only headless: a
+throwaway driver script (deleted after, per the standing convention) drove all three window modes
+and all three V-Sync modes through the real `DisplayServer` and read back what actually landed.
+One real-platform finding, not a bug: requesting Adaptive V-Sync silently lands as plain V-Sync
+under this machine's Compatibility/OpenGL 3.3 driver — reproduced with a raw `DisplayServer` call
+bypassing this code entirely, so it is the renderer's own fallback, not this change's doing.
+`tools/capture_screens.gd`'s Video-tab capture confirms the two rows now render enabled
+(un-tagged) beside the rest of the tab's still-`planned` rows. 362 tests green (356 + 6 new).
 
 **Android UI issues** (found during the milestone-1 deploy, deliberately not fixed):
 

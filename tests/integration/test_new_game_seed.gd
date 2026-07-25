@@ -4,6 +4,14 @@ extends GutTest
 ## whitelisted CommandBus, producing a named hero, a small cast with dispositions, starting
 ## resources, and one ticking plot — then announces new_game_started.
 
+## The wizard's background/location -> state/memory wiring (base_game_module.gd's
+## BACKGROUND_EFFECTS/LOCATION_EFFECTS) is deliberately a provisional first pass — the numbers are
+## expected to be retuned. These tests read the *same table the code reads* rather than hard-coding
+## expected amounts, so retuning the table never requires rewriting a test: only the wiring is
+## pinned (a chosen background/location produces the state its own table entry says it should),
+## never a specific number.
+const BaseGameModule := preload("res://modules/base_game/base_game_module.gd")
+
 const SCRATCH_WORK := "user://test_seed_work"
 
 
@@ -203,3 +211,136 @@ func test_begin_new_game_replaces_a_previous_game() -> void:
 	# and the plot is created fresh (create_plan would reject a duplicate otherwise).
 	assert_eq(String(Entities.get_entity(kernel.state, "hero").get("name", "")), "Second")
 	assert_eq((kernel.state.get_value("plans", {}) as Dictionary).size(), 1, "one plot, not two")
+
+
+# --- Background / location wiring ------------------------------------------------------------
+
+func _first_with_key(table: Dictionary, key: String) -> String:
+	for id in table:
+		if (table[id] as Dictionary).has(key):
+			return String(id)
+	return ""
+
+
+func test_a_backgrounds_resource_bonus_lands_on_top_of_the_flat_starting_grant() -> void:
+	var id := _first_with_key(BaseGameModule.BACKGROUND_EFFECTS, "resource")
+	assert_false(id.is_empty(), "at least one background grants a resource, to exercise this path")
+	var effect: Dictionary = BaseGameModule.BACKGROUND_EFFECTS[id]
+	var resource := String(effect["resource"])
+
+	var baseline := _kernel()
+	baseline.session.begin_new_game({"hero_name": "Livia"})
+	var base_amount := int((baseline.state.get_value("resources", {}) as Dictionary).get(resource, 0))
+
+	var kernel := _kernel()
+	kernel.session.begin_new_game({"hero_name": "Livia", "background": id})
+	var chosen_amount := int((kernel.state.get_value("resources", {}) as Dictionary).get(resource, 0))
+
+	assert_eq(chosen_amount - base_amount, int(effect["amount"]),
+		"the background's table amount landed on top of the baseline, whatever either happens to be")
+
+
+func test_a_backgrounds_trait_lands_on_the_hero_alongside_founder() -> void:
+	var id := _first_with_key(BaseGameModule.BACKGROUND_EFFECTS, "trait")
+	assert_false(id.is_empty(), "at least one background grants a trait, to exercise this path")
+	var expected_trait := String(BaseGameModule.BACKGROUND_EFFECTS[id]["trait"])
+
+	var kernel := _kernel()
+	kernel.session.begin_new_game({"hero_name": "Livia", "background": id})
+
+	var traits: Array = Entities.get_entity(kernel.state, "hero").get("traits", [])
+	assert_true(traits.has(expected_trait), "the background's own trait was added to the hero")
+	assert_true(traits.has("founder"), "and the base trait is still there too")
+
+
+func test_a_backgrounds_disposition_nudge_lands_on_its_own_target() -> void:
+	var id := _first_with_key(BaseGameModule.BACKGROUND_EFFECTS, "disposition_target")
+	assert_false(id.is_empty(),
+		"at least one background nudges a disposition, to exercise this path")
+	var effect: Dictionary = BaseGameModule.BACKGROUND_EFFECTS[id]
+	var target := String(effect["disposition_target"])
+
+	var baseline := _kernel()
+	baseline.session.begin_new_game({"hero_name": "Livia"})
+	var base_disposition := Entities.disposition(baseline.state, target)
+
+	var kernel := _kernel()
+	kernel.session.begin_new_game({"hero_name": "Livia", "background": id})
+	var chosen_disposition := Entities.disposition(kernel.state, target)
+
+	assert_eq(chosen_disposition - base_disposition, int(effect["disposition_delta"]),
+		"the background's own delta landed on its own target, on top of the baseline")
+
+
+func test_a_backgrounds_origin_memory_is_recorded_and_tagged_to_the_hero() -> void:
+	var id := _first_with_key(BaseGameModule.BACKGROUND_EFFECTS, "memory")
+	assert_false(id.is_empty(), "every background grants a memory, to exercise this path")
+	var expected_text := String(BaseGameModule.BACKGROUND_EFFECTS[id]["memory"])
+
+	var kernel := _kernel()
+	kernel.session.begin_new_game({"hero_name": "Livia", "background": id})
+
+	var recalled: Array = kernel.memories.retrieve(["hero"], 10)
+	var texts: Array = recalled.map(func(m: Dictionary) -> String: return String(m.get("text", "")))
+	assert_true(texts.has(expected_text), "the background's own origin line reached the memory store")
+
+
+func test_a_locations_resource_bonus_lands_on_top_of_the_flat_starting_grant() -> void:
+	var id := _first_with_key(BaseGameModule.LOCATION_EFFECTS, "resource")
+	assert_false(id.is_empty(), "at least one location grants a resource, to exercise this path")
+	var effect: Dictionary = BaseGameModule.LOCATION_EFFECTS[id]
+	var resource := String(effect["resource"])
+
+	var baseline := _kernel()
+	baseline.session.begin_new_game({"hero_name": "Livia"})
+	var base_amount := int((baseline.state.get_value("resources", {}) as Dictionary).get(resource, 0))
+
+	var kernel := _kernel()
+	kernel.session.begin_new_game({"hero_name": "Livia", "outpost_location": id})
+	var chosen_amount := int((kernel.state.get_value("resources", {}) as Dictionary).get(resource, 0))
+
+	assert_eq(chosen_amount - base_amount, int(effect["amount"]),
+		"the location's table amount landed on top of the baseline, whatever either happens to be")
+
+
+func test_a_locations_origin_memory_is_recorded_and_tagged_to_the_outpost() -> void:
+	var id := _first_with_key(BaseGameModule.LOCATION_EFFECTS, "memory")
+	assert_false(id.is_empty(), "every location grants a memory, to exercise this path")
+	var expected_text := String(BaseGameModule.LOCATION_EFFECTS[id]["memory"])
+
+	var kernel := _kernel()
+	kernel.session.begin_new_game({"hero_name": "Livia", "outpost_location": id})
+
+	var recalled: Array = kernel.memories.retrieve(["outpost"], 10)
+	var texts: Array = recalled.map(func(m: Dictionary) -> String: return String(m.get("text", "")))
+	assert_true(texts.has(expected_text), "the location's own origin line reached the memory store")
+
+
+func test_an_unrecognised_background_or_location_is_a_safe_no_op() -> void:
+	# A blank or typo'd id (the wizard's own defaults, or a future authoring mistake) must not
+	# crash the seed — it just grants nothing extra, same as choosing nothing at all.
+	var kernel := _kernel()
+	kernel.session.begin_new_game({"hero_name": "Livia", "background": "not_a_real_background",
+		"outpost_location": "not_a_real_location"})
+	assert_eq(String(Entities.get_entity(kernel.state, "hero").get("name", "")), "Livia")
+
+
+func test_every_background_and_location_effect_applies_without_a_single_command_rejection() -> void:
+	# The catch-all: whatever the table's numbers end up being, every entry's disposition_target
+	# (if any) has to name a real entity, and every resource/amount pair has to be valid — this
+	# fails loudly on a typo in the table without needing a per-entry assertion for it.
+	for background in BaseGameModule.BACKGROUND_EFFECTS:
+		var kernel := _kernel()
+		var rejected: Array = []
+		kernel.events.subscribe("command_rejected", func(p: Dictionary) -> void: rejected.append(p))
+		kernel.session.begin_new_game({"hero_name": "Livia", "background": String(background)})
+		assert_true(rejected.is_empty(), "background '%s' had a rejected command: %s" %
+			[background, rejected])
+
+	for location in BaseGameModule.LOCATION_EFFECTS:
+		var kernel := _kernel()
+		var rejected: Array = []
+		kernel.events.subscribe("command_rejected", func(p: Dictionary) -> void: rejected.append(p))
+		kernel.session.begin_new_game({"hero_name": "Livia", "outpost_location": String(location)})
+		assert_true(rejected.is_empty(), "location '%s' had a rejected command: %s" %
+			[location, rejected])
