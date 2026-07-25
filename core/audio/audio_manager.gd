@@ -22,7 +22,14 @@ extends Node
 const MUSIC := "music"
 const SFX := "sfx"
 const AMBIENCE := "ambience"
+
+## The sections a manifest may declare cues under.
 const CATEGORIES: Array[String] = [MUSIC, SFX, AMBIENCE]
+
+## Everything that has a level a player can set. Wider than [constant CATEGORIES] by `master`, which
+## is a level over all the others rather than a place cues live — no manifest declares `master` cues.
+const MASTER := "master"
+const MIXER_LEVELS: Array[String] = [MASTER, MUSIC, SFX, AMBIENCE]
 
 ## How many effects can overlap before the oldest is cut off. Effects are fire-and-forget, so they
 ## need somewhere to land that is not "the one player, interrupting whatever is on it" — two buttons

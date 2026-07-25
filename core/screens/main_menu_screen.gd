@@ -40,7 +40,7 @@ func _build_ui() -> void:
 	col.add_child(_menu_button("Continue", _on_continue, can_continue))
 	col.add_child(_menu_button("New Game", _on_new_game, true))
 	col.add_child(_menu_button("Load Game", _on_load, not Kernel.saves.slots().is_empty()))
-	col.add_child(_menu_button("Settings", Callable(), false))
+	col.add_child(_menu_button("Settings", _on_settings, true))
 	col.add_child(_menu_button("Help", Callable(), false))
 	col.add_child(_menu_button("News", Callable(), false))
 
@@ -75,3 +75,9 @@ func _on_new_game() -> void:
 
 func _on_load() -> void:
 	Kernel.router.goto("core.load")
+
+
+## Tell the settings screen where Back goes, rather than letting it assume: the same screen is meant
+## to be reachable from inside a game later, and the router keeps no history to infer it from.
+func _on_settings() -> void:
+	Kernel.router.goto("core.settings", {"back": "core.main_menu"})

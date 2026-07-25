@@ -54,6 +54,10 @@ var narration: NarrationSettings
 ## Music and sound effects, from cues modules declare in data. A child node, not a bare
 ## [RefCounted]: it owns [AudioStreamPlayer]s, which have to live in the tree.
 var audio: AudioManager
+
+## The player's app-level preferences (audio levels today), persisted outside any save — they belong
+## to the person, not to a settlement.
+var settings: AppSettings
 var prompt_families: PromptFamilyRegistry
 var ai_runner: DslAiRunner
 
@@ -89,6 +93,10 @@ func boot() -> void:
 	#     and the very first screen already has sound.
 	audio = AudioManager.new(log)
 	add_child(audio)
+	# The player's own preferences, applied to the mixer before anything can be heard.
+	settings = AppSettings.new()
+	settings.load_from_disk()
+	settings.apply_audio(audio)
 
 	# 2-3. Communication + state.
 	events = EventBus.new()
