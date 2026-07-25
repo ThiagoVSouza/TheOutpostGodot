@@ -12,9 +12,10 @@ Decisions and their evidence: `docs/decisions.md`. Measurements:
 gates. **GATE 0 there is binding: no production code before a direction review
 with the user.**
 
-Last updated: 2026-07-25 (wizard choices drive the game — narration length, the outpost's flag; the
-game has sound; the outpost stands on the overworld. The flow is now run in a window each time, via
-`tools/capture_screens.gd`, which is finding real bugs)
+Last updated: 2026-07-25 (wizard choices drive the game; the game has sound; the outpost stands on the
+overworld; a full settings screen exists, mostly as marked placeholders; the splash carries the real
+logo. The flow is now run in a window each time via `tools/capture_screens.gd`, which is finding real
+bugs)
 
 ---
 
@@ -599,6 +600,42 @@ with no scrollbar to reach it** (cards now share the row and wrap their text), a
 painted no background at all, falling through to Godot's light default — the shell went dark and the
 game went grey, reading as two different applications. `ShellPalette` (`core/screens/`) now names
 the few colours the shell paints with, replacing the same near-black copied into five screens.
+
+**Settings screen — done (2026-07-25), mostly as marked placeholders.** `core.settings`, reached from
+the main menu, with six tabs: Gameplay, Audio, Video, Controls, Language, Accessibility. Built out to
+its **full shape** deliberately, because the shape is a design document — it is where you can see that
+rebinding needs an `InputMap` that does not exist, that a resolution list needs a window-mode policy
+nobody has decided, and roughly how much is left.
+- **Every unwired control is disabled *and* tagged `planned`.** A slider that moves and changes
+  nothing is worse than an empty section, because it looks finished. Disabled alone is not enough
+  either — a greyed control reads as "unavailable right now", not "not built yet", so the tag carries
+  the difference. A test asserts one tag per inert control, no more and no fewer.
+- **What actually works:** the four audio levels (master/music/effects/ambience, live on their buses
+  and persisted) and narration length.
+- **New `AppSettings`** (`core/settings/`, kernel field `settings`) — a `ConfigFile` at
+  `user://settings.cfg`, an ini because it is the one file a player may reasonably hand-edit when
+  something has gone wrong. Deliberately narrow: it stores only settings wired to something, since a
+  persisted key nothing reads is worse than an obviously-empty section. Distinct from
+  `GameState["profile"]` on purpose — **how loud the music is belongs to the person, not to a
+  settlement**, so loading a different save must not change it (classified RUNTIME in
+  `test_load_isolation.gd` for that reason). Defaults are a complete playable configuration, so a
+  missing *or damaged* file reads as "unset" rather than refusing to start.
+- **Narration is now two layers, each with one job.** `AppSettings.narration_level` is the person's
+  usual preference and pre-selects the wizard's Settings step (previously a hardcoded default forever,
+  no matter how often they changed it); the per-game value in `profile` is what governs a game once it
+  exists. Changing it in Settings writes both, and calls `apply_player_preferences()` so a game in
+  progress hears it immediately.
+- `AudioManager` gained `MIXER_LEVELS` (= `master` + the three manifest `CATEGORIES`): `master` is a
+  level over the others rather than a place cues live, and no manifest declares `master` cues.
+- **Still deferred:** everything tagged. Cheapest to make real next are window mode and V-Sync (a few
+  `DisplayServer` calls plus two `AppSettings` keys); the expensive one is key rebinding, which needs
+  the `InputMap` actions defined first — the tab's list is the intended set.
+
+**The splash shows the real logo (2026-07-25).** `core/assets/pangea_logo.png` on a true black field,
+scaled to a share of the viewport in its own aspect so it holds its proportion on a phone and on a
+desktop. Note on the asset: it is an **opaque near-white plate with the mark knocked out to full
+transparency**, so on black it reads as a dark mark inside a white badge. A white mark directly on
+black would need the alpha inverted. An animated reveal is still to come.
 
 **Audio — done (2026-07-25).** There was no player at all; the assets had been staged for weeks.
 `AudioManager` (`core/audio/`, kernel field `audio`, a Node because it owns `AudioStreamPlayer`s)

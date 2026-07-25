@@ -37,6 +37,9 @@ const CONTENT: Array[String] = ["command_registry", "tools", "modules", "screens
 ## `new_game_started` and `game_loaded`, so there is nothing here to replace. Leaving it out of that
 ## re-derivation — not its absence from this list — is what would let one game's setting govern the
 ## next, and `test_new_game_seed.gd` covers exactly that.
+## `settings` is the player's app-level preferences (audio levels), kept in `user://settings.cfg`
+## *outside* any save and deliberately untouched by a load: how loud the music is belongs to the
+## person, not to a settlement, so loading a different game must not change it.
 ## `memories` sits here like `workspace`/`saves`/`trace_writer`: the field is a file-backed store,
 ## and its data lives in an append-only JSONL in the workspace dir (M5, D37). The workspace
 ## lifecycle governs replacement — `SaveWorkspace.clear()` removes the file and `GameSession`
@@ -44,7 +47,7 @@ const CONTENT: Array[String] = ["command_registry", "tools", "modules", "screens
 const RUNTIME: Array[String] = ["log", "events", "commands", "ai", "ai_availability",
 	"llama_server_manager", "ai_orchestrator", "trace_writer", "input_router", "saves",
 	"workspace", "session", "narrator", "narration", "ai_runner", "plan_ticker", "memories",
-	"router", "audio"]
+	"router", "audio", "settings"]
 
 
 func after_each() -> void:

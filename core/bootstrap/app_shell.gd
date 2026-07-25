@@ -15,6 +15,7 @@ const LOADING := preload("res://core/screens/loading_screen.tscn")
 const MAIN_MENU := preload("res://core/screens/main_menu_screen.tscn")
 const NEW_GAME := preload("res://core/screens/new_game_screen.tscn")
 const LOAD := preload("res://core/screens/load_screen.tscn")
+const SETTINGS := preload("res://core/screens/settings_screen.tscn")
 
 
 static func register_screens(kernel: GameKernel) -> void:
@@ -23,3 +24,4 @@ static func register_screens(kernel: GameKernel) -> void:
 	kernel.screens.register("core.main_menu", MAIN_MENU)
 	kernel.screens.register("core.new_game", NEW_GAME)
 	kernel.screens.register("core.load", LOAD)
+	kernel.screens.register("core.settings", SETTINGS)

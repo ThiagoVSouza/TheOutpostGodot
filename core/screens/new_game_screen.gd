@@ -64,6 +64,9 @@ var _next_btn: Button = null
 
 var _selected_background := ""
 var _selected_location := ""
+## Starts at the player's app-level preference rather than a hardcoded default, so someone who always
+## wants long prose is not re-choosing it at every new game. Read in `_build_settings_step`, since
+## `Kernel` is not available at property-initialisation time.
 var _selected_verbosity := NarrationSettings.LEVEL_NORMAL
 var _sex := "male"
 
@@ -399,6 +402,7 @@ func _randomize_flag() -> void:
 # --- Step 4: Settings ----------------------------------------------------------------------
 
 func _build_settings_step() -> Control:
+	_selected_verbosity = Kernel.settings.narration_level()
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", 10)
 	col.add_child(_field_label("How should the game master narrate?"))

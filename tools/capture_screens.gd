@@ -57,6 +57,17 @@ func _run() -> void:
 	await _capture_screen("core.loading", "00b_loading", {"next": "core.main_menu"})
 	await _capture_screen("core.main_menu", "01_main_menu")
 
+	# Every settings tab, not just the one that opens: most of the screen is placeholders whose whole
+	# job is to be looked at, and a tab nobody captures is a tab nobody checks.
+	var settings := await _mount("core.settings")
+	if settings != null:
+		var tabs := _find_tabs(settings)
+		if tabs != null:
+			for i in tabs.get_tab_count():
+				tabs.current_tab = i
+				await _shoot("01%s_settings_%s" % [char("a".unicode_at(0) + i),
+					tabs.get_tab_title(i).to_lower()])
+
 	# The wizard's four steps. `goto` mounts it; stepping is what a player's Next does, so drive
 	# the same private helper the Next button drives rather than faking four separate screens.
 	var wizard := await _mount("core.new_game")
@@ -111,6 +122,18 @@ func _mount(screen_id: String, params: Dictionary = {}) -> Node:
 	# `goto` appends the new screen and queue_free()s the old one, so the freeing sibling may
 	# still be a child this frame: the newest child is the mounted screen.
 	return _host.get_child(_host.get_child_count() - 1)
+
+
+## The first [TabContainer] anywhere under [param node], so the capture does not depend on how deeply
+## a screen happens to nest it.
+func _find_tabs(node: Node) -> TabContainer:
+	if node is TabContainer:
+		return node as TabContainer
+	for child in node.get_children():
+		var found := _find_tabs(child)
+		if found != null:
+			return found
+	return null
 
 
 func _capture_scene(path: String, name: String) -> void:
