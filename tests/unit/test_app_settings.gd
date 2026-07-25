@@ -73,6 +73,43 @@ func test_an_unreadable_narration_level_is_refused() -> void:
 	assert_eq(settings.narration_level(), before, "the stored level stays a known one")
 
 
+func test_window_mode_and_vsync_default_to_a_playable_configuration() -> void:
+	var settings := AppSettings.new(SCRATCH)
+	assert_eq(settings.window_mode(), AppSettings.WINDOW_MODE_WINDOWED)
+	assert_eq(settings.vsync_mode(), AppSettings.VSYNC_ON)
+
+
+func test_window_mode_and_vsync_survive_a_restart() -> void:
+	var settings := _settings()
+	settings.set_window_mode(AppSettings.WINDOW_MODE_FULLSCREEN)
+	settings.set_vsync_mode(AppSettings.VSYNC_OFF)
+	assert_true(settings.save())
+
+	var reopened := AppSettings.new(SCRATCH)
+	reopened.load_from_disk()
+	assert_eq(reopened.window_mode(), AppSettings.WINDOW_MODE_FULLSCREEN)
+	assert_eq(reopened.vsync_mode(), AppSettings.VSYNC_OFF)
+
+
+func test_an_unknown_window_mode_or_vsync_value_is_refused() -> void:
+	var settings := _settings()
+	var before_mode := settings.window_mode()
+	var before_vsync := settings.vsync_mode()
+	settings.set_window_mode("holographic")
+	settings.set_vsync_mode("triple-buffered")
+	assert_eq(settings.window_mode(), before_mode, "the stored mode stays a known one")
+	assert_eq(settings.vsync_mode(), before_vsync, "the stored vsync mode stays a known one")
+
+
+func test_applying_video_does_not_crash_headless() -> void:
+	# The test runner has no real window (DisplayServer.get_name() == "headless"); apply_video()
+	# must no-op rather than call into a display server that is not there.
+	assert_eq(DisplayServer.get_name(), "headless", "this test's premise")
+	var settings := _settings()
+	settings.apply_video()
+	assert_true(true, "apply_video() returned instead of calling into a display server that is not there")
+
+
 func test_applying_puts_the_levels_on_the_buses() -> void:
 	var audio := AudioManager.new()
 	add_child_autofree(audio)
@@ -99,9 +136,13 @@ func test_reset_returns_every_value_to_its_default() -> void:
 	var settings := _settings()
 	settings.set_audio_volume(AudioManager.MUSIC, 0.1)
 	settings.set_narration_level(NarrationSettings.LEVEL_TOPICS)
+	settings.set_window_mode(AppSettings.WINDOW_MODE_FULLSCREEN)
+	settings.set_vsync_mode(AppSettings.VSYNC_OFF)
 
 	settings.reset_to_defaults()
 
 	assert_almost_eq(settings.audio_volume(AudioManager.MUSIC),
 		float(AppSettings.DEFAULTS[AudioManager.MUSIC]), 0.001)
 	assert_eq(settings.narration_level(), NarrationSettings.LEVEL_NORMAL)
+	assert_eq(settings.window_mode(), AppSettings.WINDOW_MODE_WINDOWED)
+	assert_eq(settings.vsync_mode(), AppSettings.VSYNC_ON)

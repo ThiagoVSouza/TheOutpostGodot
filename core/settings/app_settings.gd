@@ -20,6 +20,19 @@ const PATH := "user://settings.cfg"
 const AUDIO_SECTION := "audio"
 const GAMEPLAY_SECTION := "gameplay"
 const NARRATION_KEY := "narration_level"
+const VIDEO_SECTION := "video"
+const WINDOW_MODE_KEY := "window_mode"
+const VSYNC_KEY := "vsync_mode"
+
+const WINDOW_MODE_WINDOWED := "windowed"
+const WINDOW_MODE_BORDERLESS := "borderless"
+const WINDOW_MODE_FULLSCREEN := "fullscreen"
+const WINDOW_MODES := [WINDOW_MODE_WINDOWED, WINDOW_MODE_BORDERLESS, WINDOW_MODE_FULLSCREEN]
+
+const VSYNC_OFF := "off"
+const VSYNC_ON := "on"
+const VSYNC_ADAPTIVE := "adaptive"
+const VSYNC_MODES := [VSYNC_OFF, VSYNC_ON, VSYNC_ADAPTIVE]
 
 ## Default levels, 0..1 linear. Music sits below effects so narration and UI stay legible over it.
 const DEFAULTS := {
@@ -90,6 +103,50 @@ func narration_level() -> String:
 func set_narration_level(level: String) -> void:
 	if NarrationSettings.is_level(level):
 		_config.set_value(GAMEPLAY_SECTION, NARRATION_KEY, level)
+
+
+func window_mode() -> String:
+	var stored := String(_config.get_value(VIDEO_SECTION, WINDOW_MODE_KEY, WINDOW_MODE_WINDOWED))
+	return stored if WINDOW_MODES.has(stored) else WINDOW_MODE_WINDOWED
+
+
+func set_window_mode(mode: String) -> void:
+	if WINDOW_MODES.has(mode):
+		_config.set_value(VIDEO_SECTION, WINDOW_MODE_KEY, mode)
+
+
+func vsync_mode() -> String:
+	var stored := String(_config.get_value(VIDEO_SECTION, VSYNC_KEY, VSYNC_ON))
+	return stored if VSYNC_MODES.has(stored) else VSYNC_ON
+
+
+func set_vsync_mode(mode: String) -> void:
+	if VSYNC_MODES.has(mode):
+		_config.set_value(VIDEO_SECTION, VSYNC_KEY, mode)
+
+
+## Push the stored window mode + V-Sync onto the real window. Called at boot and whenever the
+## settings screen changes one. A headless run (tests, CI) has no real window to call into —
+## `DisplayServer.get_name() == "headless"` is the standing guard for that, same shape as the
+## test-runner guards on the trace writer, audio and this file's own [member persist].
+func apply_video() -> void:
+	if DisplayServer.get_name() == "headless":
+		return
+	match window_mode():
+		WINDOW_MODE_BORDERLESS:
+			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
+			DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_BORDERLESS, true)
+		WINDOW_MODE_FULLSCREEN:
+			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
+		_:
+			DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_BORDERLESS, false)
+			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
+	const VSYNC_SERVER_MODES := {
+		VSYNC_OFF: DisplayServer.VSYNC_DISABLED,
+		VSYNC_ON: DisplayServer.VSYNC_ENABLED,
+		VSYNC_ADAPTIVE: DisplayServer.VSYNC_ADAPTIVE,
+	}
+	DisplayServer.window_set_vsync_mode(VSYNC_SERVER_MODES[vsync_mode()])
 
 
 ## Put every stored value back to its default. Does not write — the caller decides when to commit, so

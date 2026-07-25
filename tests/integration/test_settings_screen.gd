@@ -13,6 +13,8 @@ const SettingsScreen := preload("res://core/screens/settings_screen.gd")
 
 var _restore_volumes: Dictionary = {}
 var _restore_narration := ""
+var _restore_window_mode := ""
+var _restore_vsync := ""
 
 
 func before_each() -> void:
@@ -25,13 +27,18 @@ func before_each() -> void:
 	for category in AudioManager.MIXER_LEVELS:
 		_restore_volumes[category] = Kernel.settings.audio_volume(category)
 	_restore_narration = Kernel.settings.narration_level()
+	_restore_window_mode = Kernel.settings.window_mode()
+	_restore_vsync = Kernel.settings.vsync_mode()
 
 
 func after_each() -> void:
 	for category in _restore_volumes:
 		Kernel.settings.set_audio_volume(String(category), float(_restore_volumes[category]))
 	Kernel.settings.set_narration_level(_restore_narration)
+	Kernel.settings.set_window_mode(_restore_window_mode)
+	Kernel.settings.set_vsync_mode(_restore_vsync)
 	Kernel.settings.apply_audio(Kernel.audio)
+	Kernel.settings.apply_video()
 
 
 func _screen() -> Control:
@@ -99,6 +106,40 @@ func test_choosing_a_narration_length_sets_the_default_for_new_games() -> void:
 	narration.item_selected.emit(target)
 
 	assert_eq(Kernel.settings.narration_level(), String(narration.get_item_metadata(target)))
+
+
+## An enabled `OptionButton` whose first entry reads [param first_item_text] — how the window-mode
+## and V-Sync controls are told apart from each other and from the (disabled) mock dropdowns
+## elsewhere on the tab, without the test knowing the tab's internal layout.
+func _find_option(root: Node, first_item_text: String) -> OptionButton:
+	for node in _descendants(root):
+		if node is OptionButton and not (node as OptionButton).disabled \
+				and (node as OptionButton).item_count > 0 \
+				and (node as OptionButton).get_item_text(0) == first_item_text:
+			return node
+	return null
+
+
+func test_changing_the_window_mode_persists() -> void:
+	var screen := _screen()
+	var window_mode := _find_option(screen, "Windowed")
+	assert_not_null(window_mode, "the video tab has a working window-mode control")
+
+	var target := 2 if window_mode.selected != 2 else 0
+	window_mode.item_selected.emit(target)
+
+	assert_eq(Kernel.settings.window_mode(), String(window_mode.get_item_metadata(target)))
+
+
+func test_changing_vsync_persists() -> void:
+	var screen := _screen()
+	var vsync := _find_option(screen, "Off")
+	assert_not_null(vsync, "the video tab has a working V-Sync control")
+
+	var target := 0 if vsync.selected != 0 else 1
+	vsync.item_selected.emit(target)
+
+	assert_eq(Kernel.settings.vsync_mode(), String(vsync.get_item_metadata(target)))
 
 
 func test_a_planned_control_cannot_be_operated() -> void:

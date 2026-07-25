@@ -707,6 +707,24 @@ begin-new-game. Screens are JSON (`heading`/`card-choice`/`field`/`choice`/`flag
 types). This is the shape the deferred module-config wizard should take: the current single-field
 new-game screen grows into this multi-step flow, its `fields` feeding `seed_new_game`.
 
+**Video settings: window mode + V-Sync — done (2026-07-25).** The two controls #52 called out as
+"cheapest to make real next" are now wired, following the same shape as narration/audio:
+`AppSettings` gained `window_mode()`/`vsync_mode()` (persisted in the `video` section of
+`settings.cfg`, unknown stored values refused back to a known default rather than trusted) and
+`apply_video()`, which pushes them onto the real `DisplayServer` — guarded by
+`DisplayServer.get_name() == "headless"` so the test runner's dummy driver never gets a real call,
+the same shape as the trace writer/audio/persistence test-runner guards. Called at boot (right
+after `apply_audio`) and whenever the settings screen's two now-live Video-tab rows change.
+"Borderless" is windowed + the borderless flag (not a resize to the monitor); "Fullscreen" is
+Godot's own `WINDOW_MODE_FULLSCREEN`. **Verified against a real window**, not only headless: a
+throwaway driver script (deleted after, per the standing convention) drove all three window modes
+and all three V-Sync modes through the real `DisplayServer` and read back what actually landed.
+One real-platform finding, not a bug: requesting Adaptive V-Sync silently lands as plain V-Sync
+under this machine's Compatibility/OpenGL 3.3 driver — reproduced with a raw `DisplayServer` call
+bypassing this code entirely, so it is the renderer's own fallback, not this change's doing.
+`tools/capture_screens.gd`'s Video-tab capture confirms the two rows now render enabled
+(un-tagged) beside the rest of the tab's still-`planned` rows. 362 tests green (356 + 6 new).
+
 **Android UI issues** (found during the milestone-1 deploy, deliberately not fixed):
 
 | Issue | Note |
