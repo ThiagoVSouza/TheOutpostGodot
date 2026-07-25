@@ -35,6 +35,18 @@ const AUTO_SNAPSHOT_DAYS: int = 360
 ## overwritten, because the player only has to reinstall the newer build to get it back.
 const REFUSALS: Array[String] = ["save_from_newer_version", "module_from_newer_version"]
 
+## Where the new-game wizard's answers are kept once a game exists, and the field names core reads
+## back out. The wizard collects them and hands them to [method begin_new_game]; the module that
+## seeds the world is what actually writes them into [GameState], because seeding is where state is
+## written. Naming the keys here is what keeps the two ends agreeing by constant rather than by
+## matching string literals in files that never reference each other.
+const PROFILE_STATE_KEY := "profile"
+const PROFILE_VERBOSITY := "verbosity"
+
+## The wizard's flag, a [FlagValue] dictionary, under its own key rather than inside the profile:
+## it is the outpost's identity, shown in-game wherever the outpost appears, not a setup answer.
+const OUTPOST_FLAG_STATE_KEY := "outpost_flag"
+
 signal session_changed(slot_id: String, slot_name: String)
 
 var slot_id: String = ""

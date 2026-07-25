@@ -11,7 +11,13 @@ extends Control
 
 const MapOverlay := preload("res://modules/base_game/screens/map_overlay.gd")
 
+## Small enough to sit in a status row without crowding it, in the flag art's own aspect so the
+## cloth is not stretched.
+const HEADER_FLAG_WIDTH := 26.0
+
 var _source: AiInputSource
+var _outpost_label: Label
+var _flag_view: FlagView
 var _day_label: Label
 var _resource_label: Label
 var _log_label: RichTextLabel
@@ -43,6 +49,7 @@ func _ready() -> void:
 	Kernel.events.subscribe(AiAvailability.EVENT_NAME, _on_ai_availability_changed)
 	# Status is shown before the greeting so day/resources are up even while a narrated opening
 	# (an AI await) is still resolving.
+	_refresh_outpost()
 	_refresh_day()
 	_refresh_resources()
 	_refresh_slots()
@@ -88,6 +95,7 @@ func _play_opening() -> void:
 
 func _build_ui() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
+	ShellPalette.paint(self)
 
 	var margin := MarginContainer.new()
 	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -102,6 +110,14 @@ func _build_ui() -> void:
 	var status_row := HBoxContainer.new()
 	status_row.add_theme_constant_override("separation", 16)
 	vbox.add_child(status_row)
+	# The outpost's own banner, flown over its name: the flag the player designed in the wizard is
+	# the settlement's identity, so this is where it belongs rather than only on the setup screen.
+	_flag_view = FlagView.new()
+	_flag_view.custom_minimum_size = Vector2(HEADER_FLAG_WIDTH, HEADER_FLAG_WIDTH * FlagView.aspect())
+	_flag_view.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	status_row.add_child(_flag_view)
+	_outpost_label = Label.new()
+	status_row.add_child(_outpost_label)
 	_day_label = Label.new()
 	status_row.add_child(_day_label)
 	_resource_label = Label.new()
@@ -342,6 +358,7 @@ func _on_load() -> void:
 		return
 	_clear_question()
 	_append("[i]— Loaded '%s', day %d —[/i]" % [Kernel.session.slot_name, Kernel.clock.total_days])
+	_refresh_outpost()
 	_refresh_day()
 	_refresh_resources()
 	# A loaded game brings its own unanswered question, if it had one.
@@ -353,6 +370,7 @@ func _on_new_game() -> void:
 	Kernel.session.start_new()
 	_clear_question()
 	_append("[i]— A new settlement —[/i]")
+	_refresh_outpost()
 	_refresh_day()
 	_refresh_resources()
 	_refresh_slots()
@@ -419,6 +437,17 @@ func _on_ai_availability_changed(payload: Dictionary) -> void:
 			if int(payload.get("attempts_used", 0)) > 0:
 				_append("[color=orange]System:[/color] Game master connection restored.")
 			_retry_button.visible = false
+
+
+## The settlement's identity in the header: its banner and its name. Both come from state, so a
+## loaded game shows its own outpost rather than the one that was on screen a moment ago.
+func _refresh_outpost() -> void:
+	var stored: Dictionary = Kernel.state.get_value(GameSession.OUTPOST_FLAG_STATE_KEY, {})
+	# A game seeded before the wizard existed has no flag; the default is a real flag, not a hole,
+	# so there is nothing to hide here.
+	_flag_view.set_value(FlagValue.from_dict(stored))
+	var outpost: Dictionary = Entities.get_entity(Kernel.state, "outpost")
+	_outpost_label.text = String(outpost.get("name", "The Outpost"))
 
 
 func _refresh_day() -> void:

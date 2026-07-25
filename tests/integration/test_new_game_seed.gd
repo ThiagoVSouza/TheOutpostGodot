@@ -98,6 +98,75 @@ func test_the_opening_workflow_narrates_over_the_seeded_facts() -> void:
 	assert_string_contains(prose, "Livia", "the narrator was handed the hero's name")
 
 
+func test_the_wizards_narration_choice_reaches_the_narrator() -> void:
+	# The Settings step's payoff: the stored preference is what the executor resolves an authored
+	# `verbosity` against, so choosing "Long" has to move the level the narrator is actually asked
+	# to write at — not merely sit in the profile.
+	var kernel := _kernel()
+	kernel.session.begin_new_game({"hero_name": "Livia",
+		GameSession.PROFILE_VERBOSITY: NarrationSettings.LEVEL_LONG})
+
+	assert_eq(kernel.narration.level, NarrationSettings.LEVEL_LONG)
+	# The `opening` beat is authored `long`; at this preference it resolves past what any author
+	# writes, which is the whole point of the ladder being wider than the authored literals.
+	assert_eq(kernel.narration.resolve("long"), "full")
+
+
+func test_average_narration_is_a_real_middle_not_a_second_short() -> void:
+	# The wizard offers three lengths, so they have to be three. `normal` earns its own base on the
+	# ladder: without one it falls back to short's, and two of the three cards behave identically.
+	var kernel := _kernel()
+	kernel.session.begin_new_game({GameSession.PROFILE_VERBOSITY: NarrationSettings.LEVEL_NORMAL})
+	var average := kernel.narration.resolve("normal")
+
+	kernel.session.begin_new_game({GameSession.PROFILE_VERBOSITY: NarrationSettings.LEVEL_SHORT})
+	assert_eq(kernel.narration.level, NarrationSettings.LEVEL_SHORT, "the new game's choice applied")
+	assert_ne(average, kernel.narration.resolve("normal"), "average reads longer than short")
+
+
+func test_a_loaded_game_does_not_inherit_the_previous_games_narration_choice() -> void:
+	# `narration` is not in the save (it is derived), so the only thing standing between a load and
+	# the last game's setting is the kernel re-deriving it. A game saved at Short, loaded while Long
+	# is in force, must read Short.
+	var kernel := _kernel()
+	kernel.session.begin_new_game({GameSession.PROFILE_VERBOSITY: NarrationSettings.LEVEL_SHORT})
+	var saved: Dictionary = {"version": 1, "state": {
+		GameSession.PROFILE_STATE_KEY: {GameSession.PROFILE_VERBOSITY: NarrationSettings.LEVEL_SHORT},
+	}}
+	kernel.narration.level = NarrationSettings.LEVEL_LONG
+
+	kernel.saves.restore(kernel, saved)
+
+	assert_eq(kernel.narration.level, NarrationSettings.LEVEL_SHORT,
+		"the loaded game's own preference governs it")
+
+
+func test_a_game_with_no_stored_preference_reads_as_unset_not_inherited() -> void:
+	# An older save predating the wizard has no profile. It gets the default, not whatever the
+	# session happened to be set to — "unset" and "inherit the last game" are different answers.
+	var kernel := _kernel()
+	kernel.narration.level = NarrationSettings.LEVEL_LONG
+
+	kernel.saves.restore(kernel, {"version": 1, "state": {}})
+
+	assert_eq(kernel.narration.level, NarrationSettings.LEVEL_SHORT)
+
+
+func test_the_wizards_flag_is_stored_for_the_game_to_show() -> void:
+	# The chat screen's header reads this back through FlagValue.from_dict, so what the wizard
+	# stored has to survive the round trip — the flag the player designed, not a default.
+	var kernel := _kernel()
+	var designed := {"shapeColor": "#2f5fc0", "texture": "pattern07", "textureColor": "#f3c43f",
+		"emblem": "emblem04", "emblemColor": "#f7f7f2"}
+	kernel.session.begin_new_game({GameSession.OUTPOST_FLAG_STATE_KEY: designed})
+
+	var stored: Dictionary = kernel.state.get_value(GameSession.OUTPOST_FLAG_STATE_KEY, {})
+	var value := FlagValue.from_dict(stored)
+	assert_eq(value.shape_color, Color.html("#2f5fc0"), "the cloth colour survived")
+	assert_eq(value.texture, "pattern07")
+	assert_eq(value.emblem, "emblem04")
+
+
 func test_begin_new_game_replaces_a_previous_game() -> void:
 	var kernel := _kernel()
 	kernel.session.begin_new_game({"hero_name": "First"})

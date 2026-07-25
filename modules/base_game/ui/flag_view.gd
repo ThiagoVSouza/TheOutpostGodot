@@ -20,6 +20,14 @@ var _value: FlagValue = FlagValue.new()
 var _material: ShaderMaterial
 
 
+## The flag art's height as a multiple of its width. Callers that want a flag at a given width size
+## it as `Vector2(w, w * FlagView.aspect())`; the cloth is then never stretched, and no screen has
+## to carry the art's pixel dimensions around as a literal.
+static func aspect() -> float:
+	var size := EFFECT_TEX.get_size()
+	return size.y / maxf(size.x, 1.0)
+
+
 func _init() -> void:
 	# ColorRect paints a solid; the shader overrides the output, but keep the input opaque so the
 	# shader's alpha is what shows.
@@ -31,14 +39,12 @@ func _ready() -> void:
 	_material.shader = SHADER
 	_material.set_shader_parameter("base_tex", BASE_TEX)
 	_material.set_shader_parameter("effect_tex", EFFECT_TEX)
-	var tex_size := EFFECT_TEX.get_size()
-	if tex_size.x > 0.0:
-		_material.set_shader_parameter("flag_hw", tex_size.y / tex_size.x)
+	_material.set_shader_parameter("flag_hw", aspect())
 	material = _material
 	# A sensible default footprint in the flag's own aspect; callers can override.
 	if custom_minimum_size == Vector2.ZERO:
 		var w := 120.0
-		custom_minimum_size = Vector2(w, w * (tex_size.y / maxf(tex_size.x, 1.0)))
+		custom_minimum_size = Vector2(w, w * aspect())
 	_apply()
 
 

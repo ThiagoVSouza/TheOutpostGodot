@@ -32,6 +32,11 @@ const CONTENT: Array[String] = ["command_registry", "tools", "modules", "screens
 ## (router is RUNTIME below — it swaps the mounted screen and holds no game state.)
 
 ## RUNTIME — infrastructure with no game state: transports, buses, loggers, policy objects.
+## `narration` is a policy object whose value is *derived* from the loaded game rather than held:
+## [method GameKernel.apply_player_preferences] re-reads it from the restored profile on both
+## `new_game_started` and `game_loaded`, so there is nothing here to replace. Leaving it out of that
+## re-derivation — not its absence from this list — is what would let one game's setting govern the
+## next, and `test_new_game_seed.gd` covers exactly that.
 ## `memories` sits here like `workspace`/`saves`/`trace_writer`: the field is a file-backed store,
 ## and its data lives in an append-only JSONL in the workspace dir (M5, D37). The workspace
 ## lifecycle governs replacement — `SaveWorkspace.clear()` removes the file and `GameSession`

@@ -12,8 +12,8 @@ Decisions and their evidence: `docs/decisions.md`. Measurements:
 gates. **GATE 0 there is binding: no production code before a direction review
 with the user.**
 
-Last updated: 2026-07-24 (overworld map + flag component ported from the legacy system; the
-new-game wizard built on top of them)
+Last updated: 2026-07-25 (the new-game wizard's choices start driving the game: narration length and
+the outpost's flag; the flow run in a window at last, via a new screen-capture tool)
 
 ---
 
@@ -555,17 +555,49 @@ randomize button over the legacy name list), and a flag designer built on `FlagV
 mirroring `flag_preview.gd`'s dev-preview logic. Settings picks narration verbosity
 (short/average/long). Finishing hands a fuller `fields` map to `begin_new_game`; base_game's
 `seed_new_game` now names the outpost entity from it and stashes background/location/sex/verbosity
-under `GameState["profile"]` and the flag under `GameState["outpost_flag"]` — **not yet consumed
-by any system** (no economy/map/narrator-verbosity hookup exists to read them), the same
-"stash the facts, let content read them later" shape the opening's facts already use. 5 new
+under `GameState["profile"]` and the flag under `GameState["outpost_flag"]`. 5 new
 integration tests drive the real screen through the autoload `Kernel` (the `test_confirmation_ui`
 pattern), including a full walk to `begin_new_game` asserting the collected fields landed. 320
-green. **Verified headless only** — the flow was driven and asserted via GUT (no push_errors
-constructing `FlagView`/`ColorPickerButton`/`GridContainer` nodes or wiring the steps), not
-eyeballed in a running window; a manual click-through in the editor is still owed before calling
-the layout itself solid. **Still deferred:** module-pick screen + a module-config-driven wizard
+green. **Still deferred:** module-pick screen + a module-config-driven wizard
 (nothing to configure yet — this wizard's fields are all base_game's); Settings/Help/News screens;
 legacy background art per card.
+
+**The wizard's choices start driving the game — done (2026-07-25).** The wizard had been collecting
+answers nothing read. Two are now wired, and the flow was finally **run in a window** rather than
+asserted headless.
+
+- **Verbosity → the narrator.** `GameState["profile"].verbosity` now sets
+  `kernel.narration.level`, re-derived by `GameKernel.apply_player_preferences()` on **both**
+  `new_game_started` and `game_loaded`. The load half matters as much as the new-game half:
+  `narration` is deliberately not in the save (load-isolation classifies it RUNTIME), so without
+  re-deriving it a loaded game would be narrated at whatever the *previous* game chose. The Settings
+  step now speaks `NarrationSettings`' own vocabulary (`short`/`normal`/`long`, shown as
+  Short/Average/Long) so the stored answer *is* the level — nothing translates. This surfaced a
+  latent bug: `BASE` had no entry for `normal`, so it fell back to short's base and "Average"
+  behaved as a second "Short". `normal` now plants the base where an authored literal resolves to
+  itself. `NarrationSettings.LEVELS` also separates what a *player* may pick from `PROSE_LADDER`
+  (what a narrator may be asked to write at) — `full` is a rung, never a preference.
+- **The flag flies in-game.** The chat screen's status row now shows the outpost's banner and name,
+  read from `GameState["outpost_flag"]` via `FlagValue.from_dict` — the first real reuse of the flag
+  component outside its own designer, which is why it was built. `FlagView.aspect()` replaces the
+  art's pixel ratio being written out as a literal at each call site.
+- `GameSession` now names the keys both ends agree on (`PROFILE_STATE_KEY`, `PROFILE_VERBOSITY`,
+  `OUTPOST_FLAG_STATE_KEY`): the core wizard collects the answers, a module writes them into state
+  while seeding, and core reads back the parts it owns — by constant, not by matching literals.
+- **Still not consumed:** `background` and `outpost_location`. What each should change about the
+  start (resources, cast, the seeded plot) is a **content decision, not a wiring one** — the legacy
+  per-card "starts with…" text in `content/base/screens/new-game*.json` is the design source, and it
+  needs the user's call before anything is coded against it.
+
+**`tools/capture_screens.gd` (new).** Mounts each registered screen in a real window, renders it and
+saves a PNG (`user://screens/`, or `OUTPOST_CAPTURE_DIR`). It exists because "verified headless
+only" is how UI regressions get in — GUT proves the wiring and says nothing about what a screen
+*looks* like. It asserts nothing; it produces evidence. It immediately earned itself: the card-select
+grid was sizing cards to a fixed width, so five backgrounds pushed the third column **off-screen
+with no scrollbar to reach it** (cards now share the row and wrap their text), and the game screen
+painted no background at all, falling through to Godot's light default — the shell went dark and the
+game went grey, reading as two different applications. `ShellPalette` (`core/screens/`) now names
+the few colours the shell paints with, replacing the same near-black copied into five screens.
 
 **Overworld map — first pass (2026-07-24):** ported the legacy Tauri overworld into Godot. The
 old renderer is a corner-blending auto-tiler (mask atlases, biome priorities, tile compositor,
