@@ -126,17 +126,21 @@ func seed_new_game(kernel: GameKernel, params: Dictionary) -> void:
 	# The facts the opening narration will dress (D4: code decides, the narrator only tells). The
 	# chat screen plays the `opening` workflow over these on first entry to a fresh game.
 	kernel.state.set_value("opening", {"hero": hero_name, "years": 5})
-	# The wizard's remaining choices don't drive any system yet (no economy/map, no narrator
-	# verbosity knob) — stashed as a profile so that content has somewhere to read them from
-	# without another seed-shape change once it exists.
-	kernel.state.set_value("profile", {
+	# The wizard's remaining answers, kept under the keys core reads them back out of
+	# ([GameSession]). `verbosity` now drives the narrator's reading length — the kernel re-derives
+	# `narration` from this on every new game and load. `background` / `outpost_location` still
+	# drive nothing: what each one should change about the start is a content decision, not a
+	# wiring one, so they stay recorded and unread until that is authored.
+	kernel.state.set_value(GameSession.PROFILE_STATE_KEY, {
 		"background": String(params.get("background", "")),
 		"outpost_location": String(params.get("outpost_location", "")),
 		"sex": String(params.get("sex", "male")),
-		"verbosity": String(params.get("verbosity", "average")),
+		GameSession.PROFILE_VERBOSITY: String(params.get(GameSession.PROFILE_VERBOSITY,
+			NarrationSettings.LEVEL_NORMAL)),
 	})
-	if params.has("outpost_flag"):
-		kernel.state.set_value("outpost_flag", params["outpost_flag"])
+	if params.has(GameSession.OUTPOST_FLAG_STATE_KEY):
+		kernel.state.set_value(GameSession.OUTPOST_FLAG_STATE_KEY,
+			params[GameSession.OUTPOST_FLAG_STATE_KEY])
 
 
 ## Dev-only (see `register`): stops to ask, then grants if the player agrees.

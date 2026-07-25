@@ -148,6 +148,12 @@ func boot() -> void:
 	# the workspace compares each part's content and writes only what actually moved, so a
 	# checkpoint after a turn that changed nothing costs a comparison and no I/O.
 	events.subscribe(AiInputRouter.EVENT_TURN_COMPLETED, _on_turn_completed)
+	# The runtime preference objects are derived from the current game, so they have to be
+	# re-derived every time the current game changes — on a fresh game *and* on a load. Doing only
+	# the former is how the last game's settings quietly govern the one just loaded, which is the
+	# same bleed the load-isolation contract above exists to prevent.
+	events.subscribe("new_game_started", _on_game_became_current)
+	events.subscribe("game_loaded", _on_game_became_current)
 
 	# 8. AI orchestrator ties the above together (needs tools, command_registry, ai,
 	#    commands, workflows, scheduler, events).
@@ -177,6 +183,25 @@ func is_booted() -> bool:
 func _on_turn_completed(_payload: Dictionary) -> void:
 	if session != null:
 		session.checkpoint("turn")
+
+
+func _on_game_became_current(_payload: Dictionary) -> void:
+	apply_player_preferences()
+
+
+## Point the runtime preference objects at the current game's stored answers (the new-game wizard's
+## Settings step). These objects are not saved and hold nothing authoritative — they are re-derived
+## from [GameState] here, which is why the load-isolation contract can leave them alone.
+##
+## A game with no stored preference gets the class default rather than whatever the last game set,
+## so an older save reads as "unset", never as "inherit".
+func apply_player_preferences() -> void:
+	if state == null or narration == null:
+		return
+	var profile: Dictionary = state.get_value(GameSession.PROFILE_STATE_KEY, {})
+	var stored := String(profile.get(GameSession.PROFILE_VERBOSITY, ""))
+	narration.set_level(stored if NarrationSettings.is_level(stored)
+		else NarrationSettings.LEVEL_SHORT)
 
 
 func _exit_tree() -> void:

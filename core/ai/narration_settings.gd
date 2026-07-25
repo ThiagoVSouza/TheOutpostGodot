@@ -14,9 +14,11 @@ extends RefCounted
 ## output *form* (a terse list of what happened), so it absorbs the authored nudge instead of
 ## being shifted off by it.
 
-## What the player picked. The playground exposes these as three buttons.
+## What the player picked. The playground exposes these as three buttons; the new-game wizard's
+## Settings step offers short/normal/long under the friendlier titles Short/Average/Long.
 const LEVEL_TOPICS := "topics"
 const LEVEL_SHORT := "short"
+const LEVEL_NORMAL := "normal"
 const LEVEL_LONG := "long"
 
 ## The ladder of levels a narrator can actually write at, shortest first. It is deliberately
@@ -26,10 +28,19 @@ const LEVEL_LONG := "long"
 const PROSE_LADDER := ["short", "normal", "long", "full"]
 
 ## Where each preference plants the base of the scale, as an index into [constant PROSE_LADDER].
-const BASE := {LEVEL_SHORT: 0, LEVEL_LONG: 3}
+## `normal` plants it so an authored literal resolves to *itself* — the pacing the author wrote,
+## neither compressed nor inflated. That makes it the true middle: without a base of its own it
+## would fall back to 0 and read as a second `short`, which is the one thing "Average" must not be.
+const BASE := {LEVEL_SHORT: 0, LEVEL_NORMAL: 1, LEVEL_LONG: 3}
 
 ## How far an authored literal nudges the beat around that base.
 const NUDGE := {"short": -1, "normal": 0, "long": 1}
+
+## Every level a *player* may pick — deliberately narrower than [constant PROSE_LADDER], which is
+## what a narrator can be asked to write at. `full` is a rung, not a preference: it is where the
+## `long` setting plus an authored `long` lands, and picking it directly would plant a base the
+## ladder has no room above, so it is not offered.
+const LEVELS: Array[String] = [LEVEL_TOPICS, LEVEL_SHORT, LEVEL_NORMAL, LEVEL_LONG]
 
 signal changed()
 
@@ -44,12 +55,19 @@ var loose: bool = false: set = set_loose
 
 func set_level(value: String) -> void:
 	var next := value.strip_edges().to_lower()
-	if next != LEVEL_TOPICS and not PROSE_LADDER.has(next):
+	if not is_level(next):
 		return
 	if next == level:
 		return
 	level = next
 	changed.emit()
+
+
+## Whether [param value] is a level a player can be set to. Callers restoring a stored preference
+## should ask *before* setting: [method set_level] ignores anything it cannot honour, so handing it
+## an unreadable value silently leaves the previous game's setting in place.
+static func is_level(value: String) -> bool:
+	return LEVELS.has(value.strip_edges().to_lower())
 
 
 func set_loose(value: bool) -> void:

@@ -11,6 +11,10 @@ const DEFAULT_OUTPOST := "Ravenwatch"
 
 const STEP_TITLES := ["Background", "Location", "Identity", "Settings"]
 
+## Cards per row on the pick-one steps. Five backgrounds over three columns reads as a deliberate
+## 3 + 2 rather than the ragged single row a wider grid would give.
+const CARD_COLUMNS := 3
+
 const BACKGROUNDS := [
 	{"id": "wealthy_merchant", "title": "Merchant",
 	 "desc": "Economic start — 5,000 coins and a trade network."},
@@ -38,10 +42,13 @@ const LOCATIONS := [
 const OUTPOST_NAMES := ["Ravenwatch", "Stonegate", "Ironward", "Dawnrest", "Northpass",
 	"Amberhold", "Greyhaven", "Frostmere", "Redcliff", "Oakmarch"]
 
+## The Settings step speaks [NarrationSettings]' own vocabulary rather than a display vocabulary of
+## its own, so the stored answer *is* the level and nothing has to translate between the two. Only
+## the titles are dressed up: "Average" reads better on a card than "Normal".
 const VERBOSITIES := [
-	{"id": "short", "title": "Short", "desc": "Terse, to the point."},
-	{"id": "average", "title": "Average", "desc": "Balanced narration."},
-	{"id": "long", "title": "Long", "desc": "Rich, descriptive prose."},
+	{"id": NarrationSettings.LEVEL_SHORT, "title": "Short", "desc": "Terse, to the point."},
+	{"id": NarrationSettings.LEVEL_NORMAL, "title": "Average", "desc": "Balanced narration."},
+	{"id": NarrationSettings.LEVEL_LONG, "title": "Long", "desc": "Rich, descriptive prose."},
 ]
 
 const FLAG_PALETTE := ["#b62a2a", "#2f5fc0", "#2fa354", "#f3c43f", "#000000", "#f7f7f2",
@@ -57,7 +64,7 @@ var _next_btn: Button = null
 
 var _selected_background := ""
 var _selected_location := ""
-var _selected_verbosity := "average"
+var _selected_verbosity := NarrationSettings.LEVEL_NORMAL
 var _sex := "male"
 
 var _name_field: LineEdit = null
@@ -78,10 +85,7 @@ func _ready() -> void:
 
 func _build_ui() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
-	var bg := ColorRect.new()
-	bg.color = Color(0.07, 0.07, 0.10)
-	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
-	add_child(bg)
+	ShellPalette.paint(self)
 
 	var margin := MarginContainer.new()
 	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -201,7 +205,7 @@ func _card_select_column(items: Array, default_id: String, on_select: Callable) 
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", 10)
 	var grid := GridContainer.new()
-	grid.columns = 3
+	grid.columns = CARD_COLUMNS
 	grid.add_theme_constant_override("h_separation", 10)
 	grid.add_theme_constant_override("v_separation", 10)
 	col.add_child(grid)
@@ -210,7 +214,12 @@ func _card_select_column(items: Array, default_id: String, on_select: Callable) 
 		var card := Button.new()
 		card.toggle_mode = true
 		card.button_group = group
-		card.custom_minimum_size = Vector2(200, 90)
+		card.custom_minimum_size = Vector2(0, 90)
+		# The cards share the row evenly and wrap their own text. Sizing them to a fixed width
+		# instead lets a long description push the grid wider than the window — the last column
+		# then sits off-screen, unreachable, with no scrollbar to reveal it.
+		card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		card.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		card.text = "%s\n%s" % [String(item["title"]), String(item["desc"])]
 		card.button_pressed = String(item["id"]) == default_id
 		card.pressed.connect(func() -> void: on_select.call(String(item["id"])))
@@ -282,7 +291,7 @@ func _build_identity_step() -> Control:
 	_flag_value.texture = "pattern03"
 	_flag_value.emblem = "emblem01"
 	_flag_view = FlagView.new()
-	_flag_view.custom_minimum_size = Vector2(140, 140 * 1007.0 / 478.0)
+	_flag_view.custom_minimum_size = Vector2(140, 140 * FlagView.aspect())
 	flag_row.add_child(_flag_view)
 
 	var flag_controls := VBoxContainer.new()

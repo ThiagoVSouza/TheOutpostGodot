@@ -18,7 +18,9 @@ func _ready() -> void:
 func _build_ui() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	var bg := ColorRect.new()
-	bg.color = Color(0.05, 0.05, 0.08)
+	# Its own ColorRect rather than ShellPalette.paint(): this one has to *catch* the tap that
+	# skips the splash, where a background otherwise lets clicks through.
+	bg.color = ShellPalette.BACKGROUND_SPLASH
 	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
 	bg.mouse_filter = Control.MOUSE_FILTER_STOP
 	bg.gui_input.connect(_on_input)
