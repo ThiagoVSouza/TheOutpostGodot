@@ -47,6 +47,11 @@ const PROFILE_VERBOSITY := "verbosity"
 ## it is the outpost's identity, shown in-game wherever the outpost appears, not a setup answer.
 const OUTPOST_FLAG_STATE_KEY := "outpost_flag"
 
+## Where the outpost stands on the overworld, as `{x, y}` cell coordinates. Chosen once while seeding
+## and then part of the world, not recomputed on the fly: the map draws where the settlement *is*,
+## and a placement rule that changes would move a town between one look and the next.
+const OUTPOST_SITE_STATE_KEY := "outpost_site"
+
 signal session_changed(slot_id: String, slot_name: String)
 
 var slot_id: String = ""

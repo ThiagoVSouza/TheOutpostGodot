@@ -50,6 +50,10 @@ var workflow_registry: WorkflowRegistry
 var workflow_instances: WorkflowInstanceStore
 var narrator: DslNarrator
 var narration: NarrationSettings
+
+## Music and sound effects, from cues modules declare in data. A child node, not a bare
+## [RefCounted]: it owns [AudioStreamPlayer]s, which have to live in the tree.
+var audio: AudioManager
 var prompt_families: PromptFamilyRegistry
 var ai_runner: DslAiRunner
 
@@ -81,6 +85,11 @@ func boot() -> void:
 	var is_test_run := OS.get_environment("OUTPOST_TEST_RUN") == "1"
 	trace_writer = AiTraceWriter.new("user://traces", OS.is_debug_build() and not is_test_run)
 
+	# 1c. Audio. Early, and before modules register, so a module's `register` can declare its cues
+	#     and the very first screen already has sound.
+	audio = AudioManager.new(log)
+	add_child(audio)
+
 	# 2-3. Communication + state.
 	events = EventBus.new()
 	state = GameState.new()
@@ -97,6 +106,9 @@ func boot() -> void:
 	# Registered before modules so the router can reach them; the boot scene sets the host and the
 	# first screen. Modules still register their own game screens (e.g. base_game.chat).
 	router = ScreenRouter.new(screens)
+	# Every screen's buttons get the click sound here rather than screen by screen: a UI sound that
+	# some controls make and others do not reads as a bug, and hand-wiring drifts into exactly that.
+	router.screen_mounted.connect(_on_screen_mounted)
 	AppShell.register_screens(self)
 
 	# 6. AI seam — FakeAiBackend by default; real backends swap in later. Availability
@@ -185,6 +197,11 @@ func _on_turn_completed(_payload: Dictionary) -> void:
 		session.checkpoint("turn")
 
 
+func _on_screen_mounted(_id: String, screen: Node) -> void:
+	if audio != null:
+		audio.wire_clicks(screen)
+
+
 func _on_game_became_current(_payload: Dictionary) -> void:
 	apply_player_preferences()
 
@@ -207,6 +224,10 @@ func apply_player_preferences() -> void:
 func _exit_tree() -> void:
 	if is_instance_valid(llama_server_manager):
 		llama_server_manager.shutdown()
+	# Cut, not fade: there is no next frame to fade in, and a playback still open when the process
+	# ends is reported as a leaked instance.
+	if is_instance_valid(audio):
+		audio.stop_music(false)
 
 
 ## The last moments we are guaranteed to run code (M4/B4a). On Android the OS can kill a

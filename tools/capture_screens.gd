@@ -15,9 +15,10 @@ const OUT_SUBDIR := "screens"
 const VIEWPORT_SIZE := Vector2i(1280, 800)
 const WIZARD_STEPS := ["background", "location", "identity", "settings"]
 
-## Frames to render before grabbing the image. One is not enough: theme/layout settles on the
-## second, and a `FlagView`'s shader needs its material pushed to the renderer.
-const SETTLE_FRAMES := 4
+## Frames to render before grabbing the image. One is not enough: layout settles on the second, a
+## `FlagView`'s shader needs its material pushed to the renderer, and the map's biome textures are
+## loaded on `setup`. A few frames of margin costs a capture run nothing.
+const SETTLE_FRAMES := 6
 
 var _out_dir := ""
 var _host: Control = null
@@ -67,7 +68,15 @@ func _run() -> void:
 	# The game itself, over a freshly seeded world — the wizard's own output, so the captures show
 	# the choices actually landing (flag, narration length) rather than defaults.
 	_kernel.session.begin_new_game(_new_game_fields())
-	await _capture_screen("base_game.chat", "06_chat_new_game")
+	var chat := await _mount("base_game.chat")
+	await _shoot("06_chat_new_game")
+
+	# The overworld is a child overlay rather than a routed screen (the router is stateless, so
+	# leaving the chat screen would discard its log), which is why it is opened the way the player
+	# opens it — the Map button's own handler — instead of being mounted.
+	if chat != null:
+		chat.call("_on_open_map")
+		await _shoot("06b_map_overlay")
 
 	await _capture_scene("res://modules/base_game/ui/flag_preview.tscn", "07_flag_preview")
 

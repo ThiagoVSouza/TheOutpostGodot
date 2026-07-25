@@ -6,6 +6,10 @@ extends RefCounted
 ## and around any module's game screen. None is flagged as the start screen: the router navigates to
 ## them explicitly (the boot scene sends it to `core.splash`). Called once from [method GameKernel.boot].
 
+## The cue the whole shell is scored with — logo, menu, wizard, load screen. Named here, where the
+## shell's screens are named, so the shell has one answer to "what is playing" rather than four.
+const SHELL_MUSIC := "main_menu"
+
 const SPLASH := preload("res://core/screens/splash_screen.tscn")
 const LOADING := preload("res://core/screens/loading_screen.tscn")
 const MAIN_MENU := preload("res://core/screens/main_menu_screen.tscn")

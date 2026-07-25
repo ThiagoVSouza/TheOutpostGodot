@@ -12,8 +12,9 @@ Decisions and their evidence: `docs/decisions.md`. Measurements:
 gates. **GATE 0 there is binding: no production code before a direction review
 with the user.**
 
-Last updated: 2026-07-25 (the new-game wizard's choices start driving the game: narration length and
-the outpost's flag; the flow run in a window at last, via a new screen-capture tool)
+Last updated: 2026-07-25 (wizard choices drive the game — narration length, the outpost's flag; the
+game has sound; the outpost stands on the overworld. The flow is now run in a window each time, via
+`tools/capture_screens.gd`, which is finding real bugs)
 
 ---
 
@@ -598,6 +599,54 @@ with no scrollbar to reach it** (cards now share the row and wrap their text), a
 painted no background at all, falling through to Godot's light default — the shell went dark and the
 game went grey, reading as two different applications. `ShellPalette` (`core/screens/`) now names
 the few colours the shell paints with, replacing the same near-black copied into five screens.
+
+**Audio — done (2026-07-25).** There was no player at all; the assets had been staged for weeks.
+`AudioManager` (`core/audio/`, kernel field `audio`, a Node because it owns `AudioStreamPlayer`s)
+plays cues **by name** from a module's `audio.json` — `play_music("main_menu")`, `play_sfx("ui_click")`
+— so no screen ever names a file and re-scoring is a data change. Streams load on first play and are
+cached: music files are the largest assets in the project, and preloading them would spend that on
+the splash screen and on every headless test run.
+- **Volume lives in two places on purpose.** A cue's `volume` in the manifest is the *mix* decision
+  (this click is quieter than that one) and belongs to whoever authored the sound; a category's level
+  is the *player's* decision and lives on an audio bus. New `default_bus_layout.tres` gives
+  Music/SFX/Ambience a bus each, so a settings screen can offer three sliders without touching
+  content.
+- **Click sounds are wired centrally**, off a new `ScreenRouter.screen_mounted` signal the kernel
+  listens on: every screen's buttons get the sound, including ones added after `_ready`. A UI sound
+  that some controls make and others do not reads as a bug, and that is what hand-wiring drifts into.
+  The router stays ignorant of audio — it announces the mount, the kernel decides what that means.
+- The shell is scored (`AppShell.SHELL_MUSIC`, started on the splash) and the game screen stops it;
+  asking for the track already playing is a **no-op, not a restart**, so menu → wizard → menu does
+  not keep starting the theme over.
+- Playback defaults **off under the test runner**, the same guard the trace writer and memory store
+  use. Without it every suite loaded a 3.5 MB ogg and left a live playback open at exit, which the
+  engine reports as leaked instances — noise that would mask a real leak. `GameKernel._exit_tree`
+  also cuts the music dead rather than fading it, since on the way out there is no next frame.
+
+**The outpost is on the map — done (2026-07-25).** The map was decorative; now it shows a
+settlement. Seeding chooses the site and records it in `GameState["outpost_site"]`, so it is world
+state that survives a save rather than a rule re-evaluated whenever the map opens (a rule that
+changed would move the town between one look and the next). `TerrainMap.find_cell_nearest_centre()`
+takes the acceptable biomes as an **argument** — which ground can hold a settlement is the game's
+decision, not the map format's — and `OverworldMapView.set_marker()` pins **the caller's own
+`Control`**, which is how core stays free of anything content-specific: `base_game` pins a
+`FlagView`, and core never learns flags exist. Markers keep a fixed screen size (a settlement that
+shrank with the zoom would vanish exactly when you zoom out to find it) and hide when their cell
+leaves the view. `modules/base_game/map_content.gd` (`BaseGameMap`) now owns the map's content paths
+and loaders, which the overlay and the seed both needed.
+- **Placeholder placement rule, deliberately simple:** the habitable cell nearest the map's middle.
+  Deterministic, never in the sea. Not yet varied per game (needs a per-world seed, which does not
+  exist — the only seed here belongs to the map content) and not yet matched to the wizard's
+  `outpost_location`, because the demo terrain set has **no forest or mountain biome** to put a
+  "Forest" or "Mountains" start on; any mapping would be invented rather than honoured.
+
+**Bug the capture tool found: the map overlay had never actually rendered.** `set_anchors_preset()`
+recomputes offsets to *preserve the control's current rect*, and the overlay is built in code, so at
+`_ready` it was 0×0 inside a parent that already had a size — baking in offsets of `-width,-height`
+and pinning it to nothing. The Map button opened an invisible overlay for two days, through 20
+passing tests. Fixed with `set_anchors_and_offsets_preset()`. Screens loaded from a `.tscn` get away
+with the other call only because their scene file already stores a full rect; the trap is
+script-built Controls, and the audit found this was the only one.
 
 **Overworld map — first pass (2026-07-24):** ported the legacy Tauri overworld into Godot. The
 old renderer is a corner-blending auto-tiler (mask atlases, biome priorities, tile compositor,

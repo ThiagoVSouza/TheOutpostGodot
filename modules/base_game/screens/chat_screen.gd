@@ -47,6 +47,9 @@ func _ready() -> void:
 	Kernel.events.subscribe("workflow_emit", _on_workflow_emit)
 	# T5: reflect AI outage/recovery state as system messages + the Retry control.
 	Kernel.events.subscribe(AiAvailability.EVENT_NAME, _on_ai_availability_changed)
+	# The shell's theme belongs to the menus, not to play. There is no in-game score yet, and
+	# silence is a better answer than the title music running under a conversation.
+	Kernel.audio.stop_music()
 	# Status is shown before the greeting so day/resources are up even while a narrated opening
 	# (an AI await) is still resolving.
 	_refresh_outpost()

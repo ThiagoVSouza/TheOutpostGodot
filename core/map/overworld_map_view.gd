@@ -18,9 +18,16 @@ var _channel: Dictionary = {}       # biome -> int (index in terrain order)
 var _zoom: float = 1.0
 var _origin: Vector2 = Vector2.ZERO # world-pixel coordinate drawn at the view's top-left
 var _dragging: bool = false
+var _markers: Dictionary = {}       # id -> {cell: Vector2i, control: Control}
 
 const MIN_ZOOM := 0.05
 const MAX_ZOOM := 4.0
+
+## The ring drawn on a marked cell, so the marker's *cell* is unambiguous even though the marker
+## itself is drawn at a fixed screen size and therefore does not cover the tile.
+const MARKER_RING_COLOR := Color(1, 1, 1, 0.85)
+const MARKER_RING_RADIUS := 5.0
+const MARKER_RING_WIDTH := 2.0
 const FALLBACK_COLORS := {
 	"grass": Color(0.36, 0.55, 0.24), "savanah": Color(0.68, 0.6, 0.28),
 	"swamp": Color(0.3, 0.38, 0.28), "tundra": Color(0.8, 0.84, 0.88),
@@ -59,7 +66,69 @@ func fit() -> void:
 	_zoom = clampf(minf(view.x / world.x, view.y / world.y), MIN_ZOOM, MAX_ZOOM)
 	# Centre: put the world's midpoint at the view's midpoint.
 	_origin = world * 0.5 - (view * 0.5) / _zoom
+	_refresh()
+
+
+## Pin [param control] to map cell [param cell], replacing any marker already under [param id]. The
+## marker is the **caller's own node**, which is what keeps this view free of anything
+## content-specific: `base_game` pins a `FlagView` for the outpost, and core never learns that flags
+## exist. The node is reparented here and positioned with its bottom edge on the cell's centre, the
+## way a pin sits on the spot it marks.
+##
+## Markers keep a fixed screen size: a settlement that shrank with the zoom would vanish exactly
+## when the player zooms out to find it.
+func set_marker(id: String, cell: Vector2i, control: Control) -> void:
+	remove_marker(id)
+	control.mouse_filter = Control.MOUSE_FILTER_IGNORE  # never eat a pan/zoom aimed at the map
+	if control.size == Vector2.ZERO:
+		control.size = control.custom_minimum_size
+	if control.get_parent() != self:
+		if control.get_parent() != null:
+			control.get_parent().remove_child(control)
+		add_child(control)
+	_markers[id] = {"cell": cell, "control": control}
+	_refresh()
+
+
+func remove_marker(id: String) -> void:
+	var existing: Dictionary = _markers.get(id, {}) as Dictionary
+	if existing.is_empty():
+		return
+	var control: Control = existing["control"]
+	if is_instance_valid(control):
+		control.queue_free()
+	_markers.erase(id)
+
+
+func clear_markers() -> void:
+	for id in _markers.keys():
+		remove_marker(String(id))
+
+
+## Redraw the tiles *and* reposition the markers. Every pan, zoom and re-fit has to do both, so they
+## go through one call — a marker left behind by a pan is the bug this prevents.
+func _refresh() -> void:
 	queue_redraw()
+	_place_markers()
+
+
+func _place_markers() -> void:
+	for id in _markers:
+		var marker: Dictionary = _markers[id] as Dictionary
+		var control: Control = marker["control"]
+		if not is_instance_valid(control):
+			continue
+		var centre := _cell_centre_on_screen(marker["cell"] as Vector2i)
+		# Bottom-centre on the cell, then hide it once the cell itself leaves the view: a pin
+		# clamped to the edge of a map claims a position the settlement does not have.
+		control.position = centre - Vector2(control.size.x * 0.5, control.size.y)
+		control.visible = Rect2(Vector2.ZERO, size).has_point(centre)
+
+
+## Where a cell's centre falls in this control's coordinates.
+func _cell_centre_on_screen(cell: Vector2i) -> Vector2:
+	var tile := float(_map.tile_size_px) if _map != null else 0.0
+	return ((Vector2(cell) + Vector2(0.5, 0.5)) * tile - _origin) * _zoom
 
 
 func _draw() -> void:
@@ -87,6 +156,11 @@ func _draw() -> void:
 			else:
 				draw_rect(rect, FALLBACK_COLORS.get(biome, Color(0.5, 0.5, 0.5)))
 
+	for id in _markers:
+		var cell := (_markers[id] as Dictionary)["cell"] as Vector2i
+		draw_arc(_cell_centre_on_screen(cell), MARKER_RING_RADIUS, 0.0, TAU, 24,
+			MARKER_RING_COLOR, MARKER_RING_WIDTH, true)
+
 
 func _texture_for(biome: String, x: int, y: int) -> Texture2D:
 	var variants: Array = _textures.get(biome, [])
@@ -112,7 +186,7 @@ func _gui_input(event: InputEvent) -> void:
 	elif event is InputEventMouseMotion and _dragging:
 		# Drag moves the world under the cursor: shift the origin opposite to the motion.
 		_origin -= (event as InputEventMouseMotion).relative / _zoom
-		queue_redraw()
+		_refresh()
 
 
 ## Zoom toward a screen point so the world under the cursor stays put.
@@ -121,4 +195,4 @@ func _zoom_at(screen_point: Vector2, factor: float) -> void:
 	_zoom = clampf(_zoom * factor, MIN_ZOOM, MAX_ZOOM)
 	var after := _origin + screen_point / _zoom
 	_origin += before - after
-	queue_redraw()
+	_refresh()

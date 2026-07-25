@@ -1,0 +1,26 @@
+[gd_resource type="AudioBusLayout" format=3]
+
+; One bus per audio category, each sending to Master. This is what lets a settings screen offer
+; separate Music / SFX / Ambience volume without every player having to multiply its own level:
+; AudioManager routes a cue to its category's bus and the bus owns the level.
+; Godot loads this automatically from this path — it is not referenced from project.godot.
+
+[resource]
+bus/1/name = "Music"
+bus/1/solo = false
+bus/1/mute = false
+bus/1/bypass_fx = false
+bus/1/volume_db = 0.0
+bus/1/send = "Master"
+bus/2/name = "SFX"
+bus/2/solo = false
+bus/2/mute = false
+bus/2/bypass_fx = false
+bus/2/volume_db = 0.0
+bus/2/send = "Master"
+bus/3/name = "Ambience"
+bus/3/solo = false
+bus/3/mute = false
+bus/3/bypass_fx = false
+bus/3/volume_db = 0.0
+bus/3/send = "Master"

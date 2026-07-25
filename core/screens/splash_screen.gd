@@ -12,6 +12,10 @@ func _ready() -> void:
 	if Engine.is_editor_hint():
 		return
 	_build_ui()
+	# The theme starts on the logo and carries through the whole shell — every screen between here
+	# and the game asks for the same cue, and asking for what is already playing does nothing, so
+	# there is no restart at each hop and no gap over the loading screen.
+	Kernel.audio.play_music(AppShell.SHELL_MUSIC)
 	get_tree().create_timer(HOLD_SECONDS).timeout.connect(_advance)
 
 
