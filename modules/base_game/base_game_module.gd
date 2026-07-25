@@ -14,6 +14,9 @@ const DiceTool := preload("res://modules/base_game/ai_tools/dice_tool.gd")
 const SCREEN_ID := "base_game.chat"
 const PLAYGROUND_ID := "base_game.playground"
 
+## This module's audio cues, declared in data (see [AudioManager]).
+const AUDIO_MANIFEST := "res://modules/base_game/assets/audio/audio.json"
+
 
 func register(kernel: GameKernel) -> void:
 	# AI tool the game master may call.
@@ -96,6 +99,9 @@ func register(kernel: GameKernel) -> void:
 	# restart, and the player's pending question becomes unanswerable.
 	if OS.is_debug_build():
 		kernel.workflow_registry.register(_dev_confirm_workflow())
+	# This module's music and sound effects. Data, not code: the manifest names the cues screens ask
+	# for, so re-scoring the game never touches a script.
+	kernel.audio.load_manifest(AUDIO_MANIFEST)
 
 	kernel.log.info(
 		"BaseGame",
@@ -141,6 +147,24 @@ func seed_new_game(kernel: GameKernel, params: Dictionary) -> void:
 	if params.has(GameSession.OUTPOST_FLAG_STATE_KEY):
 		kernel.state.set_value(GameSession.OUTPOST_FLAG_STATE_KEY,
 			params[GameSession.OUTPOST_FLAG_STATE_KEY])
+	_place_outpost_on_the_map(kernel)
+
+
+## Give the outpost a place on the overworld, so the map shows a settlement instead of scenery. Part
+## of seeding rather than something the map screen works out when it opens: where the town stands is
+## world state, and a rule evaluated at display time would let it move between one look and the next.
+func _place_outpost_on_the_map(kernel: GameKernel) -> void:
+	var map := BaseGameMap.load_map()
+	if map == null:
+		# The world is still perfectly playable without a map — the overlay is one screen. Warn and
+		# carry on rather than failing a new game over content the rest of the game does not need.
+		kernel.log.warn("BaseGame", "No overworld map loaded; the outpost has no site")
+		return
+	var site := BaseGameMap.outpost_site(map)
+	if site.x < 0:
+		kernel.log.warn("BaseGame", "Overworld '%s' has no habitable cell" % map.id)
+		return
+	kernel.state.set_value(GameSession.OUTPOST_SITE_STATE_KEY, {"x": site.x, "y": site.y})
 
 
 ## Dev-only (see `register`): stops to ask, then grants if the player agrees.

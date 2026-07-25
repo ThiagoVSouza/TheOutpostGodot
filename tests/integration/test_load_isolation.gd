@@ -44,7 +44,7 @@ const CONTENT: Array[String] = ["command_registry", "tools", "modules", "screens
 const RUNTIME: Array[String] = ["log", "events", "commands", "ai", "ai_availability",
 	"llama_server_manager", "ai_orchestrator", "trace_writer", "input_router", "saves",
 	"workspace", "session", "narrator", "narration", "ai_runner", "plan_ticker", "memories",
-	"router"]
+	"router", "audio"]
 
 
 func after_each() -> void:

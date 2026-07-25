@@ -10,6 +10,11 @@ extends RefCounted
 ## mounts into (the main scene) registers itself once via [method set_host]; screens then call
 ## `Kernel.router.goto(id)` to advance.
 
+## A screen has just been mounted. Lets whoever cares treat *every* screen the same way without the
+## router knowing what that treatment is — the kernel uses it to give each screen's buttons their
+## click sound, which is the kind of thing that must not depend on each screen remembering to ask.
+signal screen_mounted(id: String, screen: Node)
+
 var _screens: ScreenRegistry
 var _host: Control = null
 var _current: Node = null
@@ -52,3 +57,6 @@ func goto(id: String, params: Dictionary = {}) -> void:
 	_current = next
 	_current_id = id
 	_host.add_child(next)
+	# After the screen is in the tree, so a listener sees a screen that has finished `_ready` and
+	# therefore built its controls.
+	screen_mounted.emit(id, next)

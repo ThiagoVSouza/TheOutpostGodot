@@ -167,6 +167,33 @@ func test_the_wizards_flag_is_stored_for_the_game_to_show() -> void:
 	assert_eq(value.emblem, "emblem04")
 
 
+func test_the_outpost_is_given_a_place_on_the_overworld() -> void:
+	# The map stops being scenery: seeding chooses where the settlement stands and records it as
+	# world state, which is what the map overlay pins the outpost's banner to.
+	var kernel := _kernel()
+	kernel.session.begin_new_game({"hero_name": "Livia"})
+
+	var site: Dictionary = kernel.state.get_value(GameSession.OUTPOST_SITE_STATE_KEY, {})
+	assert_false(site.is_empty(), "the outpost has a site")
+	var map := BaseGameMap.load_map()
+	var biome := map.biome_at(int(site["x"]), int(site["y"]))
+	assert_true(BaseGameMap.HABITABLE_BIOMES.has(biome),
+		"founded on habitable ground, not in the ocean (got '%s')" % biome)
+
+
+func test_the_outposts_site_survives_a_save_and_a_reload() -> void:
+	# Chosen once and then part of the world, rather than recomputed when the map opens: a rule
+	# evaluated at display time would move the town if the rule ever changed.
+	var kernel := _kernel()
+	kernel.session.begin_new_game({"hero_name": "Livia"})
+	var site: Dictionary = kernel.state.get_value(GameSession.OUTPOST_SITE_STATE_KEY, {})
+
+	kernel.saves.restore(kernel, {"version": 1, "state":
+		{GameSession.OUTPOST_SITE_STATE_KEY: site}})
+
+	assert_eq(kernel.state.get_value(GameSession.OUTPOST_SITE_STATE_KEY, {}), site)
+
+
 func test_begin_new_game_replaces_a_previous_game() -> void:
 	var kernel := _kernel()
 	kernel.session.begin_new_game({"hero_name": "First"})

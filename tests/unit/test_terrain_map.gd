@@ -53,3 +53,32 @@ func test_from_data_decodes_literals_and_maps_cells() -> void:
 	assert_eq(map.biome_at(0, 1), "ocean")
 	assert_eq(map.variant_count("grass"), 2)
 	assert_eq(map.variant_count("ocean"), 1)
+
+
+func test_it_finds_the_habitable_cell_nearest_the_middle() -> void:
+	var map := TerrainMap.from_files(MAP_JSON, TERRAIN_JSON)
+	var cell := map.find_cell_nearest_centre(BaseGameMap.HABITABLE_BIOMES)
+
+	assert_true(cell.x >= 0, "the demo map has somewhere to stand")
+	assert_false(BaseGameMap.HABITABLE_BIOMES.has("ocean"), "open water is not habitable")
+	assert_true(BaseGameMap.HABITABLE_BIOMES.has(map.biome_at(cell.x, cell.y)),
+		"the chosen cell is habitable ground, not sea")
+	# Nearest the middle, so it must beat the map's own centre if that cell is habitable at all.
+	var centre := Vector2(map.width - 1, map.height - 1) * 0.5
+	assert_true((Vector2(cell) - centre).length() < float(mini(map.width, map.height)) * 0.5,
+		"the site sits near the middle rather than out at an edge")
+
+
+func test_the_site_is_the_same_on_every_run() -> void:
+	# A settlement has to be in the same place after a save and a reload, so the rule that picks it
+	# must not depend on iteration luck or a clock.
+	var first := TerrainMap.from_files(MAP_JSON, TERRAIN_JSON)
+	var second := TerrainMap.from_files(MAP_JSON, TERRAIN_JSON)
+	assert_eq(first.find_cell_nearest_centre(BaseGameMap.HABITABLE_BIOMES),
+		second.find_cell_nearest_centre(BaseGameMap.HABITABLE_BIOMES))
+
+
+func test_a_biome_the_map_lacks_yields_no_cell() -> void:
+	var map := TerrainMap.from_files(MAP_JSON, TERRAIN_JSON)
+	assert_eq(map.find_cell_nearest_centre(PackedStringArray(["glacier"])), Vector2i(-1, -1),
+		"asking for ground the map has none of is answered, not guessed at")

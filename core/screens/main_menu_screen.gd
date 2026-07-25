@@ -10,6 +10,9 @@ func _ready() -> void:
 	if Engine.is_editor_hint():
 		return
 	_build_ui()
+	# Normally already playing from the splash and so a no-op; this is what brings the theme back
+	# when the menu is reached from a game, where the music was stopped.
+	Kernel.audio.play_music(AppShell.SHELL_MUSIC)
 
 
 func _build_ui() -> void:

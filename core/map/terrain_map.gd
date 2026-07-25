@@ -107,6 +107,28 @@ func biome_names() -> Array:
 	return _biomes.keys()
 
 
+## The cell closest to the map's middle whose biome is one of [param allowed], or `(-1, -1)` if the
+## map has none. Ties break by row then column, so the answer is the same on every machine and every
+## run — a settlement placed here has to still be there after a save and a reload.
+##
+## Takes the acceptable biomes as an argument rather than knowing them: which ground can hold a
+## settlement is the game's decision, not the map format's. Centre-out because the edge of a map is
+## a strange place to found anything.
+func find_cell_nearest_centre(allowed: PackedStringArray) -> Vector2i:
+	var best := Vector2i(-1, -1)
+	var best_distance := INF
+	var centre := Vector2(width - 1, height - 1) * 0.5
+	for y in height:
+		for x in width:
+			if not allowed.has(biome_at(x, y)):
+				continue
+			var distance := (Vector2(x, y) - centre).length_squared()
+			if distance < best_distance:
+				best_distance = distance
+				best = Vector2i(x, y)
+	return best
+
+
 func priority_of(biome: String) -> int:
 	return int((_biomes.get(biome, {}) as Dictionary).get("priority", 0))
 

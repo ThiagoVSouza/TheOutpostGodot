@@ -5,17 +5,21 @@ extends Control
 ## screen would discard its conversation log. As a child overlay the map opens over the running game
 ## and closes back to it untouched.
 ##
-## Owns the content paths (the map lives in base_game): it loads the decoded [TerrainMap] and the
-## biome textures, then hands both to the reusable [OverworldMapView].
+## Loads this module's map content ([BaseGameMap]) and hands it to the reusable [OverworldMapView],
+## then pins the outpost's own flag to the cell the seed founded it on — the map shows a settlement,
+## not just terrain.
 
-const MAP_JSON := "res://modules/base_game/assets/map/overworld_demo.json"
-const TERRAIN_JSON := "res://modules/base_game/assets/map/overworld_terrain.json"
-# The content base the terrain set's relative texture paths ("assets/map/…") resolve against.
-const CONTENT_BASE := "res://modules/base_game/"
+## The banner pinned to the outpost's cell. A fixed screen size, so it stays findable at any zoom.
+const MARKER_FLAG_WIDTH := 30.0
 
 
 func _ready() -> void:
-	set_anchors_preset(Control.PRESET_FULL_RECT)
+	# `set_anchors_and_offsets_preset`, not `set_anchors_preset`: the latter recomputes the offsets to
+	# *preserve the current rect*, and this overlay is built in code, so at `_ready` it is 0×0 inside
+	# a parent that already has a size. That bakes in offsets of -width,-height and pins the overlay
+	# to nothing — which is why the Map button used to open an invisible overlay. Screens loaded from
+	# a `.tscn` get away with the other call only because their scene already stores a full rect.
+	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	# Dim the game behind the map and swallow clicks so they do not fall through to the chat UI.
 	var dim := ColorRect.new()
 	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -51,21 +55,26 @@ func _ready() -> void:
 	view.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	vbox.add_child(view)
 
-	var map := TerrainMap.from_files(MAP_JSON, TERRAIN_JSON)
+	var map := BaseGameMap.load_map()
 	if map == null:
 		title.text = "Overworld — map failed to load (see log)"
 		return
-	view.setup(map, _load_textures(map))
+	view.setup(map, BaseGameMap.load_textures(map))
+
+	var outpost_name := _pin_outpost(view)
+	if not outpost_name.is_empty():
+		title.text = "Overworld — %s" % outpost_name
 
 
-## biome -> Array[Texture2D] in variant order, resolving the terrain set's relative paths.
-func _load_textures(map: TerrainMap) -> Dictionary:
-	var textures: Dictionary = {}
-	for biome: Variant in map.biome_names():
-		var variants: Array = []
-		for rel: String in map.textures_for(String(biome)):
-			var tex: Variant = load(CONTENT_BASE + rel)
-			if tex is Texture2D:
-				variants.append(tex)
-		textures[String(biome)] = variants
-	return textures
+## Pin the outpost's banner to its cell. Returns the settlement's name, or "" when this world has no
+## site — a game seeded before the outpost had a place on the map still opens, just without a pin.
+func _pin_outpost(view: OverworldMapView) -> String:
+	var site: Dictionary = Kernel.state.get_value(GameSession.OUTPOST_SITE_STATE_KEY, {})
+	if site.is_empty():
+		return ""
+	var flag := FlagView.new()
+	flag.custom_minimum_size = Vector2(MARKER_FLAG_WIDTH, MARKER_FLAG_WIDTH * FlagView.aspect())
+	flag.set_value(FlagValue.from_dict(
+		Kernel.state.get_value(GameSession.OUTPOST_FLAG_STATE_KEY, {}) as Dictionary))
+	view.set_marker("outpost", Vector2i(int(site["x"]), int(site["y"])), flag)
+	return String(Entities.get_entity(Kernel.state, "outpost").get("name", ""))
