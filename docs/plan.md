@@ -671,9 +671,9 @@ nobody has decided, and roughly how much is left.
 
 **The splash shows the real logo (2026-07-25).** `core/assets/pangea_logo.png` on a true black field,
 scaled to a share of the viewport in its own aspect so it holds its proportion on a phone and on a
-desktop. Note on the asset: it is an **opaque near-white plate with the mark knocked out to full
-transparency**, so on black it reads as a dark mark inside a white badge. A white mark directly on
-black would need the alpha inverted. An animated reveal is still to come.
+desktop. As supplied the asset was an **opaque near-white plate with the mark knocked out to full
+transparency**, so on black it read as a dark mark inside a white badge; it was **inverted on
+2026-07-26** to a white mark directly on black (see below). An animated reveal is still to come.
 
 **Menu background + game icon — done (2026-07-26).** Two supplied images wired up: a painted
 settlement behind the main menu and the loading screen, and a watchtower as the app's icon.
@@ -689,23 +689,25 @@ settlement behind the main menu and the loading screen, and a watchtower as the 
   (mdpi→xxxhdpi, adaptive foreground/background/monochrome) from `application/config/icon`, which
   now points at `game_icon.png`. Verified by unpacking the built APK, not assumed.
 
-**Two things about the source art, neither of them shippable-as-final:**
+**Both source images are used as supplied — settled 2026-07-26, not open questions.**
 
-- **The background is landscape (2752x1536, 1.79:1) and the app is locked portrait (0.56:1).** It
-  cannot fill the screen and keep its proportions, so it is cropped to cover
-  (`KEEP_ASPECT_COVERED`) rather than distorted — on a phone that shows roughly the **middle
-  quarter**: the keep and its towers, with the river, the bridge and the outlying farms all cropped
-  away. It is also *under* resolution for that use: covering a 1080x2340 screen by height needs
-  ~2340px of image and there are 1536, so it is upscaled ~1.5x. **A portrait-native variant
-  (something near 1080x2340) would show far more of the painting and be sharper doing it.** It looks
-  correct on a desktop window, where the aspects nearly match.
-- **The icon is 101x101; Android's adaptive icon wants 432x432.** Godot upscales it ~4.3x, which
-  softens it — no amount of resampling adds detail that is not in a 101px source. **A 432x432 (or
-  larger) original is the fix.** Shipped as supplied meanwhile.
+- **The background is landscape (2752x1536) and the app is portrait, so it is always cropped.** That
+  is the accepted behaviour rather than a stopgap: there is no portrait-native variant coming, so
+  the crop is designed rather than tolerated. It scales to cover and is framed on `ART_FOCUS_X`
+  (0.58) — **the keep's own position in the painting**, not the image's midpoint, which is a
+  different point and would clip the right-hand towers. The settlement therefore sits centred at
+  every aspect the game runs at, and the river, bridge and outlying farms fall outside the frame
+  deliberately. `KEEP_ASPECT_COVERED` cannot express a focal point (it always centres the image),
+  which is why the size and offset are computed instead, clamped so no edge can show.
+- **The icon is 101x101 and Godot upscales it for the Android launcher set.** Accepted as-is.
 
-**Not superseded by this:** the splash still carries the *company* mark (`pangea_logo.png`) and its
-open question — the asset is a near-white plate with the logo knocked out, so on black it reads as a
-dark mark inside a white badge — is untouched by either of these images.
+**The splash logo is inverted (2026-07-26)** — a white mark directly on black, replacing the
+white badge with the mark knocked out of it. Not a plain alpha inversion: the surround outside the
+badge is transparent too and would have become an opaque white field. Only the *enclosed* knocked-out
+region is the mark, so the transform flood-fills from the border to identify the surround, leaves it
+transparent, and inverts everything else — plate to nothing, mark to the same off-white ink the
+plate used, anti-aliased edges carried through. Done once with a throwaway Godot script (deleted);
+the asset in the repo is the result.
 
 **Audio — done (2026-07-25).** There was no player at all; the assets had been staged for weeks.
 `AudioManager` (`core/audio/`, kernel field `audio`, a Node because it owns `AudioStreamPlayer`s)
