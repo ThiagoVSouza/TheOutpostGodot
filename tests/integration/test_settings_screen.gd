@@ -39,6 +39,10 @@ func after_each() -> void:
 	Kernel.settings.set_vsync_mode(_restore_vsync)
 	Kernel.settings.apply_audio(Kernel.audio)
 	Kernel.settings.apply_video()
+	# The rebinding tests write real overrides into the shared settings and the process-wide
+	# InputMap; put both back so the rest of the suite (and a dev running this) keeps its keys.
+	Kernel.settings.clear_all_key_bindings()
+	InputActions.install(Kernel.settings)
 
 
 func _screen() -> Control:
@@ -173,6 +177,121 @@ func test_every_planned_row_is_labelled_as_such() -> void:
 			planned_controls += 1
 	assert_gt(planned_controls, 20, "the planned settings are present")
 	assert_eq(tags, planned_controls, "one 'planned' tag per planned control, no more and no fewer")
+
+
+# --- key rebinding -------------------------------------------------------------------------
+
+func _binding_button(screen: Control, action_id: String) -> Button:
+	var buttons: Dictionary = screen.get("_binding_buttons")
+	return buttons.get(action_id)
+
+
+## Drive the screen's own capture path with a synthetic keypress, exactly as a real one arrives.
+func _press(screen: Control, keycode: int) -> void:
+	var event := InputEventKey.new()
+	event.keycode = keycode
+	event.pressed = true
+	screen.call("_input", event)
+
+
+func test_the_controls_tab_offers_a_live_button_per_bindable_action() -> void:
+	var screen := _screen()
+	for id: String in InputActions.ids():
+		var button := _binding_button(screen, id)
+		assert_not_null(button, "'%s' has a binding button" % id)
+		assert_false(button.disabled, "and it is operable")
+		assert_false(button.has_meta(SettingsScreen.PLANNED_META),
+			"a bindable action is not marked planned")
+
+
+func test_a_binding_button_shows_the_key_currently_in_force() -> void:
+	var screen := _screen()
+	var button := _binding_button(screen, InputActions.PASS_DAY)
+	assert_eq(button.text, InputActions.key_name(
+		InputActions.keycode_for(InputActions.PASS_DAY, Kernel.settings)))
+
+
+func test_pressing_a_key_while_listening_rebinds_the_action() -> void:
+	var screen := _screen()
+	var button := _binding_button(screen, InputActions.PASS_DAY)
+	button.button_pressed = true  # enters "press a key…"
+
+	_press(screen, KEY_J)
+
+	assert_eq(Kernel.settings.key_binding(InputActions.PASS_DAY), KEY_J, "the override was stored")
+	assert_eq(button.text, "J", "and the button shows it")
+	var event := InputEventKey.new()
+	event.keycode = KEY_J
+	assert_true(InputMap.event_is_action(event, InputActions.PASS_DAY), "and the InputMap agrees")
+
+
+func test_escape_cancels_a_rebind_rather_than_binding_itself() -> void:
+	# Escape is what a player reflexively presses to back out of a mode, and losing "Back / close"
+	# to a mis-click would be awkward to undo.
+	var screen := _screen()
+	var button := _binding_button(screen, InputActions.PASS_DAY)
+	var before := InputActions.keycode_for(InputActions.PASS_DAY, Kernel.settings)
+	button.button_pressed = true
+
+	_press(screen, KEY_ESCAPE)
+
+	assert_eq(InputActions.keycode_for(InputActions.PASS_DAY, Kernel.settings), before,
+		"the binding is unchanged")
+	assert_false(button.button_pressed, "and the button stopped listening")
+
+
+func test_taking_a_key_from_another_action_leaves_that_one_unbound() -> void:
+	# The rule the UNBOUND constant exists for: a key drives exactly one action, and the loser must
+	# not silently fall back to the default it just lost.
+	var screen := _screen()
+	var map_key := InputActions.keycode_for(InputActions.OPEN_MAP, Kernel.settings)
+	var button := _binding_button(screen, InputActions.PASS_DAY)
+	button.button_pressed = true
+
+	_press(screen, map_key)
+
+	assert_eq(InputActions.keycode_for(InputActions.PASS_DAY, Kernel.settings), map_key,
+		"the winner took the key")
+	assert_eq(InputActions.keycode_for(InputActions.OPEN_MAP, Kernel.settings), KEY_NONE,
+		"and the loser holds no key at all")
+	assert_eq(_binding_button(screen, InputActions.OPEN_MAP).text, "Unbound",
+		"which the loser's own button says")
+
+
+func test_resetting_bindings_restores_every_default() -> void:
+	var screen := _screen()
+	var button := _binding_button(screen, InputActions.PASS_DAY)
+	button.button_pressed = true
+	_press(screen, KEY_J)
+
+	screen.call("_on_reset_bindings")
+
+	for id: String in InputActions.ids():
+		assert_eq(InputActions.keycode_for(id, Kernel.settings), InputActions.default_keycode(id),
+			"'%s' is back on its default" % id)
+
+
+func test_resetting_bindings_leaves_the_other_settings_alone() -> void:
+	# "Reset all bindings" sits in the Controls tab and must not behave like the footer's
+	# "Reset all to defaults" — a player clearing their keys should not lose their volumes.
+	var screen := _screen()
+	Kernel.settings.set_audio_volume(AudioManager.MUSIC, 0.33)
+
+	screen.call("_on_reset_bindings")
+
+	assert_almost_eq(Kernel.settings.audio_volume(AudioManager.MUSIC), 0.33, 0.001)
+
+
+func test_the_controls_list_and_the_action_set_agree_on_wording() -> void:
+	# The tab decides which rows are live by matching KEY_BINDINGS labels against action labels, so
+	# a reworded label in one list would silently turn a live binding back into a placeholder.
+	var labels: Array = []
+	for group: Dictionary in SettingsScreen.KEY_BINDINGS:
+		for action: Array in group["actions"]:
+			labels.append(String(action[0]))
+	for action: Dictionary in InputActions.ACTIONS:
+		assert_true(labels.has(String(action["label"])),
+			"'%s' is named in the Controls tab's own list" % action["label"])
 
 
 func test_every_planned_control_is_actually_inert() -> void:

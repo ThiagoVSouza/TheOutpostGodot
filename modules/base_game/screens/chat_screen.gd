@@ -82,6 +82,31 @@ func _ready() -> void:
 	_present_oldest_pending()
 
 
+## The play actions, as actions rather than keycodes — which is what makes them rebindable. Each
+## does exactly what its on-screen control does, including that control's own guards: `_on_pass_day`
+## already refuses while a turn or a question is in flight, so the key inherits that for free.
+##
+## `_unhandled_input` matters here: the chat input is a focused [LineEdit] most of the time, and it
+## consumes the keystrokes meant for it before this ever runs. That is why "focus the input" can be
+## a bare letter without stealing typing.
+func _unhandled_input(event: InputEvent) -> void:
+	if not event.is_pressed() or event.is_echo():
+		return
+	if event.is_action(InputActions.FOCUS_INPUT):
+		if _input.editable:
+			_input.grab_focus()
+		get_viewport().set_input_as_handled()
+	elif event.is_action(InputActions.PASS_DAY):
+		_on_pass_day()
+		get_viewport().set_input_as_handled()
+	elif event.is_action(InputActions.OPEN_MAP):
+		_on_open_map()
+		get_viewport().set_input_as_handled()
+	elif event.is_action(InputActions.QUICK_SAVE):
+		_on_save()
+		get_viewport().set_input_as_handled()
+
+
 ## The on-screen keyboard would otherwise sit on top of the input row with nothing to push it out
 ## of the way (Android UX pass) — the log above it shrinks to make room instead, the same shape a
 ## viewport resize would produce, but driven directly so it works whether or not Android actually

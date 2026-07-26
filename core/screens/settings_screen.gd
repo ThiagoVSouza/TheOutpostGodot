@@ -109,6 +109,9 @@ const KEY_BINDINGS := [
 
 var _back := DEFAULT_BACK
 var _volume_readouts: Dictionary = {}  # category -> Label
+var _binding_buttons: Dictionary = {}  # action id -> Button
+## The one binding button waiting for a keypress, if any.
+var _listening_button: Button = null
 
 
 func on_enter(params: Dictionary) -> void:
@@ -130,6 +133,11 @@ func _ready() -> void:
 
 func _build_ui() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
+	# Every control these point at is about to be rebuilt, so the old entries are dangling
+	# references — a rebuild (window mode, or a reset) would otherwise leave freed Buttons here.
+	_volume_readouts.clear()
+	_binding_buttons.clear()
+	_listening_button = null
 	ShellPalette.paint(self)
 
 	var margin := MarginContainer.new()
@@ -348,6 +356,92 @@ func _build_video_tab() -> Control:
 	return col
 
 
+## Whether a Controls-tab label names an action that actually exists (and so gets a live rebind
+## button instead of a `planned` placeholder). Matched on the *label*, because `KEY_BINDINGS` is
+## written in display terms — the two lists agree on wording, and a test asserts they still do.
+func _is_bindable(label: String) -> bool:
+	for action: Dictionary in InputActions.ACTIONS:
+		if String(action["label"]) == label:
+			return true
+	return false
+
+
+## One rebindable action: a button showing its current key, which listens for the next keypress
+## when clicked.
+func _binding_row(parent: Node, action_id: String, label: String) -> void:
+	var button := Button.new()
+	button.custom_minimum_size = Vector2(CONTROL_WIDTH, 0)
+	button.set_meta("action_id", action_id)
+	button.text = InputActions.key_name(InputActions.keycode_for(action_id, Kernel.settings))
+	button.toggle_mode = true
+	button.toggled.connect(func(on: bool) -> void: _listen_for_key(button, on))
+	_binding_buttons[action_id] = button
+	var default_name := InputActions.key_name(InputActions.default_keycode(action_id))
+	_row(parent, label, button, "Default: %s" % default_name)
+
+
+## Put a binding button into "press a key" mode. Only one listens at a time — two buttons waiting
+## for the same keypress would both claim it.
+func _listen_for_key(button: Button, listening: bool) -> void:
+	if listening and _listening_button != null and _listening_button != button:
+		_listening_button.set_pressed_no_signal(false)
+		_refresh_binding_button(_listening_button)
+	_listening_button = button if listening else null
+	if listening:
+		button.text = "Press a key…"
+	else:
+		_refresh_binding_button(button)
+
+
+## While a binding button is listening, the next keypress belongs to it rather than to the game —
+## including keys that are themselves bound to something, which is the whole point. Handled in
+## `_input` (not `_unhandled_input`) so it is seen *before* the action it would otherwise trigger.
+func _input(event: InputEvent) -> void:
+	if _listening_button == null or not (event is InputEventKey):
+		return
+	var key := event as InputEventKey
+	if not key.pressed or key.echo:
+		return
+	get_viewport().set_input_as_handled()
+	var button := _listening_button
+	var action_id := String(button.get_meta("action_id"))
+	# Escape cancels rather than binds: it is the one key a player will reflexively press to back
+	# out of a mode, and losing "Back / close" to a mis-click would be hard to undo.
+	if key.keycode != KEY_ESCAPE:
+		_rebind(action_id, key.keycode)
+	button.set_pressed_no_signal(false)
+	_listening_button = null
+	_refresh_binding_button(button)
+
+
+## Apply a new key, taking it from whatever held it. A key may drive only one action: leaving both
+## bound means one silently wins, which the player cannot see or diagnose.
+func _rebind(action_id: String, keycode: int) -> void:
+	var conflict := InputActions.action_using(keycode, Kernel.settings, action_id)
+	if not conflict.is_empty():
+		# Explicitly UNBOUND, not "no override": the latter falls back to a default that is this
+		# very key, and the clash would survive the fix.
+		Kernel.settings.set_key_binding(conflict, AppSettings.UNBOUND)
+	Kernel.settings.set_key_binding(action_id, keycode)
+	Kernel.settings.save()
+	InputActions.install(Kernel.settings)
+	if not conflict.is_empty() and _binding_buttons.has(conflict):
+		_refresh_binding_button(_binding_buttons[conflict])
+
+
+func _refresh_binding_button(button: Button) -> void:
+	var action_id := String(button.get_meta("action_id"))
+	button.text = InputActions.key_name(InputActions.keycode_for(action_id, Kernel.settings))
+
+
+func _on_reset_bindings() -> void:
+	Kernel.settings.clear_all_key_bindings()
+	Kernel.settings.save()
+	InputActions.install(Kernel.settings)
+	for action_id in _binding_buttons:
+		_refresh_binding_button(_binding_buttons[action_id])
+
+
 ## `{id, label}` rows for the resolution picker, led by "Default" — the honest name for
 ## [constant AppSettings.UNSET], which leaves whatever size the window already had.
 func _resolution_rows() -> Array:
@@ -401,13 +495,28 @@ func _on_vsync_changed(mode: String) -> void:
 
 func _build_controls_tab() -> Control:
 	var col := _tab_column()
-	_note(col, "The game has no input actions defined yet, so none of these are bound and none can "
-		+ "be rebound. The list is the intended set — rebinding every one of them is already a "
-		+ "promise, so the set has to be complete before any of it is built.")
+	_note(col, ("Click a key to change it, then press the new one. Escape cancels the change. "
+		+ "Actions still marked “%s” have no feature behind them yet — a binding you could change "
+		+ "and then watch do nothing would be worse than one that is honestly not ready.")
+		% PLANNED_TAG)
 
+	var reset := Button.new()
+	reset.text = "Reset all bindings"
+	reset.pressed.connect(_on_reset_bindings)
+	_row(col, "", reset, "Leaves audio, video and gameplay settings alone.")
+
+	# Built from the same list the actions are declared in (grouped by their own `group`), so the
+	# tab cannot drift from what is actually bindable. Anything in KEY_BINDINGS that has no action
+	# behind it keeps its `planned` tag.
 	for group: Dictionary in KEY_BINDINGS:
-		_section(col, String(group["group"]))
+		var group_name := String(group["group"])
+		_section(col, group_name)
+		for action: Dictionary in InputActions.ACTIONS:
+			if String(action["group"]) == group_name:
+				_binding_row(col, String(action["id"]), String(action["label"]))
 		for action: Array in group["actions"]:
+			if _is_bindable(String(action[0])):
+				continue  # already shown above, as a live control
 			var binding := Button.new()
 			binding.text = String(action[1])
 			binding.custom_minimum_size = Vector2(CONTROL_WIDTH, 0)
