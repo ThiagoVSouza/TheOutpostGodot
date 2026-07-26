@@ -12,7 +12,8 @@ Decisions and their evidence: `docs/decisions.md`. Measurements:
 gates. **GATE 0 there is binding: no production code before a direction review
 with the user.**
 
-Last updated: 2026-07-26 (the Android UX pass: portrait, legible scaling, a back button that asks
+Last updated: 2026-07-26 (a painted menu background and a real game icon; before that the Android UX
+pass: portrait, legible scaling, a back button that asks
 before it quits, and a keyboard that no longer covers the input — all verified on a real S26 Ultra.
 Before that: wizard choices drive the game, audio, the outpost on the overworld, a settings screen,
 the real logo. The flow is run in a window each time via `tools/capture_screens.gd`, which keeps
@@ -673,6 +674,38 @@ scaled to a share of the viewport in its own aspect so it holds its proportion o
 desktop. Note on the asset: it is an **opaque near-white plate with the mark knocked out to full
 transparency**, so on black it reads as a dark mark inside a white badge. A white mark directly on
 black would need the alpha inverted. An animated reveal is still to come.
+
+**Menu background + game icon — done (2026-07-26).** Two supplied images wired up: a painted
+settlement behind the main menu and the loading screen, and a watchtower as the app's icon.
+
+- **Moved out of `docs/`.** They arrived in `docs/Assets/`, which is no place for runtime art (the
+  same call the splash logo got): they now live in `core/assets/` beside `pangea_logo.png`, named
+  for what they are — `main_menu_background.png`, `game_icon.png`.
+- **`ShellPalette.paint_art()`** puts the painting behind a screen, and the menu's controls sit on a
+  `plate_style()` panel over it. Both were needed: the art is bright (sunlit fields, white cloud)
+  and the shell is light-on-dark, so a full-screen scrim alone still left the *disabled* menu items
+  — low-contrast by design — invisible against the lit farmhouse and stonework.
+- **The icon needs no export-preset entry:** Godot generates the whole Android launcher set
+  (mdpi→xxxhdpi, adaptive foreground/background/monochrome) from `application/config/icon`, which
+  now points at `game_icon.png`. Verified by unpacking the built APK, not assumed.
+
+**Two things about the source art, neither of them shippable-as-final:**
+
+- **The background is landscape (2752x1536, 1.79:1) and the app is locked portrait (0.56:1).** It
+  cannot fill the screen and keep its proportions, so it is cropped to cover
+  (`KEEP_ASPECT_COVERED`) rather than distorted — on a phone that shows roughly the **middle
+  quarter**: the keep and its towers, with the river, the bridge and the outlying farms all cropped
+  away. It is also *under* resolution for that use: covering a 1080x2340 screen by height needs
+  ~2340px of image and there are 1536, so it is upscaled ~1.5x. **A portrait-native variant
+  (something near 1080x2340) would show far more of the painting and be sharper doing it.** It looks
+  correct on a desktop window, where the aspects nearly match.
+- **The icon is 101x101; Android's adaptive icon wants 432x432.** Godot upscales it ~4.3x, which
+  softens it — no amount of resampling adds detail that is not in a 101px source. **A 432x432 (or
+  larger) original is the fix.** Shipped as supplied meanwhile.
+
+**Not superseded by this:** the splash still carries the *company* mark (`pangea_logo.png`) and its
+open question — the asset is a near-white plate with the logo knocked out, so on black it reads as a
+dark mark inside a white badge — is untouched by either of these images.
 
 **Audio — done (2026-07-25).** There was no player at all; the assets had been staged for weeks.
 `AudioManager` (`core/audio/`, kernel field `audio`, a Node because it owns `AudioStreamPlayer`s)
