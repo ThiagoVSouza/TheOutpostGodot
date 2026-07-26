@@ -46,6 +46,20 @@ const NARRATION_ROWS := [
 	{"id": NarrationSettings.LEVEL_LONG, "label": "Long — rich, descriptive prose"},
 ]
 
+## Window modes the player can pick, matching `AppSettings.WINDOW_MODES`.
+const WINDOW_MODE_ROWS := [
+	{"id": AppSettings.WINDOW_MODE_WINDOWED, "label": "Windowed"},
+	{"id": AppSettings.WINDOW_MODE_BORDERLESS, "label": "Borderless"},
+	{"id": AppSettings.WINDOW_MODE_FULLSCREEN, "label": "Fullscreen"},
+]
+
+## V-Sync modes the player can pick, matching `AppSettings.VSYNC_MODES`.
+const VSYNC_ROWS := [
+	{"id": AppSettings.VSYNC_OFF, "label": "Off"},
+	{"id": AppSettings.VSYNC_ON, "label": "On"},
+	{"id": AppSettings.VSYNC_ADAPTIVE, "label": "Adaptive"},
+]
+
 ## The actions the game intends to bind, with the keys they are expected to default to.
 ##
 ## **This list is the design, not a reflection of one:** the project has no `InputMap` actions at all
@@ -267,16 +281,18 @@ func _set_readout(category: String, value: float) -> void:
 
 func _build_video_tab() -> Control:
 	var col := _tab_column()
-	_note(col, "Nothing here is wired. The project has no display settings at all yet — it runs at "
-		+ "the project default in a window, and a resolution list needs a window-mode policy first.")
+	_note(col, "Window mode and V-Sync are real and persist. Everything else here still needs a "
+		+ "resolution list / render-scale policy nobody has decided yet.")
 
 	_section(col, "Display")
-	_planned_row(col, "Window mode", _options_mock(["Windowed", "Borderless", "Fullscreen"], 0), "")
+	var window_mode := _options(WINDOW_MODE_ROWS, Kernel.settings.window_mode(), _on_window_mode_changed)
+	_row(col, "Window mode", window_mode, "Borderless keeps the current window size without decorations.")
 	_planned_row(col, "Resolution", _options_mock(["1280 × 720", "1920 × 1080", "2560 × 1440"], 1), "")
 	_planned_row(col, "Monitor", _options_mock(["Primary"], 0), "")
 
 	_section(col, "Performance")
-	_planned_row(col, "V-Sync", _options_mock(["Off", "On", "Adaptive"], 1), "")
+	var vsync := _options(VSYNC_ROWS, Kernel.settings.vsync_mode(), _on_vsync_changed)
+	_row(col, "V-Sync", vsync, "")
 	_planned_row(col, "Frame rate cap", _options_mock(["30", "60", "120", "Unlimited"], 1),
 		"Matters most on a phone, where it is a battery setting more than a smoothness one.")
 	_planned_row(col, "Render scale", _options_mock(["75%", "100%", "125%"], 1), "")
@@ -289,6 +305,18 @@ func _build_video_tab() -> Control:
 		"The map's season tint is one of the deferred pieces of the legacy renderer.")
 	_planned_row(col, "Screen shake", _check_mock(true), "")
 	return col
+
+
+func _on_window_mode_changed(mode: String) -> void:
+	Kernel.settings.set_window_mode(mode)
+	Kernel.settings.save()
+	Kernel.settings.apply_video()
+
+
+func _on_vsync_changed(mode: String) -> void:
+	Kernel.settings.set_vsync_mode(mode)
+	Kernel.settings.save()
+	Kernel.settings.apply_video()
 
 
 # --- Controls ------------------------------------------------------------------------------
@@ -479,6 +507,7 @@ func _on_reset() -> void:
 	Kernel.settings.reset_to_defaults()
 	Kernel.settings.save()
 	Kernel.settings.apply_audio(Kernel.audio)
+	Kernel.settings.apply_video()
 	# Rebuilt rather than each control being reset in place: there is one place that reads the stored
 	# values into controls, and reusing it cannot drift from what the store actually holds.
 	for child in get_children():

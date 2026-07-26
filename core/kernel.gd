@@ -97,6 +97,7 @@ func boot() -> void:
 	settings = AppSettings.new()
 	settings.load_from_disk()
 	settings.apply_audio(audio)
+	settings.apply_video()
 
 	# 2-3. Communication + state.
 	events = EventBus.new()
