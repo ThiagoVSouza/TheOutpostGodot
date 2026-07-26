@@ -2,7 +2,11 @@
 .godot/
 .import/
 export.cfg
-export_presets.cfg
+# export_presets.cfg is deliberately TRACKED (Godot's template ignores it by default).
+# Without it a fresh clone cannot export at all, and ours carries no secrets: signing uses the
+# debug keystore from the *editor's* own settings, and the only credential-shaped keys
+# (apk_expansion SALT / public_key) are empty. If a release keystore is ever configured here,
+# move its path and password out to editor settings or an untracked override first.
 
 # Imported translations (automatically generated from CSV files)
 *.translation

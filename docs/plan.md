@@ -744,6 +744,37 @@ begin-new-game. Screens are JSON (`heading`/`card-choice`/`field`/`choice`/`flag
 types). This is the shape the deferred module-config wizard should take: the current single-field
 new-game screen grows into this multi-step flow, its `fields` feeding `seed_new_game`.
 
+**Video settings finished + start bonuses retuned — done (2026-07-26).** Three decisions the user
+handed over rather than made one at a time.
+
+- **Resolution, Monitor and Frame rate cap are now real**, on a policy chosen here: resolution is a
+  *windowed desktop* setting (fullscreen and borderless take their size from the screen; on a phone
+  the OS owns the window), monitor only means anything with more than one display attached, and the
+  frame cap applies everywhere — it is a battery setting on a phone more than a smoothness one.
+  Both conditional controls are **disabled with the reason showing** rather than hidden or left
+  live-but-inert. Defaults are all "leave it alone" (`UNSET` / `-1` / `0`): on a first run the OS
+  has already sized and placed the window sensibly, and V-Sync is what should limit the frame rate
+  until the player says otherwise. A stored-but-out-of-range monitor is **kept, not erased** — a
+  laptop that chose "monitor 2" at the desk gets it back when docked.
+- **This forced a distinction the screen did not have:** a control can now be *finished but not
+  applicable right now* (Resolution outside Windowed, Monitor with one display), which looks
+  identical to *not built yet* — both greyed. `PLANNED_META` marks the latter, and the
+  one-tag-per-planned-control test counts against that mark instead of against every disabled
+  control, so the two cannot be confused. **Render scale keeps its tag**: it is the viewport's *3D*
+  scale and this is a 2D game, so it is a reminder to delete it, not to build it.
+- **Start bonuses retuned** (still provisional). Two defects a human found by reading the table:
+  Scholar granted no number at all — an option that changes nothing reads as the one nobody should
+  pick — and Coast and Forest were the *same* grant, so two of four cards differed by prose alone.
+  Now the resource *type* follows each card's own economy (Coast/Mountains pay gold for trade and
+  ore; Valley/Forest pay food) and the *amount* follows its stated fertility/difficulty. Two
+  resources cannot make four locations qualitatively unique — that waits on the economy (M7).
+  **Two new tests encode the defects rather than the numbers:** every choice must grant at least one
+  mechanical effect, and no two locations may share a (type, amount) pair. Retuning stays a
+  one-place edit.
+- Verified against a real window (throwaway driver, deleted): the cap reaches `Engine.max_fps`, a
+  windowed size is applied, the same size is **correctly ignored** in fullscreen, and an
+  out-of-range monitor is skipped rather than crashing. 390 green.
+
 **Video settings: window mode + V-Sync — done (2026-07-25).** The two controls #52 called out as
 "cheapest to make real next" are now wired, following the same shape as narration/audio:
 `AppSettings` gained `window_mode()`/`vsync_mode()` (persisted in the `video` section of
@@ -808,12 +839,13 @@ run, a settings screen and a seeded world, all of which landed after the list wa
   units — 1.5x apart here, so the raw number reserved half again too much room and left a dead band.
   The same physical-vs-logical trap sits behind `SafeArea` and is handled there too.
 
-**`export_presets.cfg`** — required to export, gitignored by Godot's default. Ours
-holds no secrets (re-checked on the Android UX pass: no keystore path, alias or password — Godot
-keeps the debug-signing details in *editor* settings, not here). Untracked pending a decision;
-without it `tools/export_android.ps1` cannot run on a fresh clone. **Recommendation: commit it**
-(drop line 5 of `.gitignore`) — the Android UX pass needed it present, and the orientation fix that
-pass landed lives in the tracked `project.godot` but cannot be *exported* without this file.
+~~**`export_presets.cfg`**~~ — **tracked as of 2026-07-26.** Godot's template gitignores it, but a
+fresh clone then cannot export at all: the Android orientation fix lives in the tracked
+`project.godot` and still needs this file to reach an APK. Audited before committing — no keystore
+path, alias or password (Godot keeps debug-signing details in *editor* settings), and the only
+credential-shaped keys, `apk_expansion/SALT` and `public_key`, are empty. The `.gitignore` now
+carries that reasoning plus the condition that would reverse it: if a *release* keystore is ever
+configured here, its path and password move out to editor settings or an untracked override first.
 
 **MTP retest via `-hf`** (D15) — our `-md` measurement is untrustworthy; reports
 elsewhere claim up to 3x.

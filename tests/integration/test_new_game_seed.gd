@@ -344,3 +344,35 @@ func test_every_background_and_location_effect_applies_without_a_single_command_
 		kernel.session.begin_new_game({"hero_name": "Livia", "outpost_location": String(location)})
 		assert_true(rejected.is_empty(), "location '%s' had a rejected command: %s" %
 			[location, rejected])
+
+
+## The two shapes of "this choice is not really a choice", both of which the first pass shipped and
+## a human spotted by reading the table rather than by running anything. Neither asserts a *number*,
+## so retuning stays a one-place edit — they only require that the numbers say something.
+
+func test_every_choice_grants_at_least_one_mechanical_effect() -> void:
+	# An option that changes nothing reads as the one nobody should pick, whatever its flavour text
+	# promises. Scholar was exactly that: a trait and a memory, and no number anywhere.
+	var tables := {
+		"BACKGROUND_EFFECTS": BaseGameModule.BACKGROUND_EFFECTS,
+		"LOCATION_EFFECTS": BaseGameModule.LOCATION_EFFECTS,
+	}
+	for table_name in tables:
+		var table: Dictionary = tables[table_name]
+		for id in table:
+			var effect: Dictionary = table[id]
+			assert_true(effect.has("resource") or effect.has("disposition_target"),
+				"%s['%s'] changes no game state — it is a choice in name only" % [table_name, id])
+
+
+func test_no_two_locations_are_mechanically_identical() -> void:
+	# Coast and Forest shipped with the same grant, so two of the four cards differed by prose alone.
+	# With only food/gold the *type* cannot always differ, but the whole (type, amount) pair must.
+	var seen: Dictionary = {}
+	for id in BaseGameModule.LOCATION_EFFECTS:
+		var effect: Dictionary = BaseGameModule.LOCATION_EFFECTS[id]
+		var signature := "%s:%d" % [String(effect.get("resource", "")), int(effect.get("amount", 0))]
+		assert_false(seen.has(signature),
+			"locations '%s' and '%s' grant exactly the same thing (%s)" %
+			[seen.get(signature, ""), id, signature])
+		seen[signature] = id

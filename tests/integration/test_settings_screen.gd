@@ -158,14 +158,31 @@ func test_a_planned_control_cannot_be_operated() -> void:
 func test_every_planned_row_is_labelled_as_such() -> void:
 	# Disabled is not enough on its own: a greyed control reads as "unavailable right now", not as
 	# "not built yet". The tag is what makes the difference legible.
+	#
+	# Counted against controls *marked* planned rather than against every disabled control, because
+	# the screen now has both kinds: Resolution outside Windowed mode, and Monitor with one display,
+	# are finished settings that simply do not apply — greyed, explained by a note, and correctly
+	# untagged. Counting all disabled controls would demand a "not built yet" tag on those two.
 	var screen := _screen()
 	var tags := 0
-	var inert_controls := 0
+	var planned_controls := 0
 	for node in _descendants(screen):
 		if node is Label and (node as Label).text == SettingsScreen.PLANNED_TAG:
 			tags += 1
-		elif node is Range and not (node as Range).editable:
-			inert_controls += 1
-		elif node is BaseButton and (node as BaseButton).disabled:
-			inert_controls += 1
-	assert_eq(tags, inert_controls, "one 'planned' tag per inert control, no more and no fewer")
+		elif node is Control and (node as Control).has_meta(SettingsScreen.PLANNED_META):
+			planned_controls += 1
+	assert_gt(planned_controls, 20, "the planned settings are present")
+	assert_eq(tags, planned_controls, "one 'planned' tag per planned control, no more and no fewer")
+
+
+func test_every_planned_control_is_actually_inert() -> void:
+	# The other half of the promise: a control tagged "planned" must not be operable. (Its
+	# counterpart — that untagged controls work — is what the audio/vsync/window-mode tests cover.)
+	var screen := _screen()
+	for node in _descendants(screen):
+		if not (node is Control and (node as Control).has_meta(SettingsScreen.PLANNED_META)):
+			continue
+		if node is Range:
+			assert_false((node as Range).editable, "a planned Range is not editable")
+		elif node is BaseButton:
+			assert_true((node as BaseButton).disabled, "a planned button is disabled")

@@ -116,6 +116,9 @@ func register(kernel: GameKernel) -> void:
 ## below. All keys are optional; an entry with none of them (a background with only a `trait`, say)
 ## is a no-op for the ones it omits.
 ##
+## Every entry grants *something*: an option that changes no number reads as the one nobody should
+## pick, whatever its flavour says (Scholar was that option until 2026-07-26).
+##
 ## `resource`/`amount` grants on top of the flat starting resources below (`GrantResourceCommand`,
 ## so only positive amounts — the legacy JSON's location "penalties" have no way to land here yet).
 ## `disposition_target`/`disposition_delta` nudge an *existing* entity (`AdjustDispositionCommand`),
@@ -154,23 +157,32 @@ const BACKGROUND_EFFECTS := {
 		"memory": "The hero led a company of adventurers who knew how to live off hard country.",
 	},
 	"scholar": {
-		"trait": "scholar",
+		"resource": "gold", "amount": 8, "trait": "scholar",
 		"memory": "The hero came from the great library, trained in things this frontier has "
 			+ "no name for.",
 	},
 }
 
+## Retuned 2026-07-26 (still provisional) so each location's grant matches the card the player read.
+## Both halves of the old table were wrong in the same way — Coast and Forest were literally the same
+## grant, and the resource never reflected what the card promised. Now the *type* follows the card's
+## own economy and the *amount* follows its stated fertility/difficulty: Coast and Mountains pay in
+## gold (trade, ore), Valley and Forest in food (fertile, game) — and within each pair the friendlier
+## start pays more.
+##
+## Two resources cannot make four locations qualitatively unique; this is as far as `food`/`gold`
+## honestly stretch, and the rest waits on the economy (M7) giving `wood`/`stone` somewhere to go.
 const LOCATION_EFFECTS := {
 	"coast": {
-		"resource": "food", "amount": 5,
+		"resource": "gold", "amount": 8,
 		"memory": "The outpost took root on a sheltered coast, within sight of trading sail.",
 	},
 	"valley": {
-		"resource": "food", "amount": 10,
+		"resource": "food", "amount": 12,
 		"memory": "The outpost rose in a wide, fertile valley.",
 	},
 	"forest": {
-		"resource": "food", "amount": 5,
+		"resource": "food", "amount": 6,
 		"memory": "The outpost was cut from dense woodland, timber close at hand.",
 	},
 	"mountains": {
