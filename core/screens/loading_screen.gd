@@ -26,6 +26,12 @@ func _ready() -> void:
 	tween.tween_callback(func() -> void: Kernel.router.goto(_next, _params))
 
 
+## Hardware/gesture back is swallowed here (Android UX pass): a transition already in flight has
+## nowhere sensible to go and nothing to confirm exiting out of.
+func on_hardware_back() -> bool:
+	return true
+
+
 func _build_ui() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	ShellPalette.paint(self, ShellPalette.BACKGROUND_LOADING)
@@ -34,7 +40,8 @@ func _build_ui() -> void:
 	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
 	margin.add_theme_constant_override("margin_left", 40)
 	margin.add_theme_constant_override("margin_right", 40)
-	margin.add_theme_constant_override("margin_bottom", 40)
+	# The bar is bottom-aligned, so it has to clear anything the display reserves.
+	margin.add_theme_constant_override("margin_bottom", 40 + SafeArea.bottom(get_viewport()))
 	add_child(margin)
 
 	var col := VBoxContainer.new()

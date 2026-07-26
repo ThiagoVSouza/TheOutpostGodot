@@ -61,6 +61,18 @@ var settings: AppSettings
 var prompt_families: PromptFamilyRegistry
 var ai_runner: DslAiRunner
 
+## Shown when the hardware/gesture back button has nowhere in-app to go (Android UX pass). Built
+## lazily and kept for the process lifetime rather than one per press — a `Window`-derived node,
+## so it needs to be in the tree, and the kernel autoload is the one thing guaranteed to outlive
+## every screen it might be asked for from.
+var _exit_confirm: ConfirmationDialog = null
+
+## The frame the back button was last acted on. Android delivers `WM_GO_BACK_REQUEST` **twice** per
+## press (measured on an S26 Ultra: two notifications ~2 ms apart), which without this made one press
+## navigate two levels — the wizard jumped from step 2 straight to the main menu instead of step 1.
+## One back action per frame; a real press cannot recur inside a single frame.
+var _last_back_frame: int = -1
+
 var _booted: bool = false
 
 
@@ -256,6 +268,43 @@ func _notification(what: int) -> void:
 			session.save_on_lifecycle_event("app_closing")
 		NOTIFICATION_WM_GO_BACK_REQUEST:
 			session.save_on_lifecycle_event("app_back")
+			_handle_hardware_back()
+
+
+## The Android hardware/gesture back button (Android UX pass, 2026-07-26). `application/config
+## .quit_on_go_back` is off (project.godot), so this is the only thing that decides what happens —
+## previously nothing did, and the OS silently killed the app with no warning. What was actually
+## missing was never state (the lifecycle save above already runs unconditionally, first), it was
+## a screen vanishing without asking.
+##
+## The mounted screen gets first refusal: if it implements `on_hardware_back() -> bool` and returns
+## true, it decided for itself (typically by doing exactly what its own on-screen Back/Cancel button
+## does) and nothing further happens here. Anything else — no such method, or one that declines —
+## falls through to a confirm-to-exit dialog rather than quitting outright.
+func _handle_hardware_back() -> void:
+	var frame := Engine.get_process_frames()
+	if frame == _last_back_frame:
+		return  # the duplicate notification Android sends for the same press
+	_last_back_frame = frame
+	var screen: Node = router.current_screen() if router != null else null
+	if screen != null and screen.has_method("on_hardware_back") and bool(screen.call("on_hardware_back")):
+		return
+	var dialog := _ensure_exit_confirm()
+	# The headless test runner has no real display server to pop a Window into — the same guard
+	# `AppSettings.apply_video()` uses. The dialog still gets built either way, so a test can assert
+	# on it without triggering the OS call that only a real window can answer.
+	if DisplayServer.get_name() != "headless":
+		dialog.popup_centered()
+
+
+func _ensure_exit_confirm() -> ConfirmationDialog:
+	if _exit_confirm == null:
+		_exit_confirm = ConfirmationDialog.new()
+		_exit_confirm.dialog_text = "Exit The Outpost?"
+		_exit_confirm.ok_button_text = "Exit"
+		_exit_confirm.confirmed.connect(func() -> void: get_tree().quit())
+		add_child(_exit_confirm)
+	return _exit_confirm
 
 
 func _create_ai_backend() -> AiBackend:

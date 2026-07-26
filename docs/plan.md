@@ -12,10 +12,11 @@ Decisions and their evidence: `docs/decisions.md`. Measurements:
 gates. **GATE 0 there is binding: no production code before a direction review
 with the user.**
 
-Last updated: 2026-07-25 (wizard choices drive the game; the game has sound; the outpost stands on the
-overworld; a full settings screen exists, mostly as marked placeholders; the splash carries the real
-logo. The flow is now run in a window each time via `tools/capture_screens.gd`, which is finding real
-bugs)
+Last updated: 2026-07-26 (the Android UX pass: portrait, legible scaling, a back button that asks
+before it quits, and a keyboard that no longer covers the input — all verified on a real S26 Ultra.
+Before that: wizard choices drive the game, audio, the outpost on the overworld, a settings screen,
+the real logo. The flow is run in a window each time via `tools/capture_screens.gd`, which keeps
+finding real bugs)
 
 ---
 
@@ -761,19 +762,58 @@ bypassing this code entirely, so it is the renderer's own fallback, not this cha
 `tools/capture_screens.gd`'s Video-tab capture confirms the two rows now render enabled
 (un-tagged) beside the rest of the tab's still-`planned` rows. 362 tests green (356 + 6 new).
 
-**Android UI issues** (found during the milestone-1 deploy, deliberately not fixed):
+**Android UX pass — done (2026-07-26).** The milestone-1 deploy list, closed on a real S26 Ultra
+(export → install → drive → screenshot, every item verified on the device rather than headless).
+It had been deferred since M1 and had only grown: a stray back-press could discard a whole wizard
+run, a settings screen and a seeded world, all of which landed after the list was written.
 
-| Issue | Note |
+| Issue | Resolution |
 |---|---|
-| Landscape orientation | No orientation set; a chat game wants portrait |
-| Fonts far too small | Default theme at density 450 is barely legible |
-| No safe-area handling | Content at extreme top-left; punch-hole will clip it |
-| Back button quits instantly | No confirmation, state lost. **Gets urgent at M4** |
-| Keyboard overlays input | Layout does not shift |
+| Landscape orientation | **Fixed.** `display/window/handheld/orientation=1` (portrait). |
+| Fonts far too small | **Fixed.** `canvas_items` stretch over a 720x1280 reference viewport, `expand` aspect — the UI is authored at phone scale and scales up, instead of being drawn at raw 450dpi. |
+| No safe-area handling | **Fixed — and the finding was that there is nothing to inset.** See below. |
+| Back button quits instantly | **Fixed.** `quit_on_go_back=false` + a kernel-owned handler; confirm-to-exit dialog. |
+| Keyboard overlays input | **Fixed.** The chat screen grows its bottom margin by the keyboard's height. |
+
+- **Back button (the priority item).** `application/config/quit_on_go_back` is now off, so
+  `GameKernel._handle_hardware_back()` is the only thing deciding what a press does. The mounted
+  screen gets first refusal via an optional `on_hardware_back() -> bool`, which every shell screen
+  implements as *exactly what its own on-screen Back/Cancel does* (the wizard steps back a step, the
+  settings screen returns to whoever opened it, the splash skips); anything that declines — the main
+  menu, the game screen — falls through to a **confirm-to-exit dialog** (the user's call over a
+  press-back-again toast: explicit, and assertable in a test where a timing-based pattern is not).
+  The lifecycle save already ran unconditionally and still does; what was missing was never state,
+  it was a screen vanishing without asking.
+- **The bug only the device could find: Android delivers `WM_GO_BACK_REQUEST` twice per press**
+  (~2 ms apart, measured). One press took the wizard from step 2 straight to the main menu. Guarded
+  by acting at most once per process frame; there is a regression test for the duplicate *and* one
+  proving a genuinely separate press still navigates.
+- **Safe area: the honest answer is 0.** `screen_get_usable_rect()` returns **1080x2100 of a
+  1080x2340 screen** — Android hands the app a window with the navigation bar already excluded, so
+  `get_display_safe_area()` matches it and there is nothing left to avoid. The first attempt inset
+  the whole router host, which produced the *opposite* of safe: it read the window size during boot
+  before it settled, shrank the app below the window Android had correctly sized, and left a strip
+  no screen painted (screens paint their background *inside* the host) that fell through to Godot's
+  light grey — the app visibly not filling the screen. Replaced with `SafeArea.bottom()`, applied as
+  **padding on the screens whose controls sit on that edge**, never as a smaller canvas. It measures
+  0 on this device, which is correct; it is kept for the devices and orientations where the window
+  *is* full-bleed (gesture navigation, a side cutout in landscape).
+- **`display/window/handheld/orientation` is an int enum, not the string the docs suggest.** Setting
+  it to `"portrait"` parses, reads back as `"portrait"`, and is **silently ignored by the exporter** —
+  the APK manifest still declared landscape. Only `=1` produces
+  `uses-implied-feature: android.hardware.screen.portrait`. Two full export/install cycles were spent
+  on the string form before checking the built manifest with `aapt dump badging`; **that check is the
+  fastest way to know whether an export setting actually took.**
+- **Keyboard height is in physical pixels**, and the margin it feeds is in the stretched logical
+  units — 1.5x apart here, so the raw number reserved half again too much room and left a dead band.
+  The same physical-vs-logical trap sits behind `SafeArea` and is handled there too.
 
 **`export_presets.cfg`** — required to export, gitignored by Godot's default. Ours
-holds no secrets. Untracked pending a decision; without it
-`tools/export_android.ps1` cannot run on a fresh clone.
+holds no secrets (re-checked on the Android UX pass: no keystore path, alias or password — Godot
+keeps the debug-signing details in *editor* settings, not here). Untracked pending a decision;
+without it `tools/export_android.ps1` cannot run on a fresh clone. **Recommendation: commit it**
+(drop line 5 of `.gitignore`) — the Android UX pass needed it present, and the orientation fix that
+pass landed lives in the tracked `project.godot` but cannot be *exported* without this file.
 
 **MTP retest via `-hf`** (D15) — our `-md` measurement is untrustworthy; reports
 elsewhere claim up to 3x.
