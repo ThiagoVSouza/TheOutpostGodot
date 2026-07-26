@@ -109,6 +109,77 @@ func register(kernel: GameKernel) -> void:
 	)
 
 
+## What a wizard `background`/`outpost_location` choice does to the start, keyed by the wizard's own
+## ids. **A first pass, deliberately provisional** (the user's call, 2026-07-25): the goal right now
+## is proving the wiring works, not the balance, so every number and string a choice can produce
+## lives here — retuning is a one-place edit, never a change to `seed_new_game` or `_apply_start_effect`
+## below. All keys are optional; an entry with none of them (a background with only a `trait`, say)
+## is a no-op for the ones it omits.
+##
+## `resource`/`amount` grants on top of the flat starting resources below (`GrantResourceCommand`,
+## so only positive amounts — the legacy JSON's location "penalties" have no way to land here yet).
+## `disposition_target`/`disposition_delta` nudge an *existing* entity (`AdjustDispositionCommand`),
+## chosen only where the flavor text plausibly implies a specific relationship — most entries have
+## none, rather than inventing one. `trait` is applied at hero creation (traits have no "add to an
+## existing entity" command, unlike disposition) rather than through `_apply_start_effect`. `memory`
+## is one authored origin line, recorded once via `MemoryStore` and tagged to the choice's subject —
+## background to the hero, location to the outpost — so the M5 memory system has real content about
+## how this game started, not just about the steward plot.
+##
+## Ported from the legacy Tauri wizard's "starts with" effect sets (`new-game-setup.json`), rescaled:
+## the legacy numbers assume a full economy (population happiness/loyalty/trust, a tech tree,
+## per-tick production, a wood/stone/leather/coins palette) none of which exists in this port yet —
+## porting the *numbers* literally would be meaningless, so only the two resources that exist
+## (`food`/`gold`) are used here. `outpost_location` deliberately does not touch map placement:
+## `BaseGameMap.HABITABLE_BIOMES` has no forest/mountain biome to place a Forest/Mountains start on,
+## so honouring the choice there needs new map content, not more wiring.
+const BACKGROUND_EFFECTS := {
+	"wealthy_merchant": {
+		"resource": "gold", "amount": 15, "trait": "merchant",
+		"memory": "The hero arrived with a trader's eye and a purse heavier than most.",
+	},
+	"knight": {
+		"resource": "food", "amount": 10, "trait": "knight",
+		"disposition_target": "king", "disposition_delta": 5,
+		"memory": "The hero had served in the King's own ranks before taking up this charge.",
+	},
+	"unlanded_noble": {
+		"resource": "gold", "amount": 10, "trait": "noble",
+		"disposition_target": "steward", "disposition_delta": -5,
+		"memory": "The hero carried a royal order, and knows how a steward's schemes look "
+			+ "from the inside.",
+	},
+	"mercenary_captain": {
+		"resource": "food", "amount": 15, "trait": "adventurer",
+		"memory": "The hero led a company of adventurers who knew how to live off hard country.",
+	},
+	"scholar": {
+		"trait": "scholar",
+		"memory": "The hero came from the great library, trained in things this frontier has "
+			+ "no name for.",
+	},
+}
+
+const LOCATION_EFFECTS := {
+	"coast": {
+		"resource": "food", "amount": 5,
+		"memory": "The outpost took root on a sheltered coast, within sight of trading sail.",
+	},
+	"valley": {
+		"resource": "food", "amount": 10,
+		"memory": "The outpost rose in a wide, fertile valley.",
+	},
+	"forest": {
+		"resource": "food", "amount": 5,
+		"memory": "The outpost was cut from dense woodland, timber close at hand.",
+	},
+	"mountains": {
+		"resource": "gold", "amount": 5,
+		"memory": "The outpost clings to rocky highlands, hard ground but rich underfoot.",
+	},
+}
+
+
 ## Seed a placeholder starting world for a new game (the in-game phase). **Scaffolding, clearly
 ## marked** — like `_dev_confirm_workflow`, it exists so the full flow reaches a real, living game
 ## start until authored content replaces it. Everything goes through the whitelisted CommandBus (D4):
@@ -118,8 +189,16 @@ func register(kernel: GameKernel) -> void:
 func seed_new_game(kernel: GameKernel, params: Dictionary) -> void:
 	var hero_name := String(params.get("hero_name", "Marcus"))
 	var outpost_name := String(params.get("outpost_name", "The Outpost"))
+	var background := String(params.get("background", ""))
+	var location := String(params.get("outpost_location", ""))
 	var bus := kernel.commands
-	bus.execute(CreateEntityCommand.new("hero", Entities.CHARACTER, hero_name, 0, ["founder"]))
+
+	var hero_traits: Array = ["founder"]
+	var background_trait := String(BACKGROUND_EFFECTS.get(background, {}).get("trait", ""))
+	if not background_trait.is_empty():
+		hero_traits.append(background_trait)
+
+	bus.execute(CreateEntityCommand.new("hero", Entities.CHARACTER, hero_name, 0, hero_traits))
 	bus.execute(CreateEntityCommand.new("king", Entities.CHARACTER, "The King", 10))
 	bus.execute(CreateEntityCommand.new("steward", Entities.CHARACTER, "The Steward", -10, ["greedy"]))
 	bus.execute(CreateEntityCommand.new("outpost", Entities.LOCATION, outpost_name))
@@ -132,14 +211,18 @@ func seed_new_game(kernel: GameKernel, params: Dictionary) -> void:
 	# The facts the opening narration will dress (D4: code decides, the narrator only tells). The
 	# chat screen plays the `opening` workflow over these on first entry to a fresh game.
 	kernel.state.set_value("opening", {"hero": hero_name, "years": 5})
-	# The wizard's remaining answers, kept under the keys core reads them back out of
-	# ([GameSession]). `verbosity` now drives the narrator's reading length — the kernel re-derives
-	# `narration` from this on every new game and load. `background` / `outpost_location` still
-	# drive nothing: what each one should change about the start is a content decision, not a
-	# wiring one, so they stay recorded and unread until that is authored.
+
+	# The resource/disposition/memory parts of the wizard's choices — everything but the trait
+	# already folded into the hero above, since every entity the effects can target now exists.
+	_apply_start_effect(kernel, BACKGROUND_EFFECTS.get(background, {}), ["hero"])
+	_apply_start_effect(kernel, LOCATION_EFFECTS.get(location, {}), ["outpost"])
+
+	# The wizard's answers, kept under the keys core reads them back out of ([GameSession]).
+	# `verbosity` drives the narrator's reading length — the kernel re-derives `narration` from this
+	# on every new game and load.
 	kernel.state.set_value(GameSession.PROFILE_STATE_KEY, {
-		"background": String(params.get("background", "")),
-		"outpost_location": String(params.get("outpost_location", "")),
+		"background": background,
+		"outpost_location": location,
 		"sex": String(params.get("sex", "male")),
 		GameSession.PROFILE_VERBOSITY: String(params.get(GameSession.PROFILE_VERBOSITY,
 			NarrationSettings.LEVEL_NORMAL)),
@@ -148,6 +231,21 @@ func seed_new_game(kernel: GameKernel, params: Dictionary) -> void:
 		kernel.state.set_value(GameSession.OUTPOST_FLAG_STATE_KEY,
 			params[GameSession.OUTPOST_FLAG_STATE_KEY])
 	_place_outpost_on_the_map(kernel)
+
+
+## Applies one `BACKGROUND_EFFECTS`/`LOCATION_EFFECTS` entry: an optional resource grant, an optional
+## disposition nudge, and an optional origin memory tagged to [param subjects]. An empty/unknown
+## entry (an unrecognised id, or one with none of these keys) is a no-op — the table is the only
+## place that decides what a choice does, this function just plays out whatever it finds.
+func _apply_start_effect(kernel: GameKernel, effect: Dictionary, subjects: Array) -> void:
+	if effect.has("resource"):
+		kernel.commands.execute(
+			GrantResourceCommand.new(String(effect["resource"]), int(effect["amount"])))
+	if effect.has("disposition_target"):
+		kernel.commands.execute(AdjustDispositionCommand.new(
+			String(effect["disposition_target"]), int(effect["disposition_delta"])))
+	if effect.has("memory"):
+		kernel.memories.record(String(effect["memory"]), subjects, 0, "origin")
 
 
 ## Give the outpost a place on the overworld, so the map shows a settlement instead of scenery. Part
