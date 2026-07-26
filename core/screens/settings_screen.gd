@@ -102,6 +102,13 @@ func on_enter(params: Dictionary) -> void:
 	_back = String(params.get("back", DEFAULT_BACK))
 
 
+## Hardware/gesture back goes wherever the on-screen Back button goes (Android UX pass) — the
+## caller-supplied destination, same as a tap.
+func on_hardware_back() -> bool:
+	Kernel.router.goto(_back)
+	return true
+
+
 func _ready() -> void:
 	if Engine.is_editor_hint():
 		return
@@ -116,8 +123,9 @@ func _build_ui() -> void:
 	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
 	for side in ["left", "right"]:
 		margin.add_theme_constant_override("margin_" + side, 40)
-	for side in ["top", "bottom"]:
-		margin.add_theme_constant_override("margin_" + side, 20)
+	margin.add_theme_constant_override("margin_top", 20)
+	# The Reset/Back footer sits on this edge, so it has to clear the navigation bar.
+	margin.add_theme_constant_override("margin_bottom", 20 + SafeArea.bottom(get_viewport()))
 	add_child(margin)
 
 	var col := VBoxContainer.new()

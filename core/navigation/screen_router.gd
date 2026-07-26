@@ -34,6 +34,12 @@ func current_id() -> String:
 	return _current_id
 
 
+## The mounted screen instance itself, or null before anything has been shown. The kernel uses this
+## to give the hardware back button first refusal to whatever screen is actually on top.
+func current_screen() -> Node:
+	return _current
+
+
 ## Show the screen registered under [param id], replacing whatever is mounted. If the screen
 ## defines `on_enter(params)` it is called *before* the screen enters the tree, so its `_ready`
 ## can rely on the params. A no-op with a warning if there is no host or the id is unknown.

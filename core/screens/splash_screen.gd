@@ -76,6 +76,13 @@ func _on_input(event: InputEvent) -> void:
 		_advance()
 
 
+## Hardware/gesture back skips the splash too (Android UX pass) — consistent with any other input;
+## there is nothing here to lose by moving on.
+func on_hardware_back() -> bool:
+	_advance()
+	return true
+
+
 func _advance() -> void:
 	if _advanced:
 		return

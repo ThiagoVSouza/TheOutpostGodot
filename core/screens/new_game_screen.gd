@@ -95,7 +95,8 @@ func _build_ui() -> void:
 	margin.add_theme_constant_override("margin_left", 40)
 	margin.add_theme_constant_override("margin_right", 40)
 	margin.add_theme_constant_override("margin_top", 20)
-	margin.add_theme_constant_override("margin_bottom", 20)
+	# The Back/Next row sits on this edge, so it has to clear the navigation bar.
+	margin.add_theme_constant_override("margin_bottom", 20 + SafeArea.bottom(get_viewport()))
 	add_child(margin)
 
 	var col := VBoxContainer.new()
@@ -159,6 +160,13 @@ func _on_back() -> void:
 		Kernel.router.goto("core.main_menu")
 	else:
 		_goto_step(_current_step - 1)
+
+
+## Hardware/gesture back does exactly what the on-screen Back/Cancel button does (Android UX
+## pass) — never a surprise exit mid-wizard.
+func on_hardware_back() -> bool:
+	_on_back()
+	return true
 
 
 func _on_next() -> void:

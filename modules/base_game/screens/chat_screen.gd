@@ -15,6 +15,10 @@ const MapOverlay := preload("res://modules/base_game/screens/map_overlay.gd")
 ## cloth is not stretched.
 const HEADER_FLAG_WIDTH := 26.0
 
+## The screen's own padding, before anything the display forces on top of it (the navigation bar,
+## the on-screen keyboard — see [method _process]).
+const BASE_MARGIN := 16
+
 var _source: AiInputSource
 var _outpost_label: Label
 var _flag_view: FlagView
@@ -34,6 +38,13 @@ var _pending_row: HBoxContainer
 var _pending_label: Label
 var _pending_instance: String = ""
 var _slots: OptionButton
+
+## The root margin, grown at the bottom to clear the on-screen keyboard (Android UX pass). Polled
+## rather than event-driven: whether Android resizes the viewport when the keyboard shows or just
+## overlays it is a manifest-level setting this project's non-Gradle export does not expose, so
+## `DisplayServer.virtual_keyboard_get_height()` is the one signal that works either way.
+var _margin: MarginContainer
+var _last_keyboard_height := 0
 
 
 func _ready() -> void:
@@ -71,6 +82,27 @@ func _ready() -> void:
 	_present_oldest_pending()
 
 
+## The on-screen keyboard would otherwise sit on top of the input row with nothing to push it out
+## of the way (Android UX pass) — the log above it shrinks to make room instead, the same shape a
+## viewport resize would produce, but driven directly so it works whether or not Android actually
+## resizes the viewport for this window.
+func _process(_delta: float) -> void:
+	if not DisplayServer.has_feature(DisplayServer.FEATURE_VIRTUAL_KEYBOARD):
+		return  # desktop dev/tests: no virtual keyboard exists to ask about
+	var height := DisplayServer.virtual_keyboard_get_height()
+	if height == _last_keyboard_height:
+		return
+	_last_keyboard_height = height
+	# The keyboard's height is in *physical* pixels; this margin is in the stretched logical units
+	# `display/window/stretch/mode` puts the UI in (project.godot). Adding the raw number reserves far
+	# too much room — measured on an S26 Ultra, ~1.5x — leaving a dead band above the keyboard.
+	var window_height := float(DisplayServer.window_get_size().y)
+	var scale := get_viewport().get_visible_rect().size.y / window_height if window_height > 0.0 else 1.0
+	# The keyboard covers the navigation bar while it is up, so the two insets never add.
+	var below := maxi(int(height * scale), SafeArea.bottom(get_viewport()))
+	_margin.add_theme_constant_override("margin_bottom", BASE_MARGIN + below)
+
+
 ## Play the narrated opening for a fresh game (the throne room, the king's charge). Narration is a
 ## workflow (D30), so this runs the authored `opening` workflow through the executor and renders its
 ## prose — the same seam a turn narrates through, not a hardcoded string. Input is locked while it
@@ -100,15 +132,18 @@ func _build_ui() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	ShellPalette.paint(self)
 
-	var margin := MarginContainer.new()
-	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
-	for side in ["left", "top", "right", "bottom"]:
-		margin.add_theme_constant_override("margin_" + side, 16)
-	add_child(margin)
+	_margin = MarginContainer.new()
+	_margin.set_anchors_preset(Control.PRESET_FULL_RECT)
+	for side in ["left", "top", "right"]:
+		_margin.add_theme_constant_override("margin_" + side, BASE_MARGIN)
+	# The bottom is the one edge with something to avoid; `_process` keeps it current.
+	_margin.add_theme_constant_override("margin_bottom",
+		BASE_MARGIN + SafeArea.bottom(get_viewport()))
+	add_child(_margin)
 
 	var vbox := VBoxContainer.new()
 	vbox.add_theme_constant_override("separation", 8)
-	margin.add_child(vbox)
+	_margin.add_child(vbox)
 
 	var status_row := HBoxContainer.new()
 	status_row.add_theme_constant_override("separation", 16)

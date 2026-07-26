@@ -19,8 +19,10 @@ func _build_ui() -> void:
 
 	var margin := MarginContainer.new()
 	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
-	for side in ["margin_left", "margin_right", "margin_top", "margin_bottom"]:
+	for side in ["margin_left", "margin_right", "margin_top"]:
 		margin.add_theme_constant_override(side, 40)
+	# The Back button ends this column, so it has to clear the navigation bar.
+	margin.add_theme_constant_override("margin_bottom", 40 + SafeArea.bottom(get_viewport()))
 	add_child(margin)
 
 	var col := VBoxContainer.new()
@@ -55,6 +57,12 @@ func _slot_button(slot: Dictionary) -> Button:
 	b.custom_minimum_size = Vector2(0, 40)
 	b.pressed.connect(func() -> void: _load(id))
 	return b
+
+
+## Hardware/gesture back does what the on-screen Back button does (Android UX pass).
+func on_hardware_back() -> bool:
+	Kernel.router.goto("core.main_menu")
+	return true
 
 
 func _load(id: String) -> void:
