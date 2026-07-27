@@ -779,6 +779,41 @@ begin-new-game. Screens are JSON (`heading`/`card-choice`/`field`/`choice`/`flag
 types). This is the shape the deferred module-config wizard should take: the current single-field
 new-game screen grows into this multi-step flow, its `fields` feeding `seed_new_game`.
 
+**Key bindings are real — done (2026-07-26).** The Controls tab listed 21 intended bindings against
+**zero** defined input actions; `docs/Remember.md` has promised rebinding since the start. It now
+works, for the actions that have something behind them.
+
+- **`core/input/input_actions.gd` (`InputActions`)** declares the action set and its defaults, and
+  is the only thing that knows a keycode. Screens ask `event.is_action(InputActions.PASS_DAY)` and
+  never learn which key that is — **that indirection is what rebinding is**. Installed on the
+  [InputMap] at boot, and reinstalled from scratch on every change, so no stale event survives.
+- **Scoped to eight actions, deliberately:** focus input, pass a day, open the map, zoom in/out,
+  settings, quick save, back/close. The other thirteen (roster, chronicle, quick-load, screenshot,
+  key panning, …) **have no feature behind them** and keep their `planned` tag — a binding the
+  player can change and then watch do nothing is exactly the failure the tag exists to prevent.
+  Moving one across is a two-line change when its feature lands.
+- **Overrides only are stored** (`[input]` in `settings.cfg`, keyed by action). An action the player
+  never touched has no entry, so changing a *default* still reaches everyone who had not
+  deliberately chosen otherwise, rather than being frozen into every existing config file.
+- **A key drives exactly one action.** Taking a key from another action leaves that one holding
+  **nothing** — which needed a state the store did not have: `AppSettings.UNBOUND` (-1) is
+  *deliberately no key*, distinct from `NO_KEY` (0, "no override"). Storing the latter would fall
+  back to the default — the very key just taken away — and the clash would have survived its own
+  fix. The action stays registered on the InputMap so `is_action()` callers keep answering false
+  rather than erroring.
+- **Escape cancels a rebind rather than binding itself**: it is the key a player reflexively presses
+  to back out of a mode, and losing "Back / close" to a mis-click is unpleasant to undo. Capture
+  runs in `_input`, ahead of `_unhandled_input`, so a key that already drives something is still
+  capturable. "Reset all bindings" clears only the `[input]` section — a player clearing their keys
+  does not lose their volumes.
+- **`back_close` unifies with the Android work:** the Escape key and the phone's gesture-back now
+  both call `GameKernel.request_back()`, so the confirm-before-exit built on the Android pass serves
+  the desktop too.
+- 17 new tests (407 green). **Verified in a running app** (throwaway driver, deleted): a synthesised
+  keypress travels InputMap → viewport → the screen's handler → the same method the on-screen button
+  calls, a day actually passes, and **after a rebind the new key works while the old one stops** —
+  which is the only assertion that proves the indirection is real rather than decorative.
+
 **Video settings finished + start bonuses retuned — done (2026-07-26).** Three decisions the user
 handed over rather than made one at a time.
 

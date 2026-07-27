@@ -49,6 +49,21 @@ const MONITOR_UNSET := -1
 ## unless the player says otherwise.
 const MAX_FPS_UNCAPPED := 0
 
+## Key rebinding lives in its own section, one entry per overridden action, keyed by action id and
+## holding a raw keycode int. **Only overrides are stored** — an action the player never touched has
+## no entry, so changing a *default* in [InputActions] reaches everyone who had not deliberately
+## chosen otherwise, instead of being frozen into every existing config file.
+const INPUT_SECTION := "input"
+
+## "No override" — the player never touched this action, so its default applies. [constant KEY_NONE]
+## is 0, which is also what a missing config entry reads as.
+const NO_KEY := KEY_NONE
+
+## "Deliberately bound to nothing", which is **not** the same as no override: an action whose key was
+## taken by another action must end up with no key at all, and storing [constant NO_KEY] there would
+## fall back to the default — the very key that was just taken away — and the conflict would survive.
+const UNBOUND := -1
+
 ## Sizes the settings screen offers. Not a capability query: [method DisplayServer.screen_get_size]
 ## reports what the monitor can do, not what a window should sensibly be, and a list the player
 ## recognises beats an exhaustive one they have to read.
@@ -174,6 +189,28 @@ func max_fps() -> int:
 
 func set_max_fps(value: int) -> void:
 	_config.set_value(VIDEO_SECTION, MAX_FPS_KEY, maxi(value, 0))
+
+
+## The player's override for [param action], or [constant NO_KEY] if they never changed it.
+func key_binding(action: String) -> int:
+	return int(_config.get_value(INPUT_SECTION, action, NO_KEY))
+
+
+func set_key_binding(action: String, keycode: int) -> void:
+	_config.set_value(INPUT_SECTION, action, maxi(keycode, UNBOUND))
+
+
+## Drop one override, so the action goes back to its default.
+func clear_key_binding(action: String) -> void:
+	if _config.has_section_key(INPUT_SECTION, action):
+		_config.erase_section_key(INPUT_SECTION, action)
+
+
+## Drop every override at once — the Controls tab's "reset bindings", which must not disturb the
+## audio, video or gameplay sections the way [method reset_to_defaults] would.
+func clear_all_key_bindings() -> void:
+	if _config.has_section(INPUT_SECTION):
+		_config.erase_section(INPUT_SECTION)
 
 
 ## Push the stored window mode + V-Sync onto the real window. Called at boot and whenever the

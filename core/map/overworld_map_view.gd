@@ -39,6 +39,10 @@ const FALLBACK_COLORS := {
 func _ready() -> void:
 	clip_contents = true
 	mouse_filter = Control.MOUSE_FILTER_STOP
+	# Focusable, and focused on open: `_gui_input` only receives *key* events for the focused
+	# control, so without this the zoom keys would go nowhere while the wheel still worked.
+	focus_mode = Control.FOCUS_ALL
+	grab_focus.call_deferred()
 	# Re-frame once the control gets its real size from layout (size is 0 during _ready).
 	resized.connect(fit)
 
@@ -187,6 +191,17 @@ func _gui_input(event: InputEvent) -> void:
 		# Drag moves the world under the cursor: shift the origin opposite to the motion.
 		_origin -= (event as InputEventMouseMotion).relative / _zoom
 		_refresh()
+	elif event.is_pressed() and not event.is_echo():
+		# The keyboard equivalents of the wheel. They zoom on the view's *middle* rather than the
+		# cursor: there is no cursor to zoom toward on a touchscreen, and on a desktop the pointer
+		# may be nowhere near the map when the key is pressed.
+		var centre := size * 0.5
+		if event.is_action(InputActions.MAP_ZOOM_IN):
+			_zoom_at(centre, 1.1)
+			accept_event()
+		elif event.is_action(InputActions.MAP_ZOOM_OUT):
+			_zoom_at(centre, 1.0 / 1.1)
+			accept_event()
 
 
 ## Zoom toward a screen point so the world under the cursor stays put.
