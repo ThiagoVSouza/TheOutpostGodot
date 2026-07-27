@@ -44,3 +44,10 @@ export/
 node_modules/
 dist/
 target/
+
+# M6 GDExtension: build products plus the llama.cpp/CUDA runtime DLLs they need.
+# ~1.1 GiB, and every byte of it is reproducible - `tools/setup_gdextension.ps1`
+# rebuilds this folder from the pinned llama.cpp build and godot-cpp. The source
+# that IS tracked is gdextension/src, gdextension/SConstruct and the
+# .gdextension descriptor beside this folder.
+/addons/outpost_llama/bin/

@@ -1,0 +1,21 @@
+[configuration]
+
+entry_symbol = "outpost_llama_library_init"
+compatibility_minimum = "4.7"
+reloadable = true
+
+[libraries]
+
+windows.debug.x86_64 = "res://addons/outpost_llama/bin/outpost_llama.windows.template_debug.x86_64.dll"
+windows.release.x86_64 = "res://addons/outpost_llama/bin/outpost_llama.windows.template_release.x86_64.dll"
+
+[dependencies]
+
+windows.x86_64 = {
+  "res://addons/outpost_llama/bin/llama.dll" : "",
+  "res://addons/outpost_llama/bin/llama-common.dll" : "",
+  "res://addons/outpost_llama/bin/mtmd.dll" : "",
+  "res://addons/outpost_llama/bin/ggml.dll" : "",
+  "res://addons/outpost_llama/bin/ggml-base.dll" : "",
+  "res://addons/outpost_llama/bin/ggml-cpu-x64.dll" : ""
+}
