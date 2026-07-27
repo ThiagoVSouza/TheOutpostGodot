@@ -13,6 +13,9 @@ extends SceneTree
 
 const OUT_SUBDIR := "screens"
 const VIEWPORT_SIZE := Vector2i(1280, 800)
+## The project's own default portrait viewport (project.godot) — below `HudShell`'s mobile
+## breakpoint, so the M8 shell captures show the mobile re-flow rather than a cramped desktop one.
+const MOBILE_VIEWPORT_SIZE := Vector2i(720, 1280)
 const WIZARD_STEPS := ["background", "location", "identity", "settings"]
 
 ## Frames to render before grabbing the image. One is not enough: layout settles on the second, a
@@ -77,17 +80,29 @@ func _run() -> void:
 			await _shoot("%02d_wizard_%d_%s" % [step + 2, step + 1, WIZARD_STEPS[step]])
 
 	# The game itself, over a freshly seeded world — the wizard's own output, so the captures show
-	# the choices actually landing (flag, narration length) rather than defaults.
+	# the choices actually landing (flag, narration length) rather than defaults. The map is the
+	# base layer now (ux_plan.md §2.1) — it is already in this capture, not a separate overlay.
 	_kernel.session.begin_new_game(_new_game_fields())
 	var chat := await _mount("base_game.chat")
 	await _shoot("06_chat_new_game")
 
-	# The overworld is a child overlay rather than a routed screen (the router is stateless, so
-	# leaving the chat screen would discard its log), which is why it is opened the way the player
-	# opens it — the Map button's own handler — instead of being mounted.
+	# Both breakpoints of the M8 HUD shell (ux_plan.md Phase 1 "done when"). Desktop first: expand
+	# the chat dock, then open Main Menu alongside it — page + chat both at half height, the
+	# draggable split (rules 1-2).
 	if chat != null:
-		chat.call("_on_open_map")
-		await _shoot("06b_map_overlay")
+		var shell := chat.get("_shell") as HudShell
+		shell.set_chat_expanded(true)
+		await _shoot("06b_chat_expanded")
+		chat.call("_open_main_menu")
+		await _shoot("06c_chat_and_menu_split")
+
+		# Narrow the window without remounting — crossing the breakpoint with both panels open
+		# should collapse to whichever opened more recently (rule 5), not leave both on screen.
+		DisplayServer.window_set_size(MOBILE_VIEWPORT_SIZE)
+		await _settle()
+		await _shoot("06d_mobile_exclusive")
+		DisplayServer.window_set_size(VIEWPORT_SIZE)
+		await _settle()
 
 	await _capture_scene("res://modules/base_game/ui/flag_preview.tscn", "07_flag_preview")
 

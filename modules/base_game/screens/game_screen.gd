@@ -1,23 +1,25 @@
 extends Control
 
-## The vertical-slice screen: a free-text conversation with the AI game master.
+## The wireframed game shell (M8 Phase 1, ux_plan.md): the overworld map as the base layer with
+## persistent chrome around it via [HudShell], and the running conversation as a dock over the map
+## instead of the routed screen it used to be. Replaces `chat_screen.gd` + `map_overlay.gd` — the
+## map no longer needs its own toggle (`MapOverlay`'s reason for existing, ux_plan.md §2.1) because
+## it is always on screen now, and Main Menu (Save/Load/New Game/dev tools) opens as a panel in the
+## same shell instead of living in a permanent "dev row" (ux_plan.md §2.2, Phase 1's "nothing may
+## regress" clause). The other six wireframed rail destinations are Phase 5's panel registry —
+## deliberately not built here.
 ##
-## Sends the player's message through the input-source seam (D18): the screen is just
-## the "typed" [AiInputSource] — it submits text via [member GameKernel.input_router]
-## and renders whatever turn completes on the event bus, whichever source produced it.
-## Also reflects resource changes and (for development) exposes the AI trace and a
-## button to advance the calendar so the month-end workflow can be observed.
-## The UI is built in code to keep the scene file trivial.
+## **Field/method names kept from `chat_screen.gd`** (`_log_label`, `_input`, `_send_button`,
+## `_pending_row`, `_pending_instance`, `_answer`, `_on_new_game`): `tests/integration/
+## test_confirmation_ui.gd` and `tools/capture_screens.gd` reach into a screen instantiated as
+## `"base_game.chat"` by exactly these names. Keeping them is Phase 1's "nothing may regress"
+## promise kept literally, rather than by updating every caller.
 
-const MapOverlay := preload("res://modules/base_game/screens/map_overlay.gd")
-
-## Small enough to sit in a status row without crowding it, in the flag art's own aspect so the
-## cloth is not stretched.
 const HEADER_FLAG_WIDTH := 26.0
+const MARKER_FLAG_WIDTH := 30.0
 
-## The screen's own padding, before anything the display forces on top of it (the navigation bar,
-## the on-screen keyboard — see [method _process]).
-const BASE_MARGIN := 16
+var _shell: HudShell
+var _map_view: OverworldMapView
 
 var _source: AiInputSource
 var _outpost_label: Label
@@ -28,23 +30,18 @@ var _log_label: RichTextLabel
 var _input: LineEdit
 var _send_button: Button
 var _retry_button: Button
+var _chat_expand_button: Button
 var _trace_label: RichTextLabel
 
-## The question the game master is waiting on, if any (M4/B4b). While one is pending the player
-## must answer it before doing anything else — a `confirm` guards an action the rules have not
-## applied yet, so letting a new turn run alongside it would leave the world in a state neither
-## answer describes.
+## The question the game master is waiting on, if any (M4/B4b). Lives in the dock, not inside the
+## collapsible expanded-chat panel, so it stays visible to answer whether or not chat is expanded.
 var _pending_row: HBoxContainer
 var _pending_label: Label
 var _pending_instance: String = ""
 var _slots: OptionButton
 
-## The root margin, grown at the bottom to clear the on-screen keyboard (Android UX pass). Polled
-## rather than event-driven: whether Android resizes the viewport when the keyboard shows or just
-## overlays it is a manifest-level setting this project's non-Gradle export does not expose, so
-## `DisplayServer.virtual_keyboard_get_height()` is the one signal that works either way.
-var _margin: MarginContainer
-var _last_keyboard_height := 0
+var _chat_panel: HudPanel
+var _menu_panel: HudPanel
 
 
 func _ready() -> void:
@@ -107,25 +104,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 
-## The on-screen keyboard would otherwise sit on top of the input row with nothing to push it out
-## of the way (Android UX pass) — the log above it shrinks to make room instead, the same shape a
-## viewport resize would produce, but driven directly so it works whether or not Android actually
-## resizes the viewport for this window.
-func _process(_delta: float) -> void:
-	if not DisplayServer.has_feature(DisplayServer.FEATURE_VIRTUAL_KEYBOARD):
-		return  # desktop dev/tests: no virtual keyboard exists to ask about
-	var height := DisplayServer.virtual_keyboard_get_height()
-	if height == _last_keyboard_height:
-		return
-	_last_keyboard_height = height
-	# The keyboard's height is in *physical* pixels; this margin is in the stretched logical units
-	# `display/window/stretch/mode` puts the UI in (project.godot). Adding the raw number reserves far
-	# too much room — measured on an S26 Ultra, ~1.5x — leaving a dead band above the keyboard.
-	var window_height := float(DisplayServer.window_get_size().y)
-	var scale := get_viewport().get_visible_rect().size.y / window_height if window_height > 0.0 else 1.0
-	# The keyboard covers the navigation bar while it is up, so the two insets never add.
-	var below := maxi(int(height * scale), SafeArea.bottom(get_viewport()))
-	_margin.add_theme_constant_override("margin_bottom", BASE_MARGIN + below)
+## Esc closes whatever panel is on top before falling through to the exit-confirm dialog
+## (ux_plan.md §1.3 rule 6) — `BACK_CLOSE` reaches here via `Kernel.request_back()`
+## (`core/kernel.gd`'s `_handle_hardware_back`).
+func on_hardware_back() -> bool:
+	return _shell.close_topmost()
 
 
 ## Play the narrated opening for a fresh game (the throne room, the king's charge). Narration is a
@@ -153,65 +136,102 @@ func _play_opening() -> void:
 	_set_busy(false)
 
 
+# --- building --------------------------------------------------------------------------------
+
 func _build_ui() -> void:
-	set_anchors_preset(Control.PRESET_FULL_RECT)
-	ShellPalette.paint(self)
+	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
-	_margin = MarginContainer.new()
-	_margin.set_anchors_preset(Control.PRESET_FULL_RECT)
-	for side in ["left", "top", "right"]:
-		_margin.add_theme_constant_override("margin_" + side, BASE_MARGIN)
-	# The bottom is the one edge with something to avoid; `_process` keeps it current.
-	_margin.add_theme_constant_override("margin_bottom",
-		BASE_MARGIN + SafeArea.bottom(get_viewport()))
-	add_child(_margin)
+	_shell = HudShell.new()
+	add_child(_shell)
+	_shell.chat_expanded_changed.connect(_on_chat_expanded_changed)
 
-	var vbox := VBoxContainer.new()
-	vbox.add_theme_constant_override("separation", 8)
-	_margin.add_child(vbox)
+	_build_map()
+	_build_top_bar()
+	_build_chat_panel()
+	_build_dock()
+	_build_menu_panel()
+	_shell.add_rail_action("Menu", _open_main_menu)
 
-	var status_row := HBoxContainer.new()
-	status_row.add_theme_constant_override("separation", 16)
-	vbox.add_child(status_row)
-	# The outpost's own banner, flown over its name: the flag the player designed in the wizard is
-	# the settlement's identity, so this is where it belongs rather than only on the setup screen.
+
+func _build_map() -> void:
+	_map_view = OverworldMapView.new()
+	_map_view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_shell.base_layer.add_child(_map_view)
+	var map := BaseGameMap.load_map()
+	if map == null:
+		return
+	_map_view.setup(map, BaseGameMap.load_textures(map))
+	_refresh_map_marker()
+
+
+## The outpost's banner pinned to the cell the seed founded it on. A separate call from
+## `_build_map` because a New Game or Load started from inside the running shell (the Main Menu
+## panel) can change *which* cell that is without the terrain itself changing — the old
+## `MapOverlay` got this for free by rebuilding from scratch on every open; the map is now built
+## once, so anything that can change the outpost's site has to ask for this explicitly.
+func _refresh_map_marker() -> void:
+	if _map_view == null:
+		return
+	_map_view.remove_marker("outpost")
+	var site: Dictionary = Kernel.state.get_value(GameSession.OUTPOST_SITE_STATE_KEY, {})
+	if site.is_empty():
+		return
+	var flag := FlagView.new()
+	flag.custom_minimum_size = Vector2(MARKER_FLAG_WIDTH, MARKER_FLAG_WIDTH * FlagView.aspect())
+	flag.set_value(FlagValue.from_dict(
+		Kernel.state.get_value(GameSession.OUTPOST_FLAG_STATE_KEY, {}) as Dictionary))
+	_map_view.set_marker("outpost", Vector2i(int(site["x"]), int(site["y"])), flag)
+
+
+## The status readout the wireframes' top bar specifies (ux_plan.md §1.1) — flag, domain name, day
+## and resources for now. Coins/population deltas and the domain-level ladder wait on systems that
+## do not exist yet (ux_plan.md §5); the real styled contents (coins, population, speed buttons)
+## are Phase 2's job. "Let a day pass" stays a real button here — it only retires once Phase 4's
+## `TimeDriver` replaces it with the four speeds.
+func _build_top_bar() -> void:
+	var bar := _shell.top_bar
 	_flag_view = FlagView.new()
 	_flag_view.custom_minimum_size = Vector2(HEADER_FLAG_WIDTH, HEADER_FLAG_WIDTH * FlagView.aspect())
 	_flag_view.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	status_row.add_child(_flag_view)
+	bar.add_child(_flag_view)
 	_outpost_label = Label.new()
-	status_row.add_child(_outpost_label)
+	bar.add_child(_outpost_label)
 	_day_label = Label.new()
-	status_row.add_child(_day_label)
+	bar.add_child(_day_label)
 	_resource_label = Label.new()
 	_resource_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	status_row.add_child(_resource_label)
-
-	# Time is turn-driven, but the player owns when it passes: nothing here costs a day, and this
-	# control lets a day go by so background plots tick (M5/D36). Sits in the play area, not the
-	# dev row — it is a real game action, not a debug shortcut.
-	var time_row := HBoxContainer.new()
-	vbox.add_child(time_row)
+	bar.add_child(_resource_label)
 	var pass_day := Button.new()
 	pass_day.text = "Let a day pass"
 	pass_day.pressed.connect(_on_pass_day)
-	time_row.add_child(pass_day)
-	var map_button := Button.new()
-	map_button.text = "Map"
-	map_button.pressed.connect(_on_open_map)
-	time_row.add_child(map_button)
+	bar.add_child(pass_day)
+
+
+## The expanded-chat shape (ux_plan.md §1.2 state 2): built once and kept parented under
+## `_shell.chat_slot` for the screen's whole lifetime (see [HudShell]'s class doc) so the log and
+## trace survive being collapsed and re-expanded.
+func _build_chat_panel() -> void:
+	_chat_panel = HudPanel.new()
+	_shell.chat_slot.add_child(_chat_panel)
+	_chat_panel.set_title("Conversation")
+	_chat_panel.dismissed.connect(func() -> void: _shell.set_chat_expanded(false))
 
 	_log_label = RichTextLabel.new()
 	_log_label.bbcode_enabled = true
 	_log_label.scroll_following = true
 	_log_label.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	vbox.add_child(_log_label)
+	_chat_panel.body.add_child(_log_label)
 
-	# Hidden until the game master asks something. Sits above the input so the question is the
-	# thing under the conversation, where the answer is expected.
+
+## The bottom edge, full width, always visible (ux_plan.md §1.1) — the input line the wireframes'
+## "Main" state collapses everything else to, plus the pending-question row (kept out of the
+## collapsible panel above so an unanswered question is never hidden by a collapsed chat).
+func _build_dock() -> void:
+	var dock := _shell.dock
+
 	_pending_row = HBoxContainer.new()
 	_pending_row.visible = false
-	vbox.add_child(_pending_row)
+	dock.add_child(_pending_row)
 	_pending_label = Label.new()
 	_pending_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_pending_row.add_child(_pending_label)
@@ -225,7 +245,13 @@ func _build_ui() -> void:
 	_pending_row.add_child(no)
 
 	var input_row := HBoxContainer.new()
-	vbox.add_child(input_row)
+	dock.add_child(input_row)
+	_chat_expand_button = Button.new()
+	_chat_expand_button.text = "^"
+	_chat_expand_button.tooltip_text = "Show conversation"
+	_chat_expand_button.pressed.connect(
+		func() -> void: _shell.set_chat_expanded(not _shell.is_chat_expanded()))
+	input_row.add_child(_chat_expand_button)
 	_input = LineEdit.new()
 	_input.placeholder_text = "e.g. I send scouts to forage the hills"
 	_input.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -241,22 +267,35 @@ func _build_ui() -> void:
 	_retry_button.pressed.connect(func() -> void: Kernel.ai_availability.retry())
 	input_row.add_child(_retry_button)
 
-	var dev_row := HBoxContainer.new()
-	vbox.add_child(dev_row)
+
+func _on_chat_expanded_changed(expanded: bool) -> void:
+	_chat_expand_button.text = "v" if expanded else "^"
+
+
+## The Main Menu panel (ux_plan.md §2.2: "Main Menu is one of the seven destinations and opens as a
+## panel... the player does not leave the game shell unless they choose to"). Carries forward
+## exactly the old dev row's controls (Save / slots+Load / New game / dev-ask / trace toggle —
+## Phase 1's "nothing may regress"), plus Settings and Quit to title, which the wireframe's own
+## description of this panel names. Built once, like the chat panel, so the trace label's last
+## content survives being closed and reopened.
+func _build_menu_panel() -> void:
+	_menu_panel = HudPanel.new()
+	# Parented immediately, hidden, so `HudPanel._ready()` builds `.body`/its title label before
+	# anything below touches them — configuring first and parenting later (`_shell.show_page` does
+	# that part, on the player's first Menu click) would find both still null, the same "0x0 at
+	# _ready" shape as the `map_overlay.gd` anchors trap, just for construction order instead of
+	# anchors. `HudShell.show_page` reparents it into the page slot the first time it is shown.
+	_menu_panel.visible = false
+	add_child(_menu_panel)
+	_menu_panel.set_title("Main Menu")
+
 	var save_button := Button.new()
 	save_button.text = "Save"
 	save_button.pressed.connect(_on_save)
-	dev_row.add_child(save_button)
-	var ask := Button.new()
-	ask.text = "Ask me something (dev)"
-	# No authored workflow uses `confirm` yet — game content is still scaffolding. This drives
-	# the real path anyway (orchestrator → executor → suspension → instance store → resume), so
-	# the machinery is verifiable in the running app rather than only in tests.
-	ask.pressed.connect(func() -> void: await _on_dev_ask())
-	dev_row.add_child(ask)
+	_menu_panel.body.add_child(save_button)
 
 	var slot_row := HBoxContainer.new()
-	vbox.add_child(slot_row)
+	_menu_panel.body.add_child(slot_row)
 	_slots = OptionButton.new()
 	_slots.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	slot_row.add_child(_slots)
@@ -264,21 +303,49 @@ func _build_ui() -> void:
 	load_button.text = "Load"
 	load_button.pressed.connect(_on_load)
 	slot_row.add_child(load_button)
+
 	var new_button := Button.new()
 	new_button.text = "New game"
 	new_button.pressed.connect(_on_new_game)
-	slot_row.add_child(new_button)
+	_menu_panel.body.add_child(new_button)
+
+	var settings_button := Button.new()
+	settings_button.text = "Settings"
+	settings_button.pressed.connect(
+		func() -> void: Kernel.router.goto("core.settings", {"back": "base_game.chat"}))
+	_menu_panel.body.add_child(settings_button)
+
+	var quit_button := Button.new()
+	quit_button.text = "Quit to title"
+	quit_button.pressed.connect(func() -> void: Kernel.router.goto("core.main_menu"))
+	_menu_panel.body.add_child(quit_button)
+
+	_menu_panel.body.add_child(HSeparator.new())
+
+	var dev_ask := Button.new()
+	dev_ask.text = "Ask me something (dev)"
+	# No authored workflow uses `confirm` yet — game content is still scaffolding. This drives
+	# the real path anyway (orchestrator → executor → suspension → instance store → resume), so
+	# the machinery is verifiable in the running app rather than only in tests.
+	dev_ask.pressed.connect(func() -> void: await _on_dev_ask())
+	_menu_panel.body.add_child(dev_ask)
+
 	var trace_toggle := CheckButton.new()
 	trace_toggle.text = "Show AI trace"
 	trace_toggle.toggled.connect(func(on: bool) -> void: _trace_label.visible = on)
-	dev_row.add_child(trace_toggle)
+	_menu_panel.body.add_child(trace_toggle)
 
 	_trace_label = RichTextLabel.new()
 	_trace_label.bbcode_enabled = false
 	_trace_label.fit_content = true
 	_trace_label.custom_minimum_size = Vector2(0, 140)
 	_trace_label.visible = false
-	vbox.add_child(_trace_label)
+	_menu_panel.body.add_child(_trace_label)
+
+
+func _open_main_menu() -> void:
+	_refresh_slots()
+	_shell.show_page(_menu_panel)
 
 
 ## The typed source's submit path: a real backend turn takes 0.85-4 s (D22), so input
@@ -346,7 +413,7 @@ func _present_oldest_pending() -> void:
 		# (D34: refuse, never discard), so re-enabling whatever owns it makes it answerable
 		# again; offering a button that cannot work would be worse than staying quiet.
 		if not Kernel.ai_orchestrator.can_resume(instance.instance_id):
-			Kernel.log.warn("ChatScreen", "Pending question for unavailable workflow '%s' — not shown"
+			Kernel.log.warn("GameScreen", "Pending question for unavailable workflow '%s' — not shown"
 				% instance.workflow_id)
 			continue
 		_show_question(instance.instance_id, instance.wake)
@@ -424,6 +491,7 @@ func _on_load() -> void:
 	_refresh_outpost()
 	_refresh_day()
 	_refresh_resources()
+	_refresh_map_marker()
 	# A loaded game brings its own unanswered question, if it had one.
 	_present_oldest_pending()
 	_set_busy(false)
@@ -437,6 +505,7 @@ func _on_new_game() -> void:
 	_refresh_day()
 	_refresh_resources()
 	_refresh_slots()
+	_refresh_map_marker()
 	_set_busy(false)
 
 
@@ -454,16 +523,6 @@ func _on_save() -> void:
 ## its own subscription — a due plot ticks in the background and surfaces as a chronicle line via
 ## `workflow_emit`, so no awaiting is needed here. Blocked while a turn or question is in flight,
 ## for the same reason input is: the world must not move under an unresolved action.
-## Open the overworld map over the running game (a child overlay, not a route — see MapOverlay).
-## No-op if it is already open.
-func _on_open_map() -> void:
-	if has_node("MapOverlay"):
-		return
-	var overlay := MapOverlay.new()
-	overlay.name = "MapOverlay"
-	add_child(overlay)
-
-
 func _on_pass_day() -> void:
 	if Kernel.ai_orchestrator.is_busy() or not _pending_instance.is_empty():
 		return
@@ -471,6 +530,13 @@ func _on_pass_day() -> void:
 	_append("[i]— The day passes. Day %d. —[/i]" % Kernel.clock.total_days)
 	_refresh_day()
 	_refresh_resources()
+
+
+## The map has no toggle any more (ux_plan.md §2.1 — it is the base layer, always on screen); the
+## action that used to open the overlay now just re-centres the view.
+func _on_open_map() -> void:
+	if _map_view != null:
+		_map_view.fit()
 
 
 ## A workflow emit carries a message key + values (i18n discipline, D24), not assembled

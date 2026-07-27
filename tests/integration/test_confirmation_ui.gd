@@ -4,7 +4,7 @@ extends GutTest
 ## and gave it a resume path; until now nothing could show it or reply to it, so the whole
 ## confirm → suspend → resume path had never been exercised by anything a player touches.
 ##
-## These use the *autoload* Kernel, not a fresh GameKernel: `chat_screen.gd` talks to `Kernel`
+## These use the *autoload* Kernel, not a fresh GameKernel: `game_screen.gd` talks to `Kernel`
 ## directly, the same arrangement `test_input_router.gd` uses.
 
 const ASK_WORKFLOW := {
