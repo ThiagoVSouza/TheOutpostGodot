@@ -24,8 +24,9 @@ var _map_view: OverworldMapView
 var _source: AiInputSource
 var _outpost_label: Label
 var _flag_view: FlagView
-var _day_label: Label
-var _resource_label: Label
+var _gold_label: Label
+var _population_label: Label
+var _date_label: Label
 var _log_label: RichTextLabel
 var _input: LineEdit
 var _send_button: Button
@@ -183,24 +184,43 @@ func _refresh_map_marker() -> void:
 	_map_view.set_marker("outpost", Vector2i(int(site["x"]), int(site["y"])), flag)
 
 
-## The status readout the wireframes' top bar specifies (ux_plan.md §1.1) — flag, domain name, day
-## and resources for now. Coins/population deltas and the domain-level ladder wait on systems that
-## do not exist yet (ux_plan.md §5); the real styled contents (coins, population, speed buttons)
-## are Phase 2's job. "Let a day pass" stays a real button here — it only retires once Phase 4's
-## `TimeDriver` replaces it with the four speeds.
+## The status readout the wireframes' top bar specifies (ux_plan.md §1.1, M8 Phase 2): flag, domain
+## name + a placeholder domain-level tier, coins and population each with a placeholder delta (no
+## economy computes a real one yet — ux_plan.md §5 — a neutral-coloured "+0" is the honest answer,
+## not an invented number), and the real date via `DateFormat`. "Let a day pass" stays a real
+## button here — it only retires once Phase 4's `TimeDriver` replaces it with the four speeds.
 func _build_top_bar() -> void:
 	var bar := _shell.top_bar
 	_flag_view = FlagView.new()
 	_flag_view.custom_minimum_size = Vector2(HEADER_FLAG_WIDTH, HEADER_FLAG_WIDTH * FlagView.aspect())
 	_flag_view.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	bar.add_child(_flag_view)
+
+	var identity := VBoxContainer.new()
+	identity.add_theme_constant_override("separation", 0)
+	bar.add_child(identity)
 	_outpost_label = Label.new()
-	bar.add_child(_outpost_label)
-	_day_label = Label.new()
-	bar.add_child(_day_label)
-	_resource_label = Label.new()
-	_resource_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	bar.add_child(_resource_label)
+	_outpost_label.add_theme_font_size_override("font_size", 16)
+	identity.add_child(_outpost_label)
+	var domain_level := Label.new()
+	# The growth axis the wireframe implies (Outpost -> Village -> Town -> ...) has no system
+	# behind it yet — a fixed tier, not a computed one, until M7 designs the ladder (ux_plan.md §5).
+	domain_level.text = "Outpost"
+	domain_level.modulate = OutpostTheme.TEXT_MUTED
+	domain_level.add_theme_font_size_override("font_size", 12)
+	identity.add_child(domain_level)
+
+	_gold_label = Label.new()
+	bar.add_child(_gold_label)
+	_population_label = Label.new()
+	bar.add_child(_population_label)
+
+	var spacer := Control.new()
+	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	bar.add_child(spacer)
+
+	_date_label = Label.new()
+	bar.add_child(_date_label)
 	var pass_day := Button.new()
 	pass_day.text = "Let a day pass"
 	pass_day.pressed.connect(_on_pass_day)
@@ -580,18 +600,15 @@ func _refresh_outpost() -> void:
 
 
 func _refresh_day() -> void:
-	_day_label.text = "Day %d" % Kernel.clock.total_days
+	_date_label.text = DateFormat.render(Kernel.clock)
 
 
+## Coins and population, each with the placeholder "+0" delta ux_plan.md §5 asks for rather than a
+## number nothing computes yet. Neutral-coloured on purpose — green/red would claim a real signal.
 func _refresh_resources() -> void:
 	var resources: Dictionary = Kernel.state.get_value("resources", {})
-	if resources.is_empty():
-		_resource_label.text = "Resources: (none yet)"
-		return
-	var parts: Array = []
-	for name in resources:
-		parts.append("%s: %d" % [name, int(resources[name])])
-	_resource_label.text = "Resources — " + "   ".join(PackedStringArray(parts))
+	_gold_label.text = "Gold %d  +0" % int(resources.get("gold", 0))
+	_population_label.text = "Population %d  +0" % int(resources.get("population", 0))
 
 
 func _append(bbcode: String) -> void:

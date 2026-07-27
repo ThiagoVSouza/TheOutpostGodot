@@ -191,6 +191,13 @@ func _gui_input(event: InputEvent) -> void:
 		# Drag moves the world under the cursor: shift the origin opposite to the motion.
 		_origin -= (event as InputEventMouseMotion).relative / _zoom
 		_refresh()
+	elif event is InputEventMagnifyGesture:
+		# Touch pinch-zoom (needs `input_devices/pointing/android/enable_pan_and_scale_gestures`,
+		# project.godot — off by default, so Android delivers raw multi-touch instead of this
+		# without it). `factor` is already a relative scale — >1 spreading apart, <1 pinching in —
+		# the same shape `_zoom_at` takes from the wheel.
+		var magnify := event as InputEventMagnifyGesture
+		_zoom_at(magnify.position, magnify.factor)
 	elif event.is_pressed() and not event.is_echo():
 		# The keyboard equivalents of the wheel. They zoom on the view's *middle* rather than the
 		# cursor: there is no cursor to zoom toward on a touchscreen, and on a desktop the pointer

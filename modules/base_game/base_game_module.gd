@@ -216,6 +216,10 @@ func seed_new_game(kernel: GameKernel, params: Dictionary) -> void:
 	bus.execute(CreateEntityCommand.new("outpost", Entities.LOCATION, outpost_name))
 	bus.execute(GrantResourceCommand.new("food", 20))
 	bus.execute(GrantResourceCommand.new("gold", 10))
+	# A flat starting headcount, honest about being one (ux_plan.md §5: no economy produces a real
+	# number yet, so the top bar renders this with a placeholder 0 delta rather than inventing
+	# growth). Retune once M7 gives population somewhere to actually come from.
+	bus.execute(GrantResourceCommand.new("population", 50))
 	# Due in a few days, not a full month: the plot should visibly tick within a short hands-on
 	# session so the living-world loop can be watched end to end (placeholder pacing).
 	bus.execute(CreatePlanCommand.new("steward_extortion", "steward_extortion", "plan_tick",

@@ -26,6 +26,9 @@ extends Control
 const MOBILE_BREAKPOINT_WIDTH := 900.0
 
 const RAIL_WIDTH := 72.0
+
+## How far the floating mobile menu button sits in from the stage's bottom-right corner.
+const MENU_BUTTON_MARGIN := 16
 const SPLIT_GUTTER_SIZE := 10.0
 const MIN_PANEL_FRACTION := 0.15
 const DOCK_BASE_MARGIN := 16
@@ -104,6 +107,12 @@ func _process(_delta: float) -> void:
 # --- building --------------------------------------------------------------------------------
 
 func _build() -> void:
+	# The map only ever *contains*-fits the stage (`OverworldMapView.fit()` never crops), so on an
+	# aspect ratio far from the map's own — a tall phone especially — real letterbox bands show on
+	# one axis. Without this they fell through to Godot's default gray instead of the shell's dark
+	# background; every other screen already paints itself this way (`ShellPalette.paint`).
+	ShellPalette.paint(self)
+
 	var root := VBoxContainer.new()
 	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	root.add_theme_constant_override("separation", 0)
@@ -160,17 +169,24 @@ func _build() -> void:
 	dock.add_theme_constant_override("separation", 6)
 	_dock_margin.add_child(dock)
 
-	# The mobile menu button floats over the stage, bottom-right (ux_plan.md §1.1's mobile re-flow),
-	# outside `root`'s linear flow so it overlays rather than pushing the dock down.
+	# The mobile menu button floats over the stage, bottom-right (ux_plan.md §1.1's mobile re-flow).
+	# Parented to `_stage` and anchored, NOT to the shell: anchored to the shell it sits at the
+	# window's bottom-right corner, which is the *dock's* row — on a real phone it landed squarely
+	# on top of the Send button and hid it. The stage stops above the dock, so this floats over the
+	# map exactly as drawn. Anchors rather than a computed position so it needs no resize handling.
 	_menu_button = Button.new()
 	_menu_button.text = "Menu"
 	_menu_button.visible = false
 	_menu_button.pressed.connect(_toggle_mobile_menu)
-	add_child(_menu_button)
+	_stage.add_child(_menu_button)
+	_menu_button.set_anchors_and_offsets_preset(
+		Control.PRESET_BOTTOM_RIGHT, Control.PRESET_MODE_MINSIZE, MENU_BUTTON_MARGIN)
 
+	# Also in the stage, so opening the menu leaves the persistent chrome (top bar, dock) visible —
+	# §1.1: "Nothing here is ever replaced — only what sits *inside* it changes."
 	_menu_list = HudPanel.new()
 	_menu_list.visible = false
-	add_child(_menu_list)
+	_stage.add_child(_menu_list)
 	_menu_list.set_title("Menu")
 	_menu_list.dismissed.connect(_close_mobile_menu)
 	_menu_list_box = VBoxContainer.new()
@@ -328,13 +344,6 @@ func _on_resized() -> void:
 			else:
 				set_chat_expanded(false)
 		breakpoint_changed.emit(mobile)
-	if mobile:
-		# Force the minimum-size recompute now rather than waiting for the next idle frame —
-		# otherwise the very first placement (before anything else has resized the button) uses a
-		# stale 0x0 size and the button appears pinned to the corner instead of inset from it.
-		_menu_button.reset_size()
-		var margin := Vector2(16, 16)
-		_menu_button.position = size - _menu_button.size - margin
 	_relayout_stage()
 
 
