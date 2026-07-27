@@ -8,6 +8,8 @@ reloadable = true
 
 windows.debug.x86_64 = "res://addons/outpost_llama/bin/outpost_llama.windows.template_debug.x86_64.dll"
 windows.release.x86_64 = "res://addons/outpost_llama/bin/outpost_llama.windows.template_release.x86_64.dll"
+android.debug.arm64 = "res://addons/outpost_llama/bin/liboutpost_llama.android.template_debug.arm64.so"
+android.release.arm64 = "res://addons/outpost_llama/bin/liboutpost_llama.android.template_release.arm64.so"
 
 [dependencies]
 
@@ -18,4 +20,20 @@ windows.x86_64 = {
   "res://addons/outpost_llama/bin/ggml.dll" : "",
   "res://addons/outpost_llama/bin/ggml-base.dll" : "",
   "res://addons/outpost_llama/bin/ggml-cpu-x64.dll" : ""
+}
+
+; libggml-cpu.so carries the CPU backend, which on Android is linked into the
+; library set rather than discovered as a plugin (GGML_BACKEND_DL is off), so
+; there is no Windows-style search path to get wrong here.
+;
+; libc++_shared.so is deliberately NOT listed even though the extension links
+; against it: Godot's own Android template already ships it, and naming it here
+; puts a second copy at lib/arm64-v8a/ which apksigner rejects outright -
+; "Multiple ZIP entries with the same name". The export fails at signing, well
+; after it reports the export itself as done.
+android.arm64 = {
+  "res://addons/outpost_llama/bin/libllama.so" : "",
+  "res://addons/outpost_llama/bin/libggml.so" : "",
+  "res://addons/outpost_llama/bin/libggml-base.so" : "",
+  "res://addons/outpost_llama/bin/libggml-cpu.so" : ""
 }

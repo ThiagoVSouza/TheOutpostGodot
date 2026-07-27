@@ -5,7 +5,11 @@ thirdparty/
 build_tmp/
 bin/
 *.obj
+*.os
 *.exp
 *.lib
+*.a
+*.so
+*.dll
 *.import
 .sconsign.dblite

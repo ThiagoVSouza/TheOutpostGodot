@@ -508,8 +508,46 @@ Full build recipe and the four traps it cost: `gdextension/README.md`.
   llama.cpp + CUDA runtime DLLs, all reproducible by
   `tools/setup_gdextension.ps1`.
 
-- ~~**In-process GDExtension binding to `libllama`**~~ **Windows done**; Android
-  and iOS remain — M2's subprocess approach cannot ship on mobile
+**Phase 2 — Android — done (2026-07-27), verified on a real S26 Ultra.** The
+game now runs a local LLM **on the phone**, which is the thing M6 exists for.
+llama.cpp is cross-compiled from source with NDK 27.2 (upstream publishes no
+Android binaries) at the same pinned tag the Windows DLLs come from.
+
+- **A full orchestrator turn takes 4 s on the device** — classify → dispatch →
+  forage → narrate, with the rules applying `grant_resource` and D4 holding (the
+  model narrated, the code chose the number). The first turn after launch is
+  ~40 s because it absorbs loading 2.4 GiB of weights once.
+- **That 4 s was 11 s until one build flag changed.** `GGML_NATIVE=OFF` is
+  required for any cross-compile and *silently* selects the `armv8-a` baseline —
+  without dotprod, the instruction Q4 matmul lives on. Naming
+  `GGML_CPU_ARM_ARCH=armv8.2-a+dotprod` is worth **2.75x** and is the difference
+  between unplayable and playable. `i8mm` is deliberately left off: it would cut
+  support to 2021+ devices and ggml compiles those kernels unconditionally, so an
+  older core would not run slower, it would SIGILL.
+- **The bug the phone found, which the desktop had been hiding:** the hand-rolled
+  chat template used **Gemma 3**'s `<start_of_turn>` markers against a **Gemma 4**
+  model, which wants `<|turn>` / `<turn|>`. Nothing errored — the model echoed the
+  framing back, and a turn narrated
+  `<start_of_turn>The foraging party returns empty-handed.</start_of_turn>` to the
+  player. Markers are now detected in the vocabulary, and an unrecognised format
+  **fails the request instead of guessing**. `tools/check_llama_turn.gd` guards it,
+  because 413 green tests could not: the suite is model-free by design.
+- **On a phone the in-process backend is the platform default**, not an opt-in:
+  there is no environment to configure and no alternative runtime. `ModelProfile`
+  gained a `runtime` field (`server` | `in_process`) so a mobile profile can
+  honestly name no server executable, and the catalog picks its default by
+  platform.
+- Two Android packaging rules learned the hard way, both in `gdextension/README.md`:
+  never ship `libc++_shared.so` (Godot's template already has it; a second copy
+  makes apksigner reject the APK *after* the export reports success), and every
+  `.so` needs 16 KB page alignment (Android 15+, and required by Play for new
+  uploads — the device names every offending library in a dialog).
+- 2 new tests (**413 green**). `addons/outpost_llama/bin/` stays gitignored and
+  fully reproducible via `tools/setup_gdextension.ps1`, which now builds both
+  platforms.
+
+- ~~**In-process GDExtension binding to `libllama`**~~ **Windows and Android
+  done**; iOS remains (D10, no Mac) — M2's subprocess approach cannot ship on mobile
 - Per-platform builds: Windows CUDA, Android arm64 CPU (done once already), iOS
   Metal via XCFramework (D10 — source-verified, never run)
 - **Voice input via whisper.cpp** (D18) — same ggml toolchain, so largely

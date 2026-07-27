@@ -80,7 +80,13 @@ void LlamaInferenceEngine::_run_load_model(String p_model_path, int p_n_gpu_laye
 
 	llama_context_params ctx_params = llama_context_default_params();
 	ctx_params.n_ctx = (uint32_t)p_n_ctx;
-	ctx_params.n_batch = (uint32_t)p_n_ctx;
+	// NOT n_ctx: batch size is how many tokens may be submitted in one
+	// llama_decode, and sizing it to the whole context reserves a compute buffer
+	// for a batch this game never submits (a turn's prompt is a few hundred
+	// tokens). llama.cpp's own default is 2048, and on a phone - where the 2.43
+	// GiB of weights already compete for ~4 GiB of available RAM (D5) - that
+	// reservation is exactly the constraint that decides whether a model fits.
+	ctx_params.n_batch = (uint32_t)MIN(p_n_ctx, 2048);
 
 	_ctx = llama_init_from_model(_model, ctx_params);
 	if (_ctx == nullptr) {
@@ -155,6 +161,16 @@ void LlamaInferenceEngine::_fail_deferred(int64_t p_request_id, const String &p_
 	call_deferred("emit_signal", "generation_failed", p_request_id, p_error);
 }
 
+// True when the text is a single token in this model's vocabulary - i.e. a real
+// special token rather than something that merely tokenizes into pieces. Used to
+// pick the right chat-turn markers without hardcoding a model family.
+bool LlamaInferenceEngine::_is_single_token(const char *p_text) const {
+	llama_token tokens[8];
+	const int32_t n = llama_tokenize(_vocab, p_text, (int32_t)std::strlen(p_text),
+			tokens, 8, /*add_special=*/false, /*parse_special=*/true);
+	return n == 1;
+}
+
 // Runs on a detached worker thread. Owns the whole decode+sample loop for one
 // turn; the KV cache is cleared up front so every call is a fresh full-context
 // pass (D22's request contract already carries the whole conversation each
@@ -208,11 +224,32 @@ void LlamaInferenceEngine::_run_generation(int64_t p_request_id, Dictionary p_re
 	if (needed >= 0) {
 		prompt.assign(prompt_buf.data(), needed);
 	} else {
-		for (size_t i = 0; i < roles.size(); i++) {
-			const std::string &gemma_role = (roles[i] == "assistant") ? "model" : "user";
-			prompt += "<start_of_turn>" + gemma_role + "\n" + contents[i] + "<end_of_turn>\n";
+		// The turn markers are DETECTED in the vocabulary, never assumed. The
+		// Gemma 4 E2B/E4B builds this game ships use <|turn> / <turn|> (tokens
+		// 105/106, with <turn|> as the EOT) - NOT Gemma 3's <start_of_turn> /
+		// <end_of_turn>. Assuming the Gemma 3 pair is what produced a turn on
+		// the phone reading, in full:
+		//   "<start_of_turn>The foraging party returns empty-handed.</start_of_turn>"
+		// The model saw a format it did not recognise and echoed the markers
+		// back as prose.
+		//
+		// If neither the template engine nor this check can establish the
+		// format, FAIL rather than guess. A wrong guess does not announce
+		// itself - it produces plausible-looking prose with the framing leaking
+		// through, which is far worse than an unavailable narrator the
+		// availability policy already knows how to handle.
+		if (!_is_single_token("<|turn>")) {
+			_busy.store(false);
+			_fail_deferred(p_request_id, "unknown_chat_template");
+			return;
 		}
-		prompt += "<start_of_turn>model\n";
+		for (size_t i = 0; i < roles.size(); i++) {
+			// The template names the assistant "model"; "system" is passed
+			// through as its own role rather than folded into "user".
+			const std::string role = (roles[i] == "assistant") ? "model" : roles[i];
+			prompt += "<|turn>" + role + "\n" + contents[i] + "<turn|>\n";
+		}
+		prompt += "<|turn>model\n";
 	}
 
 	llama_memory_clear(llama_get_memory(_ctx), true);
@@ -282,7 +319,9 @@ void LlamaInferenceEngine::_run_generation(int64_t p_request_id, Dictionary p_re
 			break;
 		}
 		char piece[256];
-		int32_t n = llama_token_to_piece(_vocab, new_token, piece, sizeof(piece), 0, true);
+		// special=false: a special token that is not end-of-generation must
+		// never reach the player as literal text. This is prose someone reads.
+		int32_t n = llama_token_to_piece(_vocab, new_token, piece, sizeof(piece), 0, /*special=*/false);
 		if (n > 0) {
 			output.append(piece, n);
 		}

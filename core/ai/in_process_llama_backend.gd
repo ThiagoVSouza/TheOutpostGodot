@@ -120,8 +120,13 @@ func _on_model_load_completed() -> void:
 	_flush_pending()
 
 
-func _on_model_load_failed(_error: String) -> void:
+func _on_model_load_failed(error: String) -> void:
 	state = State.FAILED
+	# Say so loudly. On a phone this is almost always "the weights are not on the
+	# device", and the symptom a player would otherwise see is an AI that is
+	# simply never available, with nothing in the log explaining why.
+	push_error("InProcessLlamaBackend: model load failed (%s) for weights_path '%s'" % [
+		error, profile.weights_path if profile != null else "<no profile>"])
 	_flush_pending()
 
 

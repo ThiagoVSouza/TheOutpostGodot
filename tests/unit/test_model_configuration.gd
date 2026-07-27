@@ -7,10 +7,41 @@ func test_catalog_loads_valid_e2b_and_bonsai_profiles() -> void:
 	var catalog := load(CATALOG_PATH) as ModelCatalog
 	assert_not_null(catalog)
 	assert_eq(catalog.validate(), PackedStringArray())
-	assert_eq(catalog.profiles.size(), 2)
+	assert_eq(catalog.profiles.size(), 3)
 	assert_eq(catalog.desktop_default_profile_id, "bonsai_27b_desktop_cuda")
 	assert_eq(catalog.desktop_default().display_name, "Bonsai 27B Q1_0 (desktop CUDA)")
 	assert_not_null(catalog.profile("gemma_e2b_desktop_cuda"))
+
+
+## M6: a phone runs the weights in-process, so its profile names no server
+## executable. The catalog has to accept that as valid rather than force a path
+## that does not exist onto it.
+func test_the_android_profile_runs_in_process_and_names_no_server() -> void:
+	var catalog := load(CATALOG_PATH) as ModelCatalog
+	var profile := catalog.android_default()
+
+	assert_not_null(profile, "android_default_profile_id must resolve")
+	assert_eq(profile.runtime, ModelProfile.RUNTIME_IN_PROCESS)
+	assert_eq(profile.server_executable_path, "")
+	assert_eq(profile.validate(), PackedStringArray(),
+		"an in_process profile is complete without a server executable")
+	assert_eq(profile.platform, "Android")
+	# D9: Android runs on the CPU — the Adreno GPU path regressed on this class
+	# of device, so a mobile profile asking for GPU layers would be a mistake.
+	assert_eq(profile.gpu_layers, 0)
+
+
+func test_a_server_profile_still_requires_its_executable() -> void:
+	var profile := ModelProfile.new()
+	profile.profile_id = "x"
+	profile.display_name = "x"
+	profile.platform = "Windows"
+	profile.runtime = ModelProfile.RUNTIME_SERVER
+	profile.server_executable_path = ""
+	profile.weights_path = "model.gguf"
+
+	assert_true("server_executable_path is required" in Array(profile.validate()),
+		"relaxing this for in_process must not relax it for the server runtime")
 
 
 func test_profile_projects_complete_server_arguments() -> void:
