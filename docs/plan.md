@@ -12,7 +12,8 @@ Decisions and their evidence: `docs/decisions.md`. Measurements:
 gates. **GATE 0 there is binding: no production code before a direction review
 with the user.**
 
-Last updated: 2026-07-26 (the Android UX pass: portrait, legible scaling, a back button that asks
+Last updated: 2026-07-26 (a painted menu background and a real game icon; before that the Android UX
+pass: portrait, legible scaling, a back button that asks
 before it quits, and a keyboard that no longer covers the input — all verified on a real S26 Ultra.
 Before that: wizard choices drive the game, audio, the outpost on the overworld, a settings screen,
 the real logo. The flow is run in a window each time via `tools/capture_screens.gd`, which keeps
@@ -670,9 +671,43 @@ nobody has decided, and roughly how much is left.
 
 **The splash shows the real logo (2026-07-25).** `core/assets/pangea_logo.png` on a true black field,
 scaled to a share of the viewport in its own aspect so it holds its proportion on a phone and on a
-desktop. Note on the asset: it is an **opaque near-white plate with the mark knocked out to full
-transparency**, so on black it reads as a dark mark inside a white badge. A white mark directly on
-black would need the alpha inverted. An animated reveal is still to come.
+desktop. As supplied the asset was an **opaque near-white plate with the mark knocked out to full
+transparency**, so on black it read as a dark mark inside a white badge; it was **inverted on
+2026-07-26** to a white mark directly on black (see below). An animated reveal is still to come.
+
+**Menu background + game icon — done (2026-07-26).** Two supplied images wired up: a painted
+settlement behind the main menu and the loading screen, and a watchtower as the app's icon.
+
+- **Moved out of `docs/`.** They arrived in `docs/Assets/`, which is no place for runtime art (the
+  same call the splash logo got): they now live in `core/assets/` beside `pangea_logo.png`, named
+  for what they are — `main_menu_background.png`, `game_icon.png`.
+- **`ShellPalette.paint_art()`** puts the painting behind a screen, and the menu's controls sit on a
+  `plate_style()` panel over it. Both were needed: the art is bright (sunlit fields, white cloud)
+  and the shell is light-on-dark, so a full-screen scrim alone still left the *disabled* menu items
+  — low-contrast by design — invisible against the lit farmhouse and stonework.
+- **The icon needs no export-preset entry:** Godot generates the whole Android launcher set
+  (mdpi→xxxhdpi, adaptive foreground/background/monochrome) from `application/config/icon`, which
+  now points at `game_icon.png`. Verified by unpacking the built APK, not assumed.
+
+**Both source images are used as supplied — settled 2026-07-26, not open questions.**
+
+- **The background is landscape (2752x1536) and the app is portrait, so it is always cropped.** That
+  is the accepted behaviour rather than a stopgap: there is no portrait-native variant coming, so
+  the crop is designed rather than tolerated. It scales to cover and is framed on `ART_FOCUS_X`
+  (0.58) — **the keep's own position in the painting**, not the image's midpoint, which is a
+  different point and would clip the right-hand towers. The settlement therefore sits centred at
+  every aspect the game runs at, and the river, bridge and outlying farms fall outside the frame
+  deliberately. `KEEP_ASPECT_COVERED` cannot express a focal point (it always centres the image),
+  which is why the size and offset are computed instead, clamped so no edge can show.
+- **The icon is 101x101 and Godot upscales it for the Android launcher set.** Accepted as-is.
+
+**The splash logo is inverted (2026-07-26)** — a white mark directly on black, replacing the
+white badge with the mark knocked out of it. Not a plain alpha inversion: the surround outside the
+badge is transparent too and would have become an opaque white field. Only the *enclosed* knocked-out
+region is the mark, so the transform flood-fills from the border to identify the surround, leaves it
+transparent, and inverts everything else — plate to nothing, mark to the same off-white ink the
+plate used, anti-aliased edges carried through. Done once with a throwaway Godot script (deleted);
+the asset in the repo is the result.
 
 **Audio — done (2026-07-25).** There was no player at all; the assets had been staged for weeks.
 `AudioManager` (`core/audio/`, kernel field `audio`, a Node because it owns `AudioStreamPlayer`s)

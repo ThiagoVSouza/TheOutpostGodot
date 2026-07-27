@@ -35,6 +35,8 @@ func on_hardware_back() -> bool:
 func _build_ui() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	ShellPalette.paint(self, ShellPalette.BACKGROUND_LOADING)
+	# Same art as the menu it hands off to, so the two do not read as different places.
+	ShellPalette.paint_art(self)
 
 	var margin := MarginContainer.new()
 	margin.set_anchors_preset(Control.PRESET_FULL_RECT)

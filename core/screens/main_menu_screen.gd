@@ -17,16 +17,26 @@ func _ready() -> void:
 
 func _build_ui() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
+	# The flat colour stays underneath: the art is cropped to cover, and on an aspect it cannot fill
+	# this is what shows rather than nothing.
 	ShellPalette.paint(self)
+	ShellPalette.paint_art(self)
 
 	var center := CenterContainer.new()
 	center.set_anchors_preset(Control.PRESET_FULL_RECT)
 	add_child(center)
 
+	# The menu sits on its own plate rather than straight on the painting. The scrim alone is not
+	# enough where the art is busiest (the lit farmhouse, the stonework): a *disabled* item is
+	# low-contrast by design, and over that midground it disappeared entirely.
+	var plate := PanelContainer.new()
+	plate.add_theme_stylebox_override("panel", ShellPalette.plate_style())
+	center.add_child(plate)
+
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", 10)
 	col.custom_minimum_size = Vector2(280, 0)
-	center.add_child(col)
+	plate.add_child(col)
 
 	var title := Label.new()
 	title.text = "THE OUTPOST"
