@@ -101,6 +101,12 @@ func _run() -> void:
 		var shell := chat.get("_shell") as HudShell
 		shell.set_chat_expanded(true)
 		await _shoot("06b_chat_expanded")
+		# Phase 3's key acceptance capture: drive a real workflow through the dock and wait for
+		# its completion event, so the resulting timeline visibly includes the rules-owned roll.
+		chat.call("_on_submit", "I send scouts to forage the hills")
+		while not (chat.get("_input") as LineEdit).editable:
+			await process_frame
+		await _shoot("06bb_chat_turn_with_timeline")
 		chat.call("_open_main_menu")
 		await _shoot("06c_chat_and_menu_split")
 

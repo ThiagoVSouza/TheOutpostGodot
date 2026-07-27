@@ -12,15 +12,19 @@ func test_render_trace_breaks_down_a_turn() -> void:
 	trace.add("turn_started", {"source": "typed"})
 	trace.add("workflow_ai", {"family": "classify_intent", "value": "forage"})
 	trace.add("workflow_dispatched", {"to": "forage", "segment": 1})
+	trace.add("workflow_rolled", {"dice": "1d20", "result": 20})
 	trace.add("workflow_command", {"command": "grant_resource", "ok": true})
-	trace.add("workflow_narrated", {"text": "The scouts return with food."})
+	trace.add("workflow_narrated", {"text": "[short|en] The scouts return with food."})
 	trace.add("workflow_completed", {})
 
 	var out := Playground.render_trace(trace)
 
 	assert_string_contains(out, "forage", "the classified intent is shown")
 	assert_string_contains(out, "grant_resource", "the command is shown")
+	assert_string_contains(out, "Roll Dice: 1d20", "the rules-owned roll is shown")
+	assert_string_contains(out, "20", "the rolled value is visible to the player")
 	assert_string_contains(out, "The scouts return with food.", "the narration is shown")
+	assert_false(out.contains("[short|en]"), "fake-narrator test metadata stays out of player prose")
 	assert_string_contains(out, "completed", "the terminal status is shown")
 
 

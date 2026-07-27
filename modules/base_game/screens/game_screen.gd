@@ -28,6 +28,7 @@ var _gold_label: Label
 var _population_label: Label
 var _date_label: Label
 var _log_label: RichTextLabel
+var _message_list: ChatMessageList
 var _input: LineEdit
 var _send_button: Button
 var _retry_button: Button
@@ -236,10 +237,38 @@ func _build_chat_panel() -> void:
 	_chat_panel.set_title("Conversation")
 	_chat_panel.dismissed.connect(func() -> void: _shell.set_chat_expanded(false))
 
+	var event_image := PanelContainer.new()
+	event_image.custom_minimum_size = Vector2(0, 120)
+	event_image.tooltip_text = "Event artwork"
+	var event_style := StyleBoxFlat.new()
+	event_style.bg_color = Color(0.09, 0.10, 0.14)
+	event_style.border_color = OutpostTheme.BORDER
+	event_style.set_border_width_all(1)
+	event_style.set_corner_radius_all(OutpostTheme.CORNER_RADIUS)
+	event_image.add_theme_stylebox_override("panel", event_style)
+	_chat_panel.body.add_child(event_image)
+	var placeholder := VBoxContainer.new()
+	placeholder.alignment = BoxContainer.ALIGNMENT_CENTER
+	event_image.add_child(placeholder)
+	var placeholder_title := Label.new()
+	placeholder_title.text = "Event illustration"
+	placeholder_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	placeholder_title.add_theme_color_override("font_color", OutpostTheme.TEXT_MUTED)
+	placeholder.add_child(placeholder_title)
+	var placeholder_note := Label.new()
+	placeholder_note.text = "Artwork arrives with the authored event."
+	placeholder_note.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	placeholder_note.add_theme_color_override("font_color", OutpostTheme.TEXT_DISABLED)
+	placeholder.add_child(placeholder_note)
+
+	_message_list = ChatMessageList.new()
+	_chat_panel.body.add_child(_message_list)
+
+	# Existing integration tests inspect this semantic transcript directly. It remains as a
+	# hidden mirror while the visible conversation is rendered as structured message rows.
 	_log_label = RichTextLabel.new()
 	_log_label.bbcode_enabled = true
-	_log_label.scroll_following = true
-	_log_label.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_log_label.visible = false
 	_chat_panel.body.add_child(_log_label)
 
 
@@ -375,6 +404,7 @@ func _on_submit(text: String) -> void:
 	if message.is_empty() or Kernel.ai_orchestrator.is_busy():
 		return
 	_append("[color=aqua]You:[/color] %s" % message)
+	_message_list.add_message("You", message)
 	_input.clear()
 	_set_busy(true)
 	_source.submit(message)
@@ -402,6 +432,7 @@ func _render_turn(result: Dictionary) -> void:
 	var trace: AiTrace = result.get("trace")
 	if trace != null:
 		_trace_label.text = trace.to_text()
+	_message_list.add_message("King", String(result.get("narrative", "")), trace)
 	_refresh_resources()
 
 	# A turn that suspended hands back the handle to answer it with (B1). Ask right away,
@@ -613,3 +644,7 @@ func _refresh_resources() -> void:
 
 func _append(bbcode: String) -> void:
 	_log_label.append_text(bbcode + "\n")
+	# Player and game-master turns are added with their trace by their callers. Everything else
+	# (opening copy, chronicles, questions, connection status) still deserves a visible row.
+	if _message_list != null and not bbcode.contains("You:[/color]") and not bbcode.contains("Game master:[/color]"):
+		_message_list.add_message("Chronicle", bbcode)

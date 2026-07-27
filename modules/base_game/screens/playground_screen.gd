@@ -175,13 +175,18 @@ func _on_turn_completed(payload: Dictionary) -> void:
 
 	var trace: AiTrace = result.get("trace")
 	if trace != null:
-		_trace_label.text = render_trace(trace)
+		_trace_label.text = AiTimeline.render_trace(trace)
 	_refresh_resources()
 
 
 ## Render an AiTrace to a readable, colour-coded breakdown (static + pure, so it's testable
 ## without a live screen). Each stage reads as one line naming who did what.
 static func render_trace(trace: AiTrace) -> String:
+	return AiTimeline.render_trace(trace)
+
+
+## Kept temporarily as a reference while the shared renderer settles; no live UI calls it.
+static func _legacy_render_trace(trace: AiTrace) -> String:
 	var lines: Array = []
 	for entry_v in trace.entries():
 		var entry: Dictionary = entry_v
