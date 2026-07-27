@@ -17,6 +17,8 @@ extends Control
 
 const HEADER_FLAG_WIDTH := 26.0
 const MARKER_FLAG_WIDTH := 30.0
+const MAIN_MENU_PAGE_ID := "main_menu"
+const MAP_LAYERS_PAGE_ID := "map_layers"
 
 var _shell: HudShell
 var _map_view: OverworldMapView
@@ -46,6 +48,7 @@ var _slots: OptionButton
 
 var _chat_panel: HudPanel
 var _menu_panel: HudPanel
+var _destination_panels: Dictionary = {} # id -> persistent HudPanel
 
 
 func _ready() -> void:
@@ -171,7 +174,7 @@ func _build_ui() -> void:
 	_build_chat_panel()
 	_build_dock()
 	_build_menu_panel()
-	_shell.add_rail_action("Menu", _open_main_menu)
+	_build_destination_actions()
 
 
 func _build_map() -> void:
@@ -421,6 +424,36 @@ func _build_menu_panel() -> void:
 func _open_main_menu() -> void:
 	_refresh_slots()
 	_shell.show_page(_menu_panel)
+
+
+## The shell only knows how to place destination actions. What those actions are comes from modules
+## through HudPanelRegistry, in the same registration pass that contributes screens and commands.
+func _build_destination_actions() -> void:
+	for id: String in Kernel.hud_panels.page_ids():
+		var definition: Dictionary = Kernel.hud_panels.definition(id)
+		var label := String(definition.get("label", id))
+		if id == MAP_LAYERS_PAGE_ID:
+			_shell.add_map_layers_action(label, _open_destination.bind(id))
+		else:
+			_shell.add_rail_action(label, _open_destination.bind(id))
+
+
+func _open_destination(id: String) -> void:
+	if id == MAIN_MENU_PAGE_ID:
+		_open_main_menu()
+		return
+	var panel: HudPanel = _destination_panels.get(id, null) as HudPanel
+	if panel == null:
+		var definition: Dictionary = Kernel.hud_panels.definition(id)
+		panel = HudPanel.new()
+		panel.visible = false
+		add_child(panel)
+		panel.set_meta("hud_page_id", id)
+		panel.set_title(String(definition.get("title", id.capitalize())))
+		Kernel.hud_panels.build(id, panel, Kernel)
+		_destination_panels[id] = panel
+	Kernel.hud_panels.refresh(id, panel, Kernel)
+	_shell.show_page(panel)
 
 
 ## The typed source's submit path: a real backend turn takes 0.85-4 s (D22), so input

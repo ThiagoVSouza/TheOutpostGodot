@@ -115,12 +115,18 @@ func _run() -> void:
 		await chat.call("_answer", false)
 		chat.call("_open_main_menu")
 		await _shoot("06c_chat_and_menu_split")
+		chat.call("_open_destination", "domain")
+		await _shoot("06ca_domain_panel")
+		chat.call("_open_destination", "map_layers")
+		await _shoot("06cb_map_layers_panel")
 
 		# Narrow the window without remounting — crossing the breakpoint with both panels open
 		# should collapse to whichever opened more recently (rule 5), not leave both on screen.
 		DisplayServer.window_set_size(MOBILE_VIEWPORT_SIZE)
 		await _settle()
 		await _shoot("06d_mobile_exclusive")
+		shell.call("_toggle_mobile_menu")
+		await _shoot("06e_mobile_destinations")
 		DisplayServer.window_set_size(VIEWPORT_SIZE)
 		await _settle()
 

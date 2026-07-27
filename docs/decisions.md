@@ -50,6 +50,7 @@ Measurements: `docs/benchmarks/milestone1_results.md`. Architecture: `docs/initi
 | **D37** | Memory retrieval: entity-tag + recency now; the AI drill-down deferred | **Decided** |
 | **D38** | Entity/character model: authoritative, command-mutated, engine-not-content | **Decided** |
 | **D39** | In-play time: continuous, player-speed-controlled calendar | **Decided** |
+| **D40** | HUD destinations: module-contributed panel registry | **Decided** |
 | **D17** | Benchmarking method — how to not fool yourself | Reference |
 
 Roadmap and current status: `docs/plan.md`.
@@ -1326,6 +1327,26 @@ fast-forwards the settlement.
 **Controls:** Space toggles pause and restores the prior speed; 1, 2 and 3 select exact speeds.
 Loading always opens paused and speed is not save data. The test runner disables the driver, keeping
 calendar tests deterministic.
+
+---
+
+## D40 — HUD destinations: module-contributed panel registry
+
+**Decided** (2026-07-27). Routed screens and in-game destinations are different navigation layers.
+`ScreenRegistry` continues to own application flow; `HudPanelRegistry` owns pages inside the mounted
+game shell. Modules register ordered destination descriptors plus optional panel build/refresh
+callbacks, so core UI does not acquire game-specific knowledge as the game grows.
+
+The base module contributes the seven rail destinations and Map Layers. The game screen remains the
+host: it creates persistent `HudPanel` instances, asks the registry to build them, refreshes them on
+open, and hands them to `HudShell` for responsive layout. Main Menu is registered alongside the
+other destinations but its controls remain composed by the screen because save/load actions also
+refresh screen-local map and chat state.
+
+**Honesty rule:** Domain and Population show authoritative state already available today; Economy,
+Military, Diplomacy, and Knowledge are explicit deferred-system placeholders; Map Layers lists the
+single terrain layer actually rendered. No fake production, army, relationship, or research values
+are invented to make a page look complete.
 
 ---
 

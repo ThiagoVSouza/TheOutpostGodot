@@ -24,7 +24,10 @@ func _ready() -> void:
 	# `_and_offsets_` fills continuously as the parent resizes rather than baking in that rect
 	# (the trap `map_overlay.gd` documented and ux_plan.md §7 carries forward).
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	ShellPalette.paint(self)
+	# Panels need to read as a layer above the dark map rather than as another patch of the same
+	# background. The theme gives controls their states; this gives the code-built panel itself a
+	# clearly distinct blue-slate surface.
+	ShellPalette.paint(self, OutpostTheme.SURFACE)
 
 	var outer := VBoxContainer.new()
 	outer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)

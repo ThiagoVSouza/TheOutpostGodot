@@ -15,12 +15,12 @@ extends RefCounted
 ## `ShellPalette` rather than unwinding every call site in one pass.
 
 const BACKGROUND := ShellPalette.BACKGROUND
-const SURFACE := Color(0.14, 0.14, 0.18)
-const SURFACE_HOVER := Color(0.20, 0.20, 0.25)
-const SURFACE_PRESSED := Color(0.26, 0.22, 0.14)
-const SURFACE_DISABLED := Color(0.10, 0.10, 0.13)
-const FIELD := Color(0.05, 0.05, 0.08)
-const BORDER := Color(1, 1, 1, 0.08)
+const SURFACE := Color(0.15, 0.18, 0.25)
+const SURFACE_HOVER := Color(0.23, 0.29, 0.39)
+const SURFACE_PRESSED := Color(0.34, 0.27, 0.15)
+const SURFACE_DISABLED := Color(0.10, 0.12, 0.17)
+const FIELD := Color(0.07, 0.09, 0.14)
+const BORDER := Color(0.48, 0.59, 0.78, 0.36)
 
 const TEXT := Color(0.93, 0.93, 0.95)
 const TEXT_MUTED := Color(1, 1, 1, 0.55)
@@ -48,9 +48,8 @@ static func build() -> Theme:
 	_style_field(theme, "LineEdit")
 	_style_field(theme, "TextEdit")
 
-	var panel := _box(BACKGROUND, BORDER)
-	theme.set_stylebox("panel", "Panel", panel)
-	theme.set_stylebox("panel", "PanelContainer", panel)
+	theme.set_stylebox("panel", "Panel", _box(SURFACE, BORDER, CORNER_RADIUS * 2))
+	theme.set_stylebox("panel", "PanelContainer", _box(SURFACE, BORDER, CORNER_RADIUS * 2))
 	# AcceptDialog/ConfirmationDialog draw their own body through this type — this is the line
 	# that themes the exit-confirm dialog (Phase 2's "done when").
 	theme.set_stylebox("panel", "AcceptDialog", _box(SURFACE, BORDER, CORNER_RADIUS * 2))

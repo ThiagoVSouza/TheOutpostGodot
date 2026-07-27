@@ -52,8 +52,10 @@ var chat_slot: Control
 
 var _rail: VBoxContainer
 var _menu_button: Button
+var _map_layers_button: Button
 var _menu_list: HudPanel
 var _menu_list_box: VBoxContainer
+var _return_button: Button
 var _mobile_menu_open := false
 
 var _dock_margin: MarginContainer
@@ -183,6 +185,16 @@ func _build() -> void:
 	_menu_button.set_anchors_and_offsets_preset(
 		Control.PRESET_BOTTOM_RIGHT, Control.PRESET_MODE_MINSIZE, MENU_BUTTON_MARGIN)
 
+	_map_layers_button = Button.new()
+	_map_layers_button.text = "Map Layers"
+	_stage.add_child(_map_layers_button)
+	_map_layers_button.set_anchors_and_offsets_preset(
+		Control.PRESET_BOTTOM_RIGHT, Control.PRESET_MODE_MINSIZE, MENU_BUTTON_MARGIN)
+	# It belongs to the map, not above a page or expanded conversation. Keep it over the base layer
+	# but underneath the two overlay slots, so it returns when those panels close instead of covering
+	# their content.
+	_stage.move_child(_map_layers_button, _stage.get_children().find(_page_slot))
+
 	# Also in the stage, so opening the menu leaves the persistent chrome (top bar, dock) visible —
 	# §1.1: "Nothing here is ever replaced — only what sits *inside* it changes."
 	_menu_list = HudPanel.new()
@@ -193,10 +205,10 @@ func _build() -> void:
 	_menu_list_box = VBoxContainer.new()
 	_menu_list_box.add_theme_constant_override("separation", 4)
 	_menu_list.body.add_child(_menu_list_box)
-	var return_button := Button.new()
-	return_button.text = "Return"
-	return_button.pressed.connect(_close_mobile_menu)
-	_menu_list_box.add_child(return_button)
+	_return_button = Button.new()
+	_return_button.text = "Return"
+	_return_button.pressed.connect(_close_mobile_menu)
+	_menu_list_box.add_child(_return_button)
 
 
 # --- rail / mobile menu ------------------------------------------------------------------------
@@ -212,6 +224,16 @@ func add_rail_action(label: String, on_pressed: Callable) -> void:
 	rail_button.pressed.connect(on_pressed)
 	_rail.add_child(rail_button)
 
+	_add_mobile_menu_action(label, on_pressed)
+
+
+func add_map_layers_action(label: String, on_pressed: Callable) -> void:
+	_map_layers_button.text = label
+	_map_layers_button.pressed.connect(on_pressed)
+	_add_mobile_menu_action(label, on_pressed)
+
+
+func _add_mobile_menu_action(label: String, on_pressed: Callable) -> void:
 	var menu_button := Button.new()
 	menu_button.text = label
 	menu_button.custom_minimum_size = Vector2(0, 40)
@@ -219,6 +241,7 @@ func add_rail_action(label: String, on_pressed: Callable) -> void:
 		_close_mobile_menu()
 		on_pressed.call())
 	_menu_list_box.add_child(menu_button)
+	_menu_list_box.move_child(_return_button, _menu_list_box.get_child_count() - 1)
 
 
 func _toggle_mobile_menu() -> void:
@@ -360,6 +383,7 @@ func _on_resized() -> void:
 		_is_mobile = mobile
 		_rail.visible = not mobile
 		_menu_button.visible = mobile
+		_map_layers_button.visible = not mobile
 		if not mobile:
 			_close_mobile_menu()
 		elif _page_panel != null and _chat_open:
@@ -375,6 +399,10 @@ func _on_resized() -> void:
 
 func _relayout_stage() -> void:
 	var page_open := _page_panel != null
+	# The desktop shortcut belongs to the unobscured map. When a page or the expanded conversation
+	# occupies the stage, leave its content clean; on mobile the same action is in Menu, and on
+	# desktop it returns as soon as the player closes the overlay.
+	_map_layers_button.visible = not _is_mobile and not page_open and not _chat_open
 	_gutter.visible = false
 	if _event_active:
 		_fill(chat_slot)

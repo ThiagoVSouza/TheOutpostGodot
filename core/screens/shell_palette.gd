@@ -12,7 +12,7 @@ extends RefCounted
 ## When a real theme lands, this is what it replaces.
 
 ## The standard page: menus, the new-game wizard, the load screen, the game itself.
-const BACKGROUND := Color(0.07, 0.07, 0.10)
+const BACKGROUND := Color(0.08, 0.10, 0.15)
 
 ## Deliberately darker, for the moments before the shell proper — the eye should settle *into* the
 ## app rather than be handed full brightness at once.

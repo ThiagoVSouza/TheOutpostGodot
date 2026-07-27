@@ -225,6 +225,12 @@ stops it without the driver knowing what an event is.
 
 ### Phase 5 — the seven destinations
 
+**Completed (2026-07-27):** `HudPanelRegistry` is the module registration seam for in-game pages.
+The base game contributes Domain, Population, Economy, Military, Diplomacy, Knowledge, Main Menu,
+and Map Layers. Domain and Population render current state; the four unavailable systems say exactly
+what is deferred; Map Layers names the real base-terrain layer. The HUD contrast was lifted at the
+same time so pages, buttons, and chrome read as distinct layers over the map.
+
 A panel registry so modules contribute pages, mirroring how they already register
 screens and commands. Domain and Population can read real state today. Economy,
 Military, Diplomacy and Knowledge become titled empty pages until M7 fills them —
@@ -259,7 +265,6 @@ Named here so no one builds a convincing-looking lie into the top bar.
 | How fast is 1x? A day per second is a different game from a day per ten seconds. | Phase 4 |
 | Does an AI turn pause time, or only a `confirm`? The gate as written pauses on both — worth feeling in the hand. | Phase 4 |
 | Is the reasoning timeline always shown, or a preference? It is transparency for some players and clutter for others. | Phase 3 |
-| Do the six categories each get a panel, or do some become map layers? Population-as-a-map-layer is plausible. | Phase 5 |
 
 ---
 

@@ -26,7 +26,7 @@ const ARMED_BY_PLAY: Array[String] = ["scheduler"]
 
 ## CONTENT — registered by modules at boot, identical for every save in the process. Resetting
 ## these would unregister the game itself.
-const CONTENT: Array[String] = ["command_registry", "tools", "modules", "screens",
+const CONTENT: Array[String] = ["command_registry", "tools", "modules", "screens", "hud_panels",
 	"workflow_registry", "dsl_functions", "dsl_tables", "prompt_families"]
 
 ## (router is RUNTIME below — it swaps the mounted screen and holds no game state.)
