@@ -51,15 +51,15 @@ func test_install_registers_every_action_on_its_default() -> void:
 
 
 func test_an_override_beats_the_default() -> void:
-	_settings.set_key_binding(InputActions.PASS_DAY, KEY_J)
+	_settings.set_key_binding(InputActions.TOGGLE_PAUSE, KEY_J)
 	InputActions.install(_settings)
 
-	assert_eq(InputActions.keycode_for(InputActions.PASS_DAY, _settings), KEY_J)
+	assert_eq(InputActions.keycode_for(InputActions.TOGGLE_PAUSE, _settings), KEY_J)
 	var event := InputEventKey.new()
 	event.keycode = KEY_J
-	assert_true(InputMap.event_is_action(event, InputActions.PASS_DAY))
-	event.keycode = InputActions.default_keycode(InputActions.PASS_DAY)
-	assert_false(InputMap.event_is_action(event, InputActions.PASS_DAY),
+	assert_true(InputMap.event_is_action(event, InputActions.TOGGLE_PAUSE))
+	event.keycode = InputActions.default_keycode(InputActions.TOGGLE_PAUSE)
+	assert_false(InputMap.event_is_action(event, InputActions.TOGGLE_PAUSE),
 		"and the default no longer triggers it")
 
 
@@ -67,36 +67,36 @@ func test_unbound_is_not_the_same_as_having_no_override() -> void:
 	# The bug this constant exists for: an action whose key was taken by another action must end up
 	# with *no* key. Storing "no override" would fall back to the default — the very key that was
 	# just taken — and the clash would survive the fix.
-	_settings.set_key_binding(InputActions.PASS_DAY, AppSettings.UNBOUND)
+	_settings.set_key_binding(InputActions.TOGGLE_PAUSE, AppSettings.UNBOUND)
 
-	assert_eq(InputActions.keycode_for(InputActions.PASS_DAY, _settings), KEY_NONE)
-	assert_ne(InputActions.keycode_for(InputActions.PASS_DAY, _settings),
-		InputActions.default_keycode(InputActions.PASS_DAY),
+	assert_eq(InputActions.keycode_for(InputActions.TOGGLE_PAUSE, _settings), KEY_NONE)
+	assert_ne(InputActions.keycode_for(InputActions.TOGGLE_PAUSE, _settings),
+		InputActions.default_keycode(InputActions.TOGGLE_PAUSE),
 		"unbound must not quietly mean 'back to the default'")
 
 
 func test_an_unbound_action_stays_registered_but_answers_to_nothing() -> void:
 	# Callers ask `event.is_action(...)` unconditionally; an action that vanished from the InputMap
 	# would make those calls error rather than simply answer false.
-	_settings.set_key_binding(InputActions.PASS_DAY, AppSettings.UNBOUND)
+	_settings.set_key_binding(InputActions.TOGGLE_PAUSE, AppSettings.UNBOUND)
 	InputActions.install(_settings)
 
-	assert_true(InputMap.has_action(InputActions.PASS_DAY))
+	assert_true(InputMap.has_action(InputActions.TOGGLE_PAUSE))
 	var event := InputEventKey.new()
-	event.keycode = InputActions.default_keycode(InputActions.PASS_DAY)
-	assert_false(InputMap.event_is_action(event, InputActions.PASS_DAY))
+	event.keycode = InputActions.default_keycode(InputActions.TOGGLE_PAUSE)
+	assert_false(InputMap.event_is_action(event, InputActions.TOGGLE_PAUSE))
 
 
 func test_action_using_finds_the_holder_of_a_key() -> void:
-	var pass_day_key := InputActions.default_keycode(InputActions.PASS_DAY)
-	assert_eq(InputActions.action_using(pass_day_key, _settings), InputActions.PASS_DAY)
-	assert_eq(InputActions.action_using(pass_day_key, _settings, InputActions.PASS_DAY), "",
+	var pause_key := InputActions.default_keycode(InputActions.TOGGLE_PAUSE)
+	assert_eq(InputActions.action_using(pause_key, _settings), InputActions.TOGGLE_PAUSE)
+	assert_eq(InputActions.action_using(pause_key, _settings, InputActions.TOGGLE_PAUSE), "",
 		"the action asking about its own key is not a conflict with itself")
 
 
 func test_no_key_is_never_reported_as_a_conflict() -> void:
 	# Any number of actions may be unbound at once, so "nothing" must not read as a clash.
-	_settings.set_key_binding(InputActions.PASS_DAY, AppSettings.UNBOUND)
+	_settings.set_key_binding(InputActions.TOGGLE_PAUSE, AppSettings.UNBOUND)
 	_settings.set_key_binding(InputActions.OPEN_MAP, AppSettings.UNBOUND)
 	assert_eq(InputActions.action_using(KEY_NONE, _settings), "")
 

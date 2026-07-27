@@ -54,6 +54,8 @@ func test_a_question_asked_before_the_game_closed_is_put_back_to_the_player() ->
 
 	assert_true((screen.get("_pending_row") as HBoxContainer).visible,
 		"the question is showing on entry")
+	assert_true((screen.get("_shell") as HudShell).is_event_active(),
+		"a pending confirmation forces the event conversation mode")
 	assert_string_contains(String(screen.get("_pending_instance")), instance.instance_id)
 	assert_string_contains(_log(screen), "confirm.burn", "and it is in the conversation")
 	assert_string_contains(_log(screen), "granary", "with the scope the workflow asked about")
@@ -71,6 +73,8 @@ func test_a_pending_question_locks_input_until_it_is_answered() -> void:
 	await screen.call("_answer", false)
 
 	assert_true((screen.get("_input") as LineEdit).editable, "answering unlocks it")
+	assert_false((screen.get("_shell") as HudShell).is_event_active(),
+		"answering returns the shell to normal interaction")
 
 
 func test_answering_yes_applies_what_the_question_was_guarding() -> void:

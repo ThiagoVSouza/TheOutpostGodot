@@ -206,36 +206,36 @@ func test_the_controls_tab_offers_a_live_button_per_bindable_action() -> void:
 
 func test_a_binding_button_shows_the_key_currently_in_force() -> void:
 	var screen := _screen()
-	var button := _binding_button(screen, InputActions.PASS_DAY)
+	var button := _binding_button(screen, InputActions.TOGGLE_PAUSE)
 	assert_eq(button.text, InputActions.key_name(
-		InputActions.keycode_for(InputActions.PASS_DAY, Kernel.settings)))
+		InputActions.keycode_for(InputActions.TOGGLE_PAUSE, Kernel.settings)))
 
 
 func test_pressing_a_key_while_listening_rebinds_the_action() -> void:
 	var screen := _screen()
-	var button := _binding_button(screen, InputActions.PASS_DAY)
+	var button := _binding_button(screen, InputActions.TOGGLE_PAUSE)
 	button.button_pressed = true  # enters "press a key…"
 
 	_press(screen, KEY_J)
 
-	assert_eq(Kernel.settings.key_binding(InputActions.PASS_DAY), KEY_J, "the override was stored")
+	assert_eq(Kernel.settings.key_binding(InputActions.TOGGLE_PAUSE), KEY_J, "the override was stored")
 	assert_eq(button.text, "J", "and the button shows it")
 	var event := InputEventKey.new()
 	event.keycode = KEY_J
-	assert_true(InputMap.event_is_action(event, InputActions.PASS_DAY), "and the InputMap agrees")
+	assert_true(InputMap.event_is_action(event, InputActions.TOGGLE_PAUSE), "and the InputMap agrees")
 
 
 func test_escape_cancels_a_rebind_rather_than_binding_itself() -> void:
 	# Escape is what a player reflexively presses to back out of a mode, and losing "Back / close"
 	# to a mis-click would be awkward to undo.
 	var screen := _screen()
-	var button := _binding_button(screen, InputActions.PASS_DAY)
-	var before := InputActions.keycode_for(InputActions.PASS_DAY, Kernel.settings)
+	var button := _binding_button(screen, InputActions.TOGGLE_PAUSE)
+	var before := InputActions.keycode_for(InputActions.TOGGLE_PAUSE, Kernel.settings)
 	button.button_pressed = true
 
 	_press(screen, KEY_ESCAPE)
 
-	assert_eq(InputActions.keycode_for(InputActions.PASS_DAY, Kernel.settings), before,
+	assert_eq(InputActions.keycode_for(InputActions.TOGGLE_PAUSE, Kernel.settings), before,
 		"the binding is unchanged")
 	assert_false(button.button_pressed, "and the button stopped listening")
 
@@ -245,12 +245,12 @@ func test_taking_a_key_from_another_action_leaves_that_one_unbound() -> void:
 	# not silently fall back to the default it just lost.
 	var screen := _screen()
 	var map_key := InputActions.keycode_for(InputActions.OPEN_MAP, Kernel.settings)
-	var button := _binding_button(screen, InputActions.PASS_DAY)
+	var button := _binding_button(screen, InputActions.TOGGLE_PAUSE)
 	button.button_pressed = true
 
 	_press(screen, map_key)
 
-	assert_eq(InputActions.keycode_for(InputActions.PASS_DAY, Kernel.settings), map_key,
+	assert_eq(InputActions.keycode_for(InputActions.TOGGLE_PAUSE, Kernel.settings), map_key,
 		"the winner took the key")
 	assert_eq(InputActions.keycode_for(InputActions.OPEN_MAP, Kernel.settings), KEY_NONE,
 		"and the loser holds no key at all")
@@ -260,7 +260,7 @@ func test_taking_a_key_from_another_action_leaves_that_one_unbound() -> void:
 
 func test_resetting_bindings_restores_every_default() -> void:
 	var screen := _screen()
-	var button := _binding_button(screen, InputActions.PASS_DAY)
+	var button := _binding_button(screen, InputActions.TOGGLE_PAUSE)
 	button.button_pressed = true
 	_press(screen, KEY_J)
 
