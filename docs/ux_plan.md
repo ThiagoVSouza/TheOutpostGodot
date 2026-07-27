@@ -185,6 +185,11 @@ is themed.
 
 ### Phase 3 — the chat dock
 
+**Completed (2026-07-27):** structured avatar-backed message rows, the event-image placeholder,
+and a shared `AiTimeline` renderer are implemented. The game conversation and playground render
+the same trace, including `workflow_rolled` dice results; `tools/capture_screens.gd` now captures
+a real resolved turn as visual evidence.
+
 Message rows with avatar slots, replacing the single `RichTextLabel` blob. The
 reasoning timeline maps onto `AiTrace` almost exactly — classify → roll → narrate —
 and the playground already renders it, so that renderer gets extracted into a shared
