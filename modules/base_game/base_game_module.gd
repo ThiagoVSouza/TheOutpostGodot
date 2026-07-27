@@ -3,11 +3,11 @@ extends Module
 ## Entry point for the base-game module.
 ##
 ## Registers the base game's content with the kernel through stable seams: the AI dice
-## tool, the whitelisted grant_resource command, the chat screen (start screen), and the
+## tool, the whitelisted grant_resource command, the game screen (start screen), and the
 ## end-of-month workflow. Systems, more tools/commands and screens are added here (or in
 ## sub-registrars) in later milestones.
 
-const CHAT_SCREEN := preload("res://modules/base_game/screens/chat_screen.tscn")
+const GAME_SCREEN := preload("res://modules/base_game/screens/game_screen.tscn")
 const PLAYGROUND_SCREEN := preload("res://modules/base_game/screens/playground_screen.tscn")
 const DiceTool := preload("res://modules/base_game/ai_tools/dice_tool.gd")
 
@@ -39,7 +39,7 @@ func register(kernel: GameKernel) -> void:
 	# OUTPOST_PLAYGROUND=1. The first screen registered as start wins.
 	var use_playground := OS.get_environment("OUTPOST_PLAYGROUND") == "1"
 	kernel.screens.register(PLAYGROUND_ID, PLAYGROUND_SCREEN, use_playground)
-	kernel.screens.register(SCREEN_ID, CHAT_SCREEN, not use_playground)
+	kernel.screens.register(SCREEN_ID, GAME_SCREEN, not use_playground)
 
 	# Run a short chronicle workflow at the end of every month.
 	kernel.scheduler.schedule_monthly(_end_of_month_workflow())
@@ -105,7 +105,7 @@ func register(kernel: GameKernel) -> void:
 
 	kernel.log.info(
 		"BaseGame",
-		"Registered dice tool, grant_resource command, chat screen, month-end + orchestration workflows"
+		"Registered dice tool, grant_resource command, game screen, month-end + orchestration workflows"
 	)
 
 
@@ -196,7 +196,7 @@ const LOCATION_EFFECTS := {
 ## marked** — like `_dev_confirm_workflow`, it exists so the full flow reaches a real, living game
 ## start until authored content replaces it. Everything goes through the whitelisted CommandBus (D4):
 ## a small cast with dispositions, starting resources, and one background plot that will tick as the
-## clock advances. It also stashes the opening's facts; the chat screen plays the narrated `opening`
+## clock advances. It also stashes the opening's facts; the game screen plays the narrated `opening`
 ## workflow over them on first entry to a fresh game.
 func seed_new_game(kernel: GameKernel, params: Dictionary) -> void:
 	var hero_name := String(params.get("hero_name", "Marcus"))
@@ -221,7 +221,7 @@ func seed_new_game(kernel: GameKernel, params: Dictionary) -> void:
 	bus.execute(CreatePlanCommand.new("steward_extortion", "steward_extortion", "plan_tick",
 		["steward", "hero"], "The King's Steward is pressuring the outpost for bribes.", 3))
 	# The facts the opening narration will dress (D4: code decides, the narrator only tells). The
-	# chat screen plays the `opening` workflow over these on first entry to a fresh game.
+	# game screen plays the `opening` workflow over these on first entry to a fresh game.
 	kernel.state.set_value("opening", {"hero": hero_name, "years": 5})
 
 	# The resource/disposition/memory parts of the wizard's choices — everything but the trait

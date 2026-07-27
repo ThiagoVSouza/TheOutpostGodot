@@ -62,9 +62,9 @@ func test_busy_collision_between_two_sources() -> void:
 	assert_eq(String(second["error"]), "busy")
 
 
-# --- chat screen as one source among others ---
+# --- the game screen's dock as one source among others ---
 #
-# These use the *autoload* Kernel, not a fresh GameKernel: chat_screen.gd talks to the
+# These use the *autoload* Kernel, not a fresh GameKernel: game_screen.gd talks to the
 # autoload, so a locally constructed kernel would not be the one it subscribes to.
 
 func _make_chat_screen() -> Control:
