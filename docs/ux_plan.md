@@ -234,6 +234,10 @@ Named here so no one builds a convincing-looking lie into the top bar.
 - **Event imagery.** Needs an art key on events and a pipeline behind it.
 - **Map layers.** Only the base biome layer was ported; corner blending, decorations
   and season tint are deferred map polish.
+- **Date epoch.** "Year 1" (`core/calendar/date_format.gd`) is a placeholder — no lore
+  has fixed when the calendar starts, so Phase 2 picked the outpost's own founding.
+  Twelve English month names are a placeholder too; a setting-appropriate calendar is
+  content work, not UI work, and can replace both without touching `GameClock`.
 
 ---
 
@@ -257,6 +261,24 @@ Named here so no one builds a convincing-looking lie into the top bar.
   units — ~1.5x apart on the S26 Ultra. Same trap as `SafeArea`.
 - **Safe-area insets now touch three edges**, not one: rail, dock and top bar all sit
   against screen edges.
-- **Test count is the branch-drift detector.** Baseline is **411** at PR #61.
-- **`tools/capture_screens.gd` is how you look at the game.** It has found real bugs
-  every time the flow was rendered rather than asserted.
+- **Test count is the branch-drift detector.** Baseline is **413** as of Phase 2 (PR #63).
+- **`tools/capture_screens.gd` is how you look at the game — but only if it runs
+  windowed.** Under `--headless` it hangs forever on `RenderingServer.frame_post_draw`,
+  which the dummy renderer never fires. It has found real bugs every time the flow was
+  rendered rather than asserted, including three a real phone found that no desktop
+  capture could (Phase 1): a base-layer screen needs its own background paint or the
+  map's letterboxed edges (it contains-fits, never crops) show Godot's default grey
+  instead of the shell's dark background; a floating element must anchor to the region
+  it visually floats over (`_stage`), not the shell as a whole, or it lands on
+  whatever chrome happens to sit at that corner of the *window*; and Android's touch
+  pinch-zoom needs `input_devices/pointing/android/enable_pan_and_scale_gestures`
+  (off by default) plus an `InputEventMagnifyGesture` handler — single-finger pan
+  works without either, via mouse-from-touch emulation, which is why only zoom read
+  as broken.
+- **A compile error one file away can misreport as "nonexistent function."** A
+  Variant-inference error inside `date_format.gd` (an untyped array literal assigned
+  with `:=`) surfaced as `Invalid call. Nonexistent function 'format' in base
+  'GDScript'` at the *call site* in `game_screen.gd`, not at the broken file — cost real
+  time chasing a naming collision that did not exist. If a freshly-added class's static
+  call fails after `--import`, suspect the new file does not compile at all before
+  suspecting the class cache.
