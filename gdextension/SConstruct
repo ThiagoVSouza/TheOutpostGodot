@@ -1,0 +1,37 @@
+#!/usr/bin/env python
+# M6 GDExtension: binds libllama in-process (subprocess+HTTP cannot ship on
+# mobile). Phase 1 targets Windows against the prebuilt llama.cpp b10042
+# binaries (commit 3f08ef2c5) via a generated import lib - see
+# thirdparty/llama/README.md for how llama.lib was produced.
+
+env = SConscript("thirdparty/godot-cpp/SConstruct")
+
+env.Append(CPPPATH=[
+    "src/",
+    "thirdparty/llama/include",
+    "thirdparty/llama/include/ggml/include",
+])
+env.Append(LIBPATH=["thirdparty/llama/lib"])
+env.Append(LIBS=["llama", "ggml", "ggml-base"])
+env.Append(CPPDEFINES=["LLAMA_SHARED"])
+
+sources = Glob("src/*.cpp")
+
+# Output straight into addons/ - the only place inside the Godot project (res://)
+# that is allowed to hold build products. gdextension/ itself carries a
+# .gdignore: its .obj files previously confused the editor's asset importer,
+# which tried to reimport them as Wavefront OBJ meshes.
+out_dir = "../addons/outpost_llama/bin/"
+if env["platform"] == "windows":
+    library = env.SharedLibrary(
+        out_dir + "outpost_llama{}{}".format(env["suffix"], env["SHLIBSUFFIX"]),
+        source=sources,
+    )
+else:
+    library = env.SharedLibrary(
+        out_dir + "liboutpost_llama{}{}".format(env["suffix"], env["SHLIBSUFFIX"]),
+        source=sources,
+    )
+
+env.NoCache(library)
+Default(library)

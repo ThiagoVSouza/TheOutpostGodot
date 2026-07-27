@@ -478,8 +478,38 @@ M5 production code — the measurement task above is exempt, per the M3b precede
 
 **Goal:** the game ships on a phone, and you can talk to it.
 
-- **In-process GDExtension binding to `libllama`** — required; M2's subprocess
-  approach cannot ship on mobile
+**Phase 1 — the in-process binding, on Windows — done (2026-07-27).** The
+GDExtension in `gdextension/` binds `libllama` directly; `InProcessLlamaBackend`
+implements the existing `AiBackend` seam, so **nothing above the backend layer
+changed** — the orchestrator, the D22 request contract and the T5 availability
+policy all took it as-is. Selected with `OUTPOST_AI_BACKEND=in-process-llama`.
+Full build recipe and the four traps it cost: `gdextension/README.md`.
+
+- **It is faster than the transport it replaces.** A full orchestrator turn
+  (classify → dispatch → forage → narrate) runs in **423–513 ms** against M2's
+  0.80–0.85 s subprocess+HTTP warm baseline; raw warm generation is 123 ms. So
+  the mobile prerequisite is not a desktop compromise — it is a desktop win.
+- **The measurement that matters most is the one that nearly did not happen.**
+  CUDA offload failed *silently*: ggml loads backend plugins with a bare
+  `LoadLibraryW`, so `ggml-cuda.dll`'s own CUDA-runtime imports resolved against
+  Godot's install directory rather than the addon folder, the load failed, and
+  `dl_error()` returns `""` with discovery running `silent=true`. Nothing was
+  printed; every layer simply landed on the CPU and turns took **34 s** instead
+  of 0.5 s. A working-but-40x-slow path that reports no error is the shape of
+  bug this project keeps finding, and only a number caught it.
+- **Backend discovery is lazy**, on the model-load worker thread: loading
+  `ggml-cuda.dll` is ~535 MB plus CUDA context creation, and doing it at module
+  init charged every Godot process holding the addon — including the test suite,
+  which runs on `FakeAiBackend` and never loads a model.
+- 4 new tests (**411 green**), model-free by design; one of them asserts the
+  native class is registered, so a broken native build fails the suite instead
+  of surfacing as a backend that mysteriously never becomes ready.
+- **Not tracked, deliberately:** `addons/outpost_llama/bin/` is ~1.1 GiB of
+  llama.cpp + CUDA runtime DLLs, all reproducible by
+  `tools/setup_gdextension.ps1`.
+
+- ~~**In-process GDExtension binding to `libllama`**~~ **Windows done**; Android
+  and iOS remain — M2's subprocess approach cannot ship on mobile
 - Per-platform builds: Windows CUDA, Android arm64 CPU (done once already), iOS
   Metal via XCFramework (D10 — source-verified, never run)
 - **Voice input via whisper.cpp** (D18) — same ggml toolchain, so largely

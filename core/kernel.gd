@@ -329,12 +329,14 @@ func _create_ai_backend() -> AiBackend:
 		return RemoteLlamaBackend.new(self, endpoint, key)
 	if selected == "local-llama":
 		return _create_local_llama_backend()
+	if selected == "in-process-llama":
+		return _create_in_process_llama_backend()
 
 	log.warn("Kernel", "Unknown OUTPOST_AI_BACKEND '%s'; using fake backend" % selected)
 	return FakeAiBackend.new()
 
 
-func _create_local_llama_backend() -> AiBackend:
+func _resolve_model_profile() -> ModelProfile:
 	const MODEL_CATALOG_PATH := "res://config/ai/model_catalog.tres"
 	var catalog := load(MODEL_CATALOG_PATH) as ModelCatalog
 	var requested_profile := OS.get_environment("OUTPOST_MODEL_PROFILE").strip_edges()
@@ -342,9 +344,14 @@ func _create_local_llama_backend() -> AiBackend:
 	if catalog != null:
 		profile = catalog.profile(requested_profile) if not requested_profile.is_empty() else catalog.desktop_default()
 	if profile == null:
-		log.error("Kernel", "Local llama profile '%s' could not be loaded" % requested_profile)
+		log.error("Kernel", "Model profile '%s' could not be loaded" % requested_profile)
 	else:
-		log.info("Kernel", "Using local llama profile %s" % profile.profile_id)
+		log.info("Kernel", "Using model profile %s" % profile.profile_id)
+	return profile
+
+
+func _create_local_llama_backend() -> AiBackend:
+	var profile := _resolve_model_profile()
 	var endpoint := OS.get_environment("OUTPOST_AI_ENDPOINT").strip_edges()
 	if endpoint.is_empty():
 		endpoint = RemoteLlamaBackend.DEFAULT_ENDPOINT
@@ -357,3 +364,14 @@ func _create_local_llama_backend() -> AiBackend:
 	var key := OS.get_environment("OUTPOST_AI_API_KEY")
 	var remote := RemoteLlamaBackend.new(self, endpoint, key)
 	return LocalLlamaBackend.new(llama_server_manager, remote)
+
+
+## M6 Phase 1 (Windows proof-of-concept): binds libllama in-process via the
+## outpost_llama GDExtension instead of spawning llama-server. See
+## InProcessLlamaBackend for why loading is async even though this call looks
+## synchronous - ensure_started() only kicks off the background load.
+func _create_in_process_llama_backend() -> AiBackend:
+	var profile := _resolve_model_profile()
+	var backend := InProcessLlamaBackend.new(profile)
+	backend.ensure_started()
+	return backend
