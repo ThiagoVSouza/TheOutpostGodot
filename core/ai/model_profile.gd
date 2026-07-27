@@ -12,10 +12,22 @@ const BACKEND_CPU := "cpu"
 const BACKEND_METAL := "metal"
 const KNOWN_BACKENDS := [BACKEND_CUDA, BACKEND_CPU, BACKEND_METAL]
 
+## How the weights are actually run. [constant RUNTIME_SERVER] spawns
+## llama-server and talks HTTP to it (M2); [constant RUNTIME_IN_PROCESS] binds
+## libllama through the outpost_llama GDExtension (M6). The distinction is not
+## cosmetic: a phone cannot use the server runtime at all — iOS forbids
+## subprocesses and Android blocks exec from app data — and an in-process
+## profile has no server executable to name, so requiring one would force the
+## catalog to carry a path that does not exist.
+const RUNTIME_SERVER := "server"
+const RUNTIME_IN_PROCESS := "in_process"
+const KNOWN_RUNTIMES := [RUNTIME_SERVER, RUNTIME_IN_PROCESS]
+
 @export var profile_id: String = ""
 @export var display_name: String = ""
 @export var platform: String = ""
 @export_enum("cuda", "cpu", "metal") var backend: String = BACKEND_CUDA
+@export_enum("server", "in_process") var runtime: String = RUNTIME_SERVER
 @export var server_executable_path: String = ""
 @export var weights_path: String = ""
 @export_range(0, 999, 1) var gpu_layers: int = 0
@@ -39,7 +51,9 @@ func validate() -> PackedStringArray:
 		errors.append("platform is required")
 	if not KNOWN_BACKENDS.has(backend):
 		errors.append("backend is unsupported")
-	if server_executable_path.strip_edges().is_empty():
+	if not KNOWN_RUNTIMES.has(runtime):
+		errors.append("runtime is unsupported")
+	if runtime == RUNTIME_SERVER and server_executable_path.strip_edges().is_empty():
 		errors.append("server_executable_path is required")
 	if weights_path.strip_edges().is_empty():
 		errors.append("weights_path is required")

@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="ModelCatalog" load_steps=4 format=3]
+[gd_resource type="Resource" script_class="ModelCatalog" load_steps=5 format=3]
 
 [ext_resource type="Script" path="res://core/ai/model_catalog.gd" id="1_catalog"]
 [ext_resource type="Script" path="res://core/ai/model_profile.gd" id="2_profile"]
@@ -39,7 +39,27 @@ threads = 8
 required_available_ram_mib = 6144
 required_available_vram_mib = 6144
 
+[sub_resource type="Resource" id="ModelProfile_e2b_android"]
+script = ExtResource("2_profile")
+profile_id = "gemma_e2b_android_cpu"
+display_name = "Gemma 4 E2B (Android CPU)"
+platform = "Android"
+backend = "cpu"
+runtime = "in_process"
+server_executable_path = ""
+weights_path = "/storage/emulated/0/Android/data/com.ntxgames.outpost.godot/files/models/gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf"
+gpu_layers = 0
+context_total = 4096
+parallel_slots = 1
+routing_family_count = 1
+cache_reuse_tokens = 256
+reasoning_enabled = false
+threads = 4
+required_available_ram_mib = 3584
+required_available_vram_mib = 0
+
 [resource]
 script = ExtResource("1_catalog")
 desktop_default_profile_id = "bonsai_27b_desktop_cuda"
-profiles = [SubResource("ModelProfile_e2b"), SubResource("ModelProfile_bonsai")]
+android_default_profile_id = "gemma_e2b_android_cpu"
+profiles = [SubResource("ModelProfile_e2b"), SubResource("ModelProfile_bonsai"), SubResource("ModelProfile_e2b_android")]

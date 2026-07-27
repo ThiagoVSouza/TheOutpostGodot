@@ -318,7 +318,9 @@ func _ensure_exit_confirm() -> ConfirmationDialog:
 
 func _create_ai_backend() -> AiBackend:
 	var selected := OS.get_environment("OUTPOST_AI_BACKEND").strip_edges().to_lower()
-	if selected.is_empty() or selected == "fake":
+	if selected.is_empty():
+		selected = _default_backend_id()
+	if selected == "fake":
 		return FakeAiBackend.new()
 	if selected == "remote-llama":
 		var endpoint := OS.get_environment("OUTPOST_AI_ENDPOINT").strip_edges()
@@ -336,13 +338,25 @@ func _create_ai_backend() -> AiBackend:
 	return FakeAiBackend.new()
 
 
+## What runs when nothing named a backend. A phone has no environment to set one
+## in, and no alternative to fall back on: the server runtime cannot ship there
+## at all (iOS forbids subprocesses, Android blocks exec from app data), so the
+## in-process binding is the platform's default rather than something a player
+## opts into. Desktop stays on the fake backend so the test suite and a plain
+## `godot --path .` never load 2.4 GiB of weights they did not ask for.
+func _default_backend_id() -> String:
+	if OS.get_name() == "Android":
+		return "in-process-llama"
+	return "fake"
+
+
 func _resolve_model_profile() -> ModelProfile:
 	const MODEL_CATALOG_PATH := "res://config/ai/model_catalog.tres"
 	var catalog := load(MODEL_CATALOG_PATH) as ModelCatalog
 	var requested_profile := OS.get_environment("OUTPOST_MODEL_PROFILE").strip_edges()
 	var profile: ModelProfile = null
 	if catalog != null:
-		profile = catalog.profile(requested_profile) if not requested_profile.is_empty() else catalog.desktop_default()
+		profile = catalog.profile(requested_profile) if not requested_profile.is_empty() else catalog.default_for_current_platform()
 	if profile == null:
 		log.error("Kernel", "Model profile '%s' could not be loaded" % requested_profile)
 	else:

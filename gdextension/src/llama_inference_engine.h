@@ -58,6 +58,7 @@ private:
 
 	void _run_generation(int64_t p_request_id, Dictionary p_request);
 	void _run_load_model(String p_model_path, int p_n_gpu_layers, int p_n_ctx);
+	bool _is_single_token(const char *p_text) const;
 	void _fail_deferred(int64_t p_request_id, const String &p_error);
 	void _free_model_locked();
 };

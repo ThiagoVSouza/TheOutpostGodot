@@ -19,7 +19,18 @@ param(
     # build silently mismatches the DLL's struct layouts.
     [string]$LlamaDir = "C:/Tools/llama.cpp/b10042",
     [string]$LlamaCommit = "3f08ef2c5",
-    [switch]$SkipGodotCpp
+    # Upstream publishes no Android binaries, so llama.cpp is cross-compiled from
+    # source at the SAME release the Windows DLLs come from. b10042 is that tag.
+    [string]$LlamaTag = "b10042",
+    [string]$NdkVersion = "27.2.12479018",
+    # armv8.2-a+dotprod, not the armv8-a baseline GGML_NATIVE=OFF would pick:
+    # dotprod is the instruction Q4 matmul lives on, and it is present on every
+    # Cortex-A75-or-later (2018+) core. i8mm is deliberately NOT enabled - it
+    # would cut support to 2021+ devices, and ggml compiles these kernels
+    # unconditionally, so an unsupported core does not degrade, it SIGILLs.
+    [string]$AndroidArmArch = "armv8.2-a+dotprod",
+    [switch]$SkipGodotCpp,
+    [switch]$SkipAndroid
 )
 
 $ErrorActionPreference = "Stop"
@@ -79,6 +90,20 @@ if (-not $SkipGodotCpp) {
             if ($LASTEXITCODE -ne 0) { throw "godot-cpp build failed ($target)" }
         } finally { Pop-Location }
     }
+    if (-not $SkipAndroid) {
+        foreach ($target in @("template_debug", "template_release")) {
+            Write-Host "Building godot-cpp android arm64 ($target)..." -ForegroundColor Cyan
+            Push-Location $GodotCpp
+            try {
+                # godot-cpp defaults to an NDK version this project does not have.
+                # Overriding is safe: the GDExtension boundary is a C ABI, so the
+                # library is self-contained C++-wise and need not match the NDK
+                # Godot's own template was built with.
+                & $Scons platform=android arch=arm64 target=$target ndk_version=$NdkVersion custom_api_file=extension_api.json -j8
+                if ($LASTEXITCODE -ne 0) { throw "godot-cpp android build failed ($target)" }
+            } finally { Pop-Location }
+        }
+    }
 }
 
 # --- 2. llama.cpp public headers, pinned to the DLL's commit ----------------
@@ -124,16 +149,79 @@ foreach ($dll in $optional) {
     else { Write-Host "  (no $dll - CPU-only build)" -ForegroundColor Yellow }
 }
 
-# --- 5. The extension itself ------------------------------------------------
+# --- 5. llama.cpp for Android, cross-compiled from source -------------------
+# There is no prebuilt Android release to link against, so this builds the same
+# tag the Windows DLLs come from.
+if (-not $SkipAndroid) {
+    $Ndk = "$env:LOCALAPPDATA/Android/Sdk/ndk/$NdkVersion"
+    if (-not (Test-Path $Ndk)) { throw "NDK $NdkVersion not found at $Ndk" }
+    $LlamaSrc = Join-Path $ThirdParty "llama.cpp-src"
+
+    if (-not (Test-Path (Join-Path $LlamaSrc ".git"))) {
+        Write-Host "Fetching llama.cpp source at $LlamaTag..." -ForegroundColor Cyan
+        New-Item -ItemType Directory -Force -Path $LlamaSrc | Out-Null
+        Push-Location $LlamaSrc
+        try {
+            git init -q
+            git remote add origin https://github.com/ggml-org/llama.cpp.git
+            # By tag, not by short SHA: GitHub refuses a shallow fetch of an
+            # arbitrary commit, and b10042 is the release these binaries are.
+            git fetch --depth 1 origin tag $LlamaTag
+            git checkout -q $LlamaTag
+        } finally { Pop-Location }
+    }
+
+    Write-Host "Cross-compiling llama.cpp for Android arm64 ($AndroidArmArch)..." -ForegroundColor Cyan
+    Push-Location $LlamaSrc
+    try {
+        cmake -B build-android -G Ninja `
+            -DCMAKE_TOOLCHAIN_FILE="$Ndk/build/cmake/android.toolchain.cmake" `
+            -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-24 `
+            -DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON `
+            -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON `
+            -DGGML_NATIVE=OFF -DGGML_OPENMP=OFF `
+            -DGGML_CPU_ARM_ARCH=$AndroidArmArch `
+            -DLLAMA_CURL=OFF -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF `
+            -DLLAMA_BUILD_SERVER=OFF -DLLAMA_BUILD_TOOLS=OFF -DLLAMA_BUILD_COMMON=OFF
+        if ($LASTEXITCODE -ne 0) { throw "llama.cpp android configure failed" }
+        # Only the `llama` target: building everything also builds a demo app
+        # that needs `common`, which is disabled here, and ninja would abort on
+        # it before finishing the library.
+        cmake --build build-android --target llama -j8
+        if ($LASTEXITCODE -ne 0) { throw "llama.cpp android build failed" }
+    } finally { Pop-Location }
+
+    foreach ($so in @("libllama.so", "libggml.so", "libggml-base.so", "libggml-cpu.so")) {
+        Copy-Item (Join-Path $LlamaSrc "build-android/bin/$so") $AddonBin -Force
+    }
+    # NOT libc++_shared.so: Godot's Android template already ships it, and a
+    # second copy makes apksigner reject the APK with "Multiple ZIP entries with
+    # the same name" - after the export reports success.
+}
+
+# --- 6. The extension itself ------------------------------------------------
 foreach ($target in @("template_debug", "template_release")) {
-    Write-Host "Building outpost_llama ($target)..." -ForegroundColor Cyan
+    Write-Host "Building outpost_llama windows ($target)..." -ForegroundColor Cyan
     Push-Location $GdextDir
     try {
         & $Scons platform=windows target=$target -j8
         if ($LASTEXITCODE -ne 0) { throw "outpost_llama build failed ($target)" }
     } finally { Pop-Location }
 }
+if (-not $SkipAndroid) {
+    foreach ($target in @("template_debug", "template_release")) {
+        Write-Host "Building outpost_llama android arm64 ($target)..." -ForegroundColor Cyan
+        Push-Location $GdextDir
+        try {
+            & $Scons platform=android arch=arm64 target=$target ndk_version=$NdkVersion -j8
+            if ($LASTEXITCODE -ne 0) { throw "outpost_llama android build failed ($target)" }
+        } finally { Pop-Location }
+    }
+}
 
 Write-Host ""
-Write-Host "Done. Verify with:" -ForegroundColor Green
+Write-Host "Done. Verify on desktop with:" -ForegroundColor Green
 Write-Host '  $env:OUTPOST_AI_BACKEND="in-process-llama"; $env:OUTPOST_MODEL_PROFILE="gemma_e2b_desktop_cuda"'
+Write-Host '  & $GODOT --headless --path . -s res://tools/check_llama_turn.gd'
+Write-Host "On Android the in-process backend is the default; push the weights to the path in" -ForegroundColor Green
+Write-Host "  config/ai/model_catalog.tres (gemma_e2b_android_cpu), then: tools/export_android.ps1 -Install -Run"
