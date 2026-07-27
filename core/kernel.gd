@@ -113,6 +113,11 @@ func boot() -> void:
 	# Register the input actions and bind them (defaults, or the player's overrides). Before any
 	# screen exists, so the first one mounted can already ask about actions rather than keycodes.
 	InputActions.install(settings)
+	# 1d. The real Theme (M8 Phase 2), before any screen exists so nothing ever renders a frame in
+	# Godot's stock light theme. Root-viewport-wide rather than per-screen: every default control a
+	# screen builds picks it up automatically, including dialogs no screen owns (the exit-confirm
+	# dialog `_ensure_exit_confirm` builds on the kernel itself).
+	get_tree().root.theme = OutpostTheme.build()
 
 	# 2-3. Communication + state.
 	events = EventBus.new()

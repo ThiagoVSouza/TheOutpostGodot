@@ -60,6 +60,14 @@ func _run() -> void:
 	await _capture_screen("core.loading", "00b_loading", {"next": "core.main_menu"})
 	await _capture_screen("core.main_menu", "01_main_menu")
 
+	# The exit-confirm dialog (M8 Phase 2 "done when": the real Theme reaches it too, ux_plan.md
+	# §2.4) — kernel-owned, not screen-owned, so it is reached through the kernel rather than a
+	# screen's own private state.
+	var exit_dialog: ConfirmationDialog = _kernel.call("_ensure_exit_confirm")
+	exit_dialog.popup_centered()
+	await _shoot("01z_exit_confirm")
+	exit_dialog.hide()
+
 	# Every settings tab, not just the one that opens: most of the screen is placeholders whose whole
 	# job is to be looked at, and a tab nobody captures is a tab nobody checks.
 	var settings := await _mount("core.settings")
