@@ -65,6 +65,7 @@ var _gutter: Control
 
 var _page_panel: HudPanel = null
 var _chat_open := false
+var _event_active := false
 var _split_fraction := 0.5
 var _dragging_split := false
 var _open_order: Array = []  ## "page"/"chat", most-recently-opened last — what Esc closes first
@@ -247,6 +248,8 @@ func _close_mobile_menu() -> void:
 ## content, like a trace label's last text) survives between opens. Showing a *different* panel
 ## while one is already parented in the slot hides the old one rather than leaving both visible.
 func show_page(panel: HudPanel) -> void:
+	if _event_active:
+		return
 	if _page_panel == panel:
 		return
 	if _page_panel != null and _page_panel.get_parent() == _page_slot:
@@ -285,6 +288,8 @@ func is_page_open() -> bool:
 ## panel itself is the caller's own persistent [HudPanel], permanently parented under
 ## [member chat_slot] — this only toggles whether that region is part of the stage's layout.
 func set_chat_expanded(expanded: bool) -> void:
+	if _event_active and not expanded:
+		return
 	if expanded == _chat_open:
 		return
 	_chat_open = expanded
@@ -302,12 +307,33 @@ func is_chat_expanded() -> bool:
 	return _chat_open
 
 
+## Event mode is the UI's view of the kernel world gate. It forces the conversation to own the
+## stage and prevents an unresolved decision from being collapsed, split, or covered by a page.
+func set_event_active(active: bool) -> void:
+	if active == _event_active:
+		return
+	_event_active = active
+	if active:
+		if _page_panel != null:
+			hide_page()
+		_chat_open = true
+		_touch_order("chat")
+	_relayout_stage()
+	chat_expanded_changed.emit(_chat_open)
+
+
+func is_event_active() -> bool:
+	return _event_active
+
+
 # --- Esc / hardware back ----------------------------------------------------------------------
 
 ## Close whatever is "on top" — the mobile menu list if it is open, else the most recently opened
 ## of {page, chat} — and report whether anything was closed. `game_screen.gd`'s own
 ## `on_hardware_back` just forwards to this (ux_plan.md §1.3 rule 6: "Esc closes the topmost thing").
 func close_topmost() -> bool:
+	if _event_active:
+		return true
 	if _mobile_menu_open:
 		_close_mobile_menu()
 		return true
@@ -350,7 +376,9 @@ func _on_resized() -> void:
 func _relayout_stage() -> void:
 	var page_open := _page_panel != null
 	_gutter.visible = false
-	if _is_mobile:
+	if _event_active:
+		_fill(chat_slot)
+	elif _is_mobile:
 		if page_open:
 			_fill(_page_slot)
 		if _chat_open:

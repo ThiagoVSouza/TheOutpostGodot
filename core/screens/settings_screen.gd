@@ -83,11 +83,15 @@ const KEY_BINDINGS := [
 	{"group": "Conversation", "actions": [
 		["Send message", "Enter"],
 		["Newline in message", "Shift + Enter"],
+		["Open chat", "Enter"],
 		["Focus the input", "T"],
 		["Repeat last message", "Up"],
 	]},
 	{"group": "The world", "actions": [
-		["Let a day pass", "Space"],
+		["Pause / resume time", "Space"],
+		["Set speed 1", "1"],
+		["Set speed 2", "2"],
+		["Set speed 3", "3"],
 		["Open the map", "M"],
 		["Open the roster", "R"],
 		["Open the chronicle", "L"],

@@ -33,6 +33,8 @@ var _input: LineEdit
 var _send_button: Button
 var _retry_button: Button
 var _chat_expand_button: Button
+var _event_image: Control
+var _speed_buttons: Dictionary = {}
 var _trace_label: RichTextLabel
 
 ## The question the game master is waiting on, if any (M4/B4b). Lives in the dock, not inside the
@@ -57,6 +59,11 @@ func _ready() -> void:
 	Kernel.events.subscribe("workflow_emit", _on_workflow_emit)
 	# T5: reflect AI outage/recovery state as system messages + the Retry control.
 	Kernel.events.subscribe(AiAvailability.EVENT_NAME, _on_ai_availability_changed)
+	Kernel.events.subscribe("day_passed", _on_day_passed)
+	if Kernel.time_driver != null:
+		Kernel.time_driver.speed_changed.connect(_on_time_speed_changed)
+	_shell.breakpoint_changed.connect(_on_shell_breakpoint_changed)
+	call_deferred("_sync_speed_layout")
 	# The shell's theme belongs to the menus, not to play. There is no in-game score yet, and
 	# silence is a better answer than the title music running under a conversation.
 	Kernel.audio.stop_music()
@@ -82,8 +89,8 @@ func _ready() -> void:
 
 
 ## The play actions, as actions rather than keycodes — which is what makes them rebindable. Each
-## does exactly what its on-screen control does, including that control's own guards: `_on_pass_day`
-## already refuses while a turn or a question is in flight, so the key inherits that for free.
+## does exactly what its on-screen control does. The kernel-level time driver owns the world gate,
+## so every speed key inherits the same block while a turn, event, or plan tick is unresolved.
 ##
 ## `_unhandled_input` matters here: the chat input is a focused [LineEdit] most of the time, and it
 ## consumes the keystrokes meant for it before this ever runs. That is why "focus the input" can be
@@ -95,8 +102,20 @@ func _unhandled_input(event: InputEvent) -> void:
 		if _input.editable:
 			_input.grab_focus()
 		get_viewport().set_input_as_handled()
-	elif event.is_action(InputActions.PASS_DAY):
-		_on_pass_day()
+	elif event.is_action(InputActions.TOGGLE_PAUSE):
+		Kernel.time_driver.toggle_pause()
+		get_viewport().set_input_as_handled()
+	elif event.is_action(InputActions.SPEED_1):
+		_set_time_speed(TimeDriver.Speed.SPEED_1)
+		get_viewport().set_input_as_handled()
+	elif event.is_action(InputActions.SPEED_2):
+		_set_time_speed(TimeDriver.Speed.SPEED_2)
+		get_viewport().set_input_as_handled()
+	elif event.is_action(InputActions.SPEED_3):
+		_set_time_speed(TimeDriver.Speed.SPEED_3)
+		get_viewport().set_input_as_handled()
+	elif event.is_action(InputActions.OPEN_CHAT):
+		_shell.set_chat_expanded(true)
 		get_viewport().set_input_as_handled()
 	elif event.is_action(InputActions.OPEN_MAP):
 		_on_open_map()
@@ -222,10 +241,16 @@ func _build_top_bar() -> void:
 
 	_date_label = Label.new()
 	bar.add_child(_date_label)
-	var pass_day := Button.new()
-	pass_day.text = "Let a day pass"
-	pass_day.pressed.connect(_on_pass_day)
-	bar.add_child(pass_day)
+	for speed in [TimeDriver.Speed.PAUSED, TimeDriver.Speed.SPEED_1,
+			TimeDriver.Speed.SPEED_2, TimeDriver.Speed.SPEED_3]:
+		var button := Button.new()
+		button.text = ["||", ">", ">>", ">>>"][speed]
+		button.toggle_mode = true
+		button.tooltip_text = ["Pause", "Speed 1", "Speed 2", "Speed 3"][speed]
+		button.pressed.connect(_set_time_speed.bind(speed))
+		bar.add_child(button)
+		_speed_buttons[speed] = button
+	_refresh_time_buttons()
 
 
 ## The expanded-chat shape (ux_plan.md §1.2 state 2): built once and kept parented under
@@ -238,6 +263,7 @@ func _build_chat_panel() -> void:
 	_chat_panel.dismissed.connect(func() -> void: _shell.set_chat_expanded(false))
 
 	var event_image := PanelContainer.new()
+	_event_image = event_image
 	event_image.custom_minimum_size = Vector2(0, 120)
 	event_image.tooltip_text = "Event artwork"
 	var event_style := StyleBoxFlat.new()
@@ -479,6 +505,8 @@ func _show_question(instance_id: String, wake: Dictionary) -> void:
 	var suffix := "  %s" % JSON.stringify(scope) if not scope.is_empty() else ""
 	_pending_label.text = "%s%s" % [String(wake.get("msg", "confirm")), suffix]
 	_pending_row.visible = true
+	_shell.set_event_active(true)
+	_event_image.visible = true
 	_append("[color=yellow]Game master asks:[/color] %s" % _pending_label.text)
 	_set_busy(false)  # re-evaluates the lock now that a question is pending
 
@@ -500,6 +528,7 @@ func _answer(confirmed: bool) -> void:
 func _clear_question() -> void:
 	_pending_instance = ""
 	_pending_row.visible = false
+	_shell.set_event_active(false)
 
 
 ## Dev-only: run the `dev_confirm` workflow (registered at boot by the module in debug builds)
@@ -574,10 +603,7 @@ func _on_save() -> void:
 ## its own subscription — a due plot ticks in the background and surfaces as a chronicle line via
 ## `workflow_emit`, so no awaiting is needed here. Blocked while a turn or question is in flight,
 ## for the same reason input is: the world must not move under an unresolved action.
-func _on_pass_day() -> void:
-	if Kernel.ai_orchestrator.is_busy() or not _pending_instance.is_empty():
-		return
-	Kernel.clock.advance(1)
+func _on_day_passed(_payload: Dictionary) -> void:
 	_append("[i]— The day passes. Day %d. —[/i]" % Kernel.clock.total_days)
 	_refresh_day()
 	_refresh_resources()
@@ -585,6 +611,36 @@ func _on_pass_day() -> void:
 
 ## The map has no toggle any more (ux_plan.md §2.1 — it is the base layer, always on screen); the
 ## action that used to open the overlay now just re-centres the view.
+func _set_time_speed(speed: int) -> void:
+	if Kernel.time_driver != null:
+		Kernel.time_driver.set_speed(speed)
+
+
+func _on_time_speed_changed(_speed: int) -> void:
+	_refresh_time_buttons()
+
+
+func _refresh_time_buttons() -> void:
+	if Kernel.time_driver == null:
+		return
+	var current := Kernel.time_driver.speed()
+	for speed: Variant in _speed_buttons:
+		var button: Button = _speed_buttons[speed]
+		button.button_pressed = int(speed) == current
+
+
+## The mobile wireframe keeps only the fastest speed in the constrained top bar. Pause and exact
+## speed selection remain available through their rebindable keys; desktop keeps all four buttons.
+func _on_shell_breakpoint_changed(_is_mobile: bool) -> void:
+	_sync_speed_layout()
+
+
+func _sync_speed_layout() -> void:
+	var mobile := _shell.size.x < HudShell.MOBILE_BREAKPOINT_WIDTH
+	for speed: Variant in _speed_buttons:
+		_speed_buttons[speed].visible = not mobile or int(speed) == TimeDriver.Speed.SPEED_3
+
+
 func _on_open_map() -> void:
 	if _map_view != null:
 		_map_view.fit()

@@ -107,6 +107,12 @@ func _run() -> void:
 		while not (chat.get("_input") as LineEdit).editable:
 			await process_frame
 		await _shoot("06bb_chat_turn_with_timeline")
+		# Phase 4 event state: a pending confirmation forces the chat to fill the stage and prevents
+		# the panel stack from covering it. Drive the existing debug confirmation, then clear it so
+		# later captures continue through the normal menu path.
+		await chat.call("_on_dev_ask")
+		await _shoot("06bc_chat_active_event")
+		await chat.call("_answer", false)
 		chat.call("_open_main_menu")
 		await _shoot("06c_chat_and_menu_split")
 

@@ -23,6 +23,10 @@ var _draining: bool = false
 var _pending_day: int = -1
 
 
+func is_draining() -> bool:
+	return _draining
+
+
 func _init(kernel: GameKernel) -> void:
 	_kernel = kernel
 	if _kernel.events != null:

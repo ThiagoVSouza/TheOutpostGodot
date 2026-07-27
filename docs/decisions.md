@@ -49,6 +49,7 @@ Measurements: `docs/benchmarks/milestone1_results.md`. Architecture: `docs/initi
 | **D36** | Plan format: numeric-intensity direction with hysteresis; universal transitions, code-owned mutation | **Decided** |
 | **D37** | Memory retrieval: entity-tag + recency now; the AI drill-down deferred | **Decided** |
 | **D38** | Entity/character model: authoritative, command-mutated, engine-not-content | **Decided** |
+| **D39** | In-play time: continuous, player-speed-controlled calendar | **Decided** |
 | **D17** | Benchmarking method — how to not fool yourself | Reference |
 
 Roadmap and current status: `docs/plan.md`.
@@ -1302,6 +1303,29 @@ factions' internal state are later blocks, added when content needs them.
 (D38), and the commands and ops that move them — the next phase is wiring a new game that seeds a
 starting world and driving it in the real game flow, then adjusting and authoring content. That is
 a joint step with the user, not more plumbing.
+
+---
+
+## D39 — In-play time: continuous, player-speed-controlled calendar
+
+**Decided** (2026-07-27) — supersedes the explicit *"Let a day pass"* interaction in
+`docs/plan.md`.
+
+The strategy HUD promises a living world, so time flows while the game shell is active rather than
+only when a player clicks a turn button. `GameClock` remains authoritative: `TimeDriver` merely
+accumulates real elapsed time and calls `advance(1)`. The initial pace is one game day every five
+seconds at 1x, with 2x and 4x multipliers for the two faster controls. This is intentionally a
+starting pace, not content balance; revisit it after a real play session.
+
+**The world gate is kernel-owned.** Time stops while the AI orchestrator is busy, a confirmation is
+pending, or `PlanTicker` is draining. The driver does not know what a dialogue, event, or panel is;
+the UI reads the same predicate and presents a pending confirmation as a locked, full-height event
+conversation. Gated wall time is discarded rather than caught up later, so reading a decision never
+fast-forwards the settlement.
+
+**Controls:** Space toggles pause and restores the prior speed; 1, 2 and 3 select exact speeds.
+Loading always opens paused and speed is not save data. The test runner disables the driver, keeping
+calendar tests deterministic.
 
 ---
 

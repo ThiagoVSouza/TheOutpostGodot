@@ -18,7 +18,11 @@ extends RefCounted
 ## over these at boot.
 
 const FOCUS_INPUT := "focus_input"
-const PASS_DAY := "pass_day"
+const TOGGLE_PAUSE := "toggle_pause"
+const SPEED_1 := "speed_1"
+const SPEED_2 := "speed_2"
+const SPEED_3 := "speed_3"
+const OPEN_CHAT := "open_chat"
 const OPEN_MAP := "open_map"
 const MAP_ZOOM_IN := "map_zoom_in"
 const MAP_ZOOM_OUT := "map_zoom_out"
@@ -30,7 +34,11 @@ const BACK_CLOSE := "back_close"
 ## of keeping a parallel one that drifts.
 const ACTIONS := [
 	{"id": FOCUS_INPUT, "label": "Focus the input", "group": "Conversation", "default": KEY_T},
-	{"id": PASS_DAY, "label": "Let a day pass", "group": "The world", "default": KEY_SPACE},
+	{"id": TOGGLE_PAUSE, "label": "Pause / resume time", "group": "The world", "default": KEY_SPACE},
+	{"id": SPEED_1, "label": "Set speed 1", "group": "The world", "default": KEY_1},
+	{"id": SPEED_2, "label": "Set speed 2", "group": "The world", "default": KEY_2},
+	{"id": SPEED_3, "label": "Set speed 3", "group": "The world", "default": KEY_3},
+	{"id": OPEN_CHAT, "label": "Open chat", "group": "Conversation", "default": KEY_ENTER},
 	{"id": OPEN_MAP, "label": "Open the map", "group": "The world", "default": KEY_M},
 	{"id": MAP_ZOOM_IN, "label": "Zoom in", "group": "Map", "default": KEY_EQUAL},
 	{"id": MAP_ZOOM_OUT, "label": "Zoom out", "group": "Map", "default": KEY_MINUS},

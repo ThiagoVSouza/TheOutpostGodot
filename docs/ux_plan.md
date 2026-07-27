@@ -204,6 +204,12 @@ something the player can see rather than something the architecture merely promi
 
 ### Phase 4 — time
 
+**Completed (2026-07-27):** `TimeDriver` advances the authoritative clock every five seconds at
+1x (2.5 seconds at 2x, 1.25 at 3x), with speed reset to paused after a load. The kernel-owned
+world gate stops time for AI work, pending confirmations, and plan-tick drains; the confirmation
+UI renders that state as a locked, full-height event conversation. Desktop shows all four controls;
+mobile retains `>>>` as specified. The capture tool records this active-event state.
+
 `TimeDriver`, the four speeds, the world gate, event mode, and the key bindings. The
 driver is off under `OUTPOST_TEST_RUN` and `GameClock` remains the authority, so the
 suite stays deterministic. Speed does **not** persist into a save — loading opens

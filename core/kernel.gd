@@ -27,6 +27,7 @@ var ai_orchestrator: AiOrchestrator
 var trace_writer: AiTraceWriter
 var input_router: AiInputRouter
 var clock: GameClock
+var time_driver: TimeDriver
 var scheduler: Scheduler
 ## Runs due background plans off the game clock (M5, D36). Stateless — plans live in [member state].
 var plan_ticker: PlanTicker
@@ -170,6 +171,8 @@ func boot() -> void:
 	# 7b. Calendar + scheduler: the scheduler listens on the event bus and runs due
 	#     workflows on the DSL kernel above (validated when scheduled, run via the executor).
 	clock = GameClock.new(events)
+	time_driver = TimeDriver.new(clock, func() -> bool: return is_world_time_gated(), not is_test_run)
+	add_child(time_driver)
 	scheduler = Scheduler.new(events, self)
 	saves = SaveManager.new()
 	workspace = SaveWorkspace.new()
@@ -193,8 +196,8 @@ func boot() -> void:
 	# re-derived every time the current game changes — on a fresh game *and* on a load. Doing only
 	# the former is how the last game's settings quietly govern the one just loaded, which is the
 	# same bleed the load-isolation contract above exists to prevent.
-	events.subscribe("new_game_started", _on_game_became_current)
-	events.subscribe("game_loaded", _on_game_became_current)
+	events.subscribe("new_game_started", _on_new_game_became_current)
+	events.subscribe("game_loaded", _on_loaded_game_became_current)
 
 	# 8. AI orchestrator ties the above together (needs tools, command_registry, ai,
 	#    commands, workflows, scheduler, events).
@@ -229,10 +232,28 @@ func _on_turn_completed(_payload: Dictionary) -> void:
 func _on_screen_mounted(_id: String, screen: Node) -> void:
 	if audio != null:
 		audio.wire_clicks(screen)
+	if time_driver != null:
+		time_driver.set_active(_id == "base_game.chat")
 
 
-func _on_game_became_current(_payload: Dictionary) -> void:
+func _on_new_game_became_current(_payload: Dictionary) -> void:
 	apply_player_preferences()
+	if time_driver != null:
+		time_driver.start_new_game()
+
+
+func _on_loaded_game_became_current(_payload: Dictionary) -> void:
+	apply_player_preferences()
+	if time_driver != null:
+		time_driver.loaded_game()
+
+
+## The world gate is deliberately kernel-owned: the time driver reads it, and the HUD reads the
+## same predicate for event mode. Nothing here knows which UI happens to expose a confirmation.
+func is_world_time_gated() -> bool:
+	return (ai_orchestrator != null and ai_orchestrator.is_busy()) \
+		or (workflow_instances != null and not workflow_instances.pending_confirmations().is_empty()) \
+		or (plan_ticker != null and plan_ticker.is_draining())
 
 
 ## Point the runtime preference objects at the current game's stored answers (the new-game wizard's
