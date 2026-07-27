@@ -675,6 +675,24 @@ desktop. As supplied the asset was an **opaque near-white plate with the mark kn
 transparency**, so on black it read as a dark mark inside a white badge; it was **inverted on
 2026-07-26** to a white mark directly on black (see below). An animated reveal is still to come.
 
+**Device verification of the whole shell — done (2026-07-27, S26 Ultra).** The pieces that shipped
+without a phone attached are now confirmed on hardware, in one pass over a clean install:
+
+| Checked | Result |
+|---|---|
+| Portrait orientation, font legibility, safe area | Correct; content clear of the status bar and the gesture bar |
+| Hardware back → confirm dialog | "Exit The Outpost?" shown; **Cancel leaves the app running** — the behaviour that used to be an instant, silent quit |
+| On-screen keyboard vs the chat input | Input, Send and the dev rows all sit **above** the keyboard |
+| Menu art crop | Frames the keep exactly as the desktop render at 1080x2340 predicted |
+| Splash logo | White mark directly on black |
+| Launcher icon | Renders and reads at launcher size, upscaled from 101x101 as accepted |
+| Wizard in portrait | All five background cards on screen, nothing clipped |
+| Start bonuses (#57) | Merchant + Coast gave **gold 33** = base 10 + 15 + 8, live on device |
+
+**One cosmetic finding, not fixed:** the exit dialog is Godot's unthemed `ConfirmationDialog`, so on a
+1080x2340 screen it is small and its title truncates to "Please Confirm…". Usable, and it belongs
+with the wider theming gap (there is still no `Theme`) rather than a one-off size override here.
+
 **Menu background + game icon — done (2026-07-26).** Two supplied images wired up: a painted
 settlement behind the main menu and the loading screen, and a watchtower as the app's icon.
 
