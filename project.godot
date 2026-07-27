@@ -16,10 +16,18 @@ run/main_scene="res://core/bootstrap/boot.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
 config/icon="res://core/assets/game_icon.png"
 config/quit_on_go_back=false
+boot_splash/show_image=false
 
 [autoload]
 
 Kernel="*res://core/kernel.gd"
+
+[input_devices]
+
+; Off by default — without it Android delivers raw multi-touch points instead of the
+; InputEventMagnifyGesture the map view pinch-zooms with (single-finger pan already worked via
+; the default mouse-from-touch emulation, which is why only zoom was missing on a real device).
+pointing/android/enable_pan_and_scale_gestures=true
 
 [display]
 
