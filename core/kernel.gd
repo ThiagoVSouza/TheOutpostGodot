@@ -18,6 +18,8 @@ var command_registry: CommandRegistry
 var tools: ToolRegistry
 var modules: ModuleRegistry
 var screens: ScreenRegistry
+## Module-contributed pages inside the running game shell, distinct from routed application screens.
+var hud_panels: HudPanelRegistry
 ## Runtime screen navigation (the in-game boot flow). Stateless — swaps the one mounted screen.
 var router: ScreenRouter
 var ai: AiBackend
@@ -132,6 +134,7 @@ func boot() -> void:
 	tools = ToolRegistry.new()
 	modules = ModuleRegistry.new(log)
 	screens = ScreenRegistry.new()
+	hud_panels = HudPanelRegistry.new()
 	# Screen navigation + the core app-shell screens (splash → loading → menu → new game → load).
 	# Registered before modules so the router can reach them; the boot scene sets the host and the
 	# first screen. Modules still register their own game screens (e.g. base_game.chat).

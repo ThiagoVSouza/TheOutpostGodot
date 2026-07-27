@@ -19,6 +19,10 @@ func test_kernel_boots_and_loads_base_game() -> void:
 		"base_game.chat",
 		"chat should be the start screen"
 	)
+	var destinations: Array[String] = kernel.hud_panels.page_ids()
+	for id in ["domain", "population", "economy", "military", "diplomacy", "knowledge",
+			"main_menu", "map_layers"]:
+		assert_has(destinations, id, "base_game should register the '%s' HUD destination" % id)
 
 
 func test_module_registry_discovers_manifest() -> void:

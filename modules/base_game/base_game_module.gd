@@ -40,6 +40,7 @@ func register(kernel: GameKernel) -> void:
 	var use_playground := OS.get_environment("OUTPOST_PLAYGROUND") == "1"
 	kernel.screens.register(PLAYGROUND_ID, PLAYGROUND_SCREEN, use_playground)
 	kernel.screens.register(SCREEN_ID, GAME_SCREEN, not use_playground)
+	_register_hud_panels(kernel)
 
 	# Run a short chronicle workflow at the end of every month.
 	kernel.scheduler.schedule_monthly(_end_of_month_workflow())
@@ -105,8 +106,99 @@ func register(kernel: GameKernel) -> void:
 
 	kernel.log.info(
 		"BaseGame",
-		"Registered dice tool, grant_resource command, game screen, month-end + orchestration workflows"
+		"Registered dice tool, grant_resource command, game screen, HUD pages, month-end + orchestration workflows"
 	)
+
+
+## Phase 5 destinations are module content rather than a list baked into HudShell. Main Menu is
+## still composed by GameScreen because its buttons own screen-local save/load/map-refresh callbacks;
+## it remains registered here so the destination list is complete and modules share one seam.
+func _register_hud_panels(kernel: GameKernel) -> void:
+	kernel.hud_panels.register("domain", "Domain", "Domain", _build_domain_panel, _refresh_domain_panel)
+	kernel.hud_panels.register("population", "Population", "Population", _build_population_panel,
+		_refresh_population_panel)
+	kernel.hud_panels.register("economy", "Economy", "Economy", _build_placeholder_panel)
+	kernel.hud_panels.register("military", "Military", "Military", _build_placeholder_panel)
+	kernel.hud_panels.register("diplomacy", "Diplomacy", "Diplomacy", _build_placeholder_panel)
+	kernel.hud_panels.register("knowledge", "Knowledge", "Knowledge", _build_placeholder_panel)
+	kernel.hud_panels.register("main_menu", "Main Menu", "Main Menu")
+	kernel.hud_panels.register("map_layers", "Map Layers", "Map Layers", _build_map_layers_panel)
+
+
+func _build_domain_panel(panel: HudPanel, _kernel: GameKernel) -> void:
+	_add_page_line(panel, "domain_name")
+	_add_page_line(panel, "domain_tier")
+	_add_page_line(panel, "domain_today")
+	_add_page_line(panel, "domain_site")
+
+
+func _refresh_domain_panel(panel: HudPanel, kernel: GameKernel) -> void:
+	var outpost: Dictionary = Entities.get_entity(kernel.state, "outpost")
+	_page_line(panel, "domain_name").text = "Settlement: %s" % String(outpost.get("name", "The Outpost"))
+	_page_line(panel, "domain_tier").text = "Tier: Outpost"
+	_page_line(panel, "domain_today").text = "Today: %s" % DateFormat.render(kernel.clock)
+	var site: Dictionary = kernel.state.get_value(GameSession.OUTPOST_SITE_STATE_KEY, {})
+	if site.is_empty():
+		_page_line(panel, "domain_site").text = "Map site: not placed"
+	else:
+		_page_line(panel, "domain_site").text = "Map site: (%d, %d)" % [int(site["x"]), int(site["y"])]
+
+
+func _build_population_panel(panel: HudPanel, _kernel: GameKernel) -> void:
+	_add_page_line(panel, "population_total")
+	_add_page_line(panel, "population_change")
+	var note := Label.new()
+	note.text = "Growth, households, and needs arrive with the economy systems in M7."
+	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	note.add_theme_color_override("font_color", OutpostTheme.TEXT_MUTED)
+	panel.body.add_child(note)
+
+
+func _refresh_population_panel(panel: HudPanel, kernel: GameKernel) -> void:
+	var resources: Dictionary = kernel.state.get_value("resources", {})
+	_page_line(panel, "population_total").text = "Residents: %d" % int(resources.get("population", 0))
+	_page_line(panel, "population_change").text = "Change: +0 (no population system yet)"
+
+
+func _build_placeholder_panel(panel: HudPanel, _kernel: GameKernel) -> void:
+	var note := Label.new()
+	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	note.add_theme_color_override("font_color", OutpostTheme.TEXT_MUTED)
+	panel.body.add_child(note)
+	match String(panel.get_meta("hud_page_id", "")):
+		"economy": note.text = "Economy is not modelled yet. Income, upkeep, and trade will live here."
+		"military": note.text = "Military forces are not modelled yet. Garrisons and threats will live here."
+		"diplomacy": note.text = "Diplomacy is not modelled yet. Relations and agreements will live here."
+		"knowledge": note.text = "Knowledge is not modelled yet. Research and discoveries will live here."
+
+
+func _build_map_layers_panel(panel: HudPanel, _kernel: GameKernel) -> void:
+	var terrain_row := HBoxContainer.new()
+	terrain_row.add_theme_constant_override("separation", 12)
+	panel.body.add_child(terrain_row)
+	var terrain := Label.new()
+	terrain.text = "Base terrain"
+	terrain.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	terrain_row.add_child(terrain)
+	var available := Label.new()
+	available.text = "Available now"
+	available.add_theme_color_override("font_color", OutpostTheme.ACCENT)
+	terrain_row.add_child(available)
+	var note := Label.new()
+	note.text = "Biome terrain is the only available map layer. Blends, decorations, and seasons are future map polish."
+	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	note.add_theme_color_override("font_color", OutpostTheme.TEXT_MUTED)
+	panel.body.add_child(note)
+
+
+func _add_page_line(panel: HudPanel, id: String) -> void:
+	var line := Label.new()
+	line.name = id
+	panel.body.add_child(line)
+
+
+func _page_line(panel: HudPanel, id: String) -> Label:
+	return panel.body.get_node_or_null(NodePath(id)) as Label
 
 
 ## What a wizard `background`/`outpost_location` choice does to the start, keyed by the wizard's own
