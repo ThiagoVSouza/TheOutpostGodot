@@ -101,6 +101,62 @@ func test_an_unknown_window_mode_or_vsync_value_is_refused() -> void:
 	assert_eq(settings.vsync_mode(), before_vsync, "the stored vsync mode stays a known one")
 
 
+func test_resolution_monitor_and_fps_default_to_leaving_things_alone() -> void:
+	# A first run must not force a stored guess over the size and screen the OS already chose, and
+	# must not cap the frame rate behind V-Sync's back.
+	var settings := AppSettings.new(SCRATCH)
+	assert_eq(settings.resolution(), AppSettings.UNSET)
+	assert_eq(settings.monitor(), AppSettings.MONITOR_UNSET)
+	assert_eq(settings.max_fps(), AppSettings.MAX_FPS_UNCAPPED)
+
+
+func test_video_choices_survive_a_restart() -> void:
+	var settings := _settings()
+	settings.set_resolution(String(AppSettings.RESOLUTIONS[0]))
+	settings.set_monitor(1)
+	settings.set_max_fps(60)
+	assert_true(settings.save())
+
+	var reopened := AppSettings.new(SCRATCH)
+	reopened.load_from_disk()
+	assert_eq(reopened.resolution(), String(AppSettings.RESOLUTIONS[0]))
+	assert_eq(reopened.monitor(), 1)
+	assert_eq(reopened.max_fps(), 60)
+
+
+func test_an_unknown_resolution_is_refused() -> void:
+	var settings := _settings()
+	settings.set_resolution("1x1")
+	assert_eq(settings.resolution(), AppSettings.UNSET, "a size not on the list is not stored")
+
+
+func test_a_stored_monitor_is_kept_even_while_it_is_out_of_range() -> void:
+	# A laptop that stored "monitor 2" at the desk should get that choice back when it is docked
+	# again, rather than have one undocked run erase it. apply_video() skips it while out of range.
+	var settings := _settings()
+	settings.set_monitor(7)
+	assert_eq(settings.monitor(), 7)
+
+
+func test_a_negative_frame_cap_reads_as_uncapped() -> void:
+	var settings := _settings()
+	settings.set_max_fps(-30)
+	assert_eq(settings.max_fps(), AppSettings.MAX_FPS_UNCAPPED)
+
+
+func test_applying_video_sets_the_engine_frame_cap_even_headless() -> void:
+	# max_fps is not a display-server call, so it applies on any platform — including the test
+	# runner, which is what lets this be asserted at all.
+	var before := Engine.max_fps
+	var settings := _settings()
+	settings.set_max_fps(45)
+
+	settings.apply_video()
+
+	assert_eq(Engine.max_fps, 45)
+	Engine.max_fps = before  # shared engine state; leave it as we found it
+
+
 func test_applying_video_does_not_crash_headless() -> void:
 	# The test runner has no real window (DisplayServer.get_name() == "headless"); apply_video()
 	# must no-op rather than call into a display server that is not there.
@@ -138,6 +194,9 @@ func test_reset_returns_every_value_to_its_default() -> void:
 	settings.set_narration_level(NarrationSettings.LEVEL_TOPICS)
 	settings.set_window_mode(AppSettings.WINDOW_MODE_FULLSCREEN)
 	settings.set_vsync_mode(AppSettings.VSYNC_OFF)
+	settings.set_resolution(String(AppSettings.RESOLUTIONS[0]))
+	settings.set_monitor(1)
+	settings.set_max_fps(30)
 
 	settings.reset_to_defaults()
 
@@ -146,3 +205,6 @@ func test_reset_returns_every_value_to_its_default() -> void:
 	assert_eq(settings.narration_level(), NarrationSettings.LEVEL_NORMAL)
 	assert_eq(settings.window_mode(), AppSettings.WINDOW_MODE_WINDOWED)
 	assert_eq(settings.vsync_mode(), AppSettings.VSYNC_ON)
+	assert_eq(settings.resolution(), AppSettings.UNSET)
+	assert_eq(settings.monitor(), AppSettings.MONITOR_UNSET)
+	assert_eq(settings.max_fps(), AppSettings.MAX_FPS_UNCAPPED)

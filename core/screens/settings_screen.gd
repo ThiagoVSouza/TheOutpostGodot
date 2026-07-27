@@ -22,6 +22,10 @@ const DEFAULT_BACK := "core.main_menu"
 ## The tag on anything not yet wired, and its colour. One phrase, used everywhere, so the state is
 ## recognisable at a glance rather than being read row by row.
 const PLANNED_TAG := "planned"
+
+## Marks a control as not-yet-built, so it can be told apart from one that is finished but simply
+## does not apply in the current state. Both are greyed out; only this one is a promise.
+const PLANNED_META := "outpost_planned"
 const PLANNED_COLOR := Color(0.95, 0.75, 0.35)
 const NOTE_COLOR := Color(1, 1, 1, 0.55)
 
@@ -58,6 +62,15 @@ const VSYNC_ROWS := [
 	{"id": AppSettings.VSYNC_OFF, "label": "Off"},
 	{"id": AppSettings.VSYNC_ON, "label": "On"},
 	{"id": AppSettings.VSYNC_ADAPTIVE, "label": "Adaptive"},
+]
+
+## Frame-rate caps. Ids are the stored integers as strings, since the option rows carry string ids;
+## `0` is Godot's own "uncapped", which is the default so V-Sync stays what limits the rate.
+const FPS_ROWS := [
+	{"id": "0", "label": "Unlimited"},
+	{"id": "30", "label": "30"},
+	{"id": "60", "label": "60"},
+	{"id": "120", "label": "120"},
 ]
 
 ## The actions the game intends to bind, with the keys they are expected to default to.
@@ -289,21 +302,41 @@ func _set_readout(category: String, value: float) -> void:
 
 func _build_video_tab() -> Control:
 	var col := _tab_column()
-	_note(col, "Window mode and V-Sync are real and persist. Everything else here still needs a "
-		+ "resolution list / render-scale policy nobody has decided yet.")
 
 	_section(col, "Display")
 	var window_mode := _options(WINDOW_MODE_ROWS, Kernel.settings.window_mode(), _on_window_mode_changed)
 	_row(col, "Window mode", window_mode, "Borderless keeps the current window size without decorations.")
-	_planned_row(col, "Resolution", _options_mock(["1280 × 720", "1920 × 1080", "2560 × 1440"], 1), "")
-	_planned_row(col, "Monitor", _options_mock(["Primary"], 0), "")
+
+	# Resolution is a *windowed desktop* setting: fullscreen and borderless take their size from the
+	# screen, and on a phone the OS owns the window outright. Rather than let it sit there doing
+	# nothing, it is disabled with the reason showing — the same honesty the `planned` tag buys, for
+	# a control that is finished but not applicable right now.
+	var windowed := Kernel.settings.window_mode() == AppSettings.WINDOW_MODE_WINDOWED
+	var resizable := AppSettings.can_resize_window()
+	var resolution := _options(_resolution_rows(), Kernel.settings.resolution(), _on_resolution_changed)
+	resolution.disabled = not (windowed and resizable)
+	var resolution_note := ""
+	if not resizable:
+		resolution_note = "The window is the operating system's to size on this device."
+	elif not windowed:
+		resolution_note = "Only in Windowed mode — the others take their size from the screen."
+	_row(col, "Resolution", resolution, resolution_note)
+
+	# One monitor means no choice to make, and a dropdown with a single entry is furniture.
+	var screens := DisplayServer.get_screen_count()
+	var monitor := _options(_monitor_rows(screens), str(Kernel.settings.monitor()), _on_monitor_changed)
+	monitor.disabled = screens < 2
+	_row(col, "Monitor", monitor, "" if screens >= 2 else "Only one display is attached.")
 
 	_section(col, "Performance")
 	var vsync := _options(VSYNC_ROWS, Kernel.settings.vsync_mode(), _on_vsync_changed)
 	_row(col, "V-Sync", vsync, "")
-	_planned_row(col, "Frame rate cap", _options_mock(["30", "60", "120", "Unlimited"], 1),
+	var fps := _options(FPS_ROWS, str(Kernel.settings.max_fps()), _on_max_fps_changed)
+	_row(col, "Frame rate cap", fps,
 		"Matters most on a phone, where it is a battery setting more than a smoothness one.")
-	_planned_row(col, "Render scale", _options_mock(["75%", "100%", "125%"], 1), "")
+	_planned_row(col, "Render scale", _options_mock(["75%", "100%", "125%"], 1),
+		"A 3D setting (the viewport's 3D scale). This is a 2D game, so there is nothing for it to "
+		+ "scale — it stays here as a reminder to remove it, not to build it.")
 
 	_section(col, "Presentation")
 	_planned_row(col, "UI scale", _options_mock(["Small", "Normal", "Large"], 1),
@@ -315,8 +348,45 @@ func _build_video_tab() -> Control:
 	return col
 
 
+## `{id, label}` rows for the resolution picker, led by "Default" — the honest name for
+## [constant AppSettings.UNSET], which leaves whatever size the window already had.
+func _resolution_rows() -> Array:
+	var rows: Array = [{"id": AppSettings.UNSET, "label": "Default"}]
+	for size: String in AppSettings.RESOLUTIONS:
+		var parts := size.split("x")
+		rows.append({"id": size, "label": "%s × %s" % [parts[0], parts[1]]})
+	return rows
+
+
+func _monitor_rows(screens: int) -> Array:
+	var rows: Array = [{"id": str(AppSettings.MONITOR_UNSET), "label": "Default"}]
+	for i in screens:
+		rows.append({"id": str(i), "label": "Monitor %d" % (i + 1)})
+	return rows
+
+
 func _on_window_mode_changed(mode: String) -> void:
 	Kernel.settings.set_window_mode(mode)
+	Kernel.settings.save()
+	Kernel.settings.apply_video()
+	# Resolution's availability depends on this, so the tab has to be rebuilt to show it.
+	_rebuild()
+
+
+func _on_resolution_changed(value: String) -> void:
+	Kernel.settings.set_resolution(value)
+	Kernel.settings.save()
+	Kernel.settings.apply_video()
+
+
+func _on_monitor_changed(value: String) -> void:
+	Kernel.settings.set_monitor(int(value))
+	Kernel.settings.save()
+	Kernel.settings.apply_video()
+
+
+func _on_max_fps_changed(value: String) -> void:
+	Kernel.settings.set_max_fps(int(value))
 	Kernel.settings.save()
 	Kernel.settings.apply_video()
 
@@ -452,6 +522,11 @@ func _row(parent: Node, label_text: String, control: Control, note: String,
 
 ## A setting that does not work yet: the control is inert and the row carries the tag. Shown and
 ## *labelled*, not hidden — the point is to make what is coming visible without implying it is here.
+##
+## Distinct from a control that is *built but not applicable right now* (Resolution outside Windowed
+## mode, Monitor with one display): those are disabled too, and carry a note saying why, but they
+## are emphatically not `planned`. [constant PLANNED_META] is what tells the two apart — greying
+## alone cannot, which is the whole reason the tag exists.
 func _planned_row(parent: Node, label_text: String, control: Control, note: String) -> void:
 	if control is BaseButton:
 		(control as BaseButton).disabled = true
@@ -459,6 +534,7 @@ func _planned_row(parent: Node, label_text: String, control: Control, note: Stri
 		(control as Range).editable = false
 	control.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	control.modulate = Color(1, 1, 1, 0.5)
+	control.set_meta(PLANNED_META, true)
 	_row(parent, label_text, control, note, true)
 
 
@@ -516,8 +592,44 @@ func _on_reset() -> void:
 	Kernel.settings.save()
 	Kernel.settings.apply_audio(Kernel.audio)
 	Kernel.settings.apply_video()
-	# Rebuilt rather than each control being reset in place: there is one place that reads the stored
-	# values into controls, and reusing it cannot drift from what the store actually holds.
+	_rebuild()
+
+
+## Rebuild every control from the store, rather than resetting each in place: there is one place
+## that reads stored values into controls, and reusing it cannot drift from what the store holds.
+## Also how a setting that changes *another* control's availability (window mode → resolution)
+## refreshes it.
+func _rebuild() -> void:
+	var tab := _current_tab()
 	for child in get_children():
 		child.queue_free()
 	_build_ui()
+	# Rebuilding drops the player back on the first tab otherwise, which — for a control that
+	# rebuilds on change, like window mode — throws them out of the tab they were working in.
+	_select_tab(tab)
+
+
+func _current_tab() -> int:
+	var tabs := _find_tabs()
+	return tabs.current_tab if tabs != null else 0
+
+
+func _select_tab(index: int) -> void:
+	var tabs := _find_tabs()
+	if tabs != null and index >= 0 and index < tabs.get_tab_count():
+		tabs.current_tab = index
+
+
+func _find_tabs() -> TabContainer:
+	for node in _descendants(self):
+		if node is TabContainer:
+			return node
+	return null
+
+
+func _descendants(node: Node) -> Array[Node]:
+	var found: Array[Node] = []
+	for child in node.get_children():
+		found.append(child)
+		found.append_array(_descendants(child))
+	return found

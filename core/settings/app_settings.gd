@@ -34,6 +34,26 @@ const VSYNC_ON := "on"
 const VSYNC_ADAPTIVE := "adaptive"
 const VSYNC_MODES := [VSYNC_OFF, VSYNC_ON, VSYNC_ADAPTIVE]
 
+const RESOLUTION_KEY := "resolution"
+const MONITOR_KEY := "monitor"
+const MAX_FPS_KEY := "max_fps"
+
+## "Leave it alone." The default for both window size and monitor, and the reason they have one:
+## on a first run the OS (or the player's window manager) has already placed and sized the window
+## sensibly, and forcing a stored guess over that is worse than doing nothing. Only an explicit
+## pick from the settings screen ever moves them.
+const UNSET := ""
+const MONITOR_UNSET := -1
+
+## 0 is Godot's own "no cap" — the default, so V-Sync stays what actually limits the frame rate
+## unless the player says otherwise.
+const MAX_FPS_UNCAPPED := 0
+
+## Sizes the settings screen offers. Not a capability query: [method DisplayServer.screen_get_size]
+## reports what the monitor can do, not what a window should sensibly be, and a list the player
+## recognises beats an exhaustive one they have to read.
+const RESOLUTIONS: Array = ["1280x720", "1600x900", "1920x1080", "2560x1440"]
+
 ## Default levels, 0..1 linear. Music sits below effects so narration and UI stay legible over it.
 const DEFAULTS := {
 	AudioManager.MASTER: 1.0,
@@ -125,11 +145,45 @@ func set_vsync_mode(mode: String) -> void:
 		_config.set_value(VIDEO_SECTION, VSYNC_KEY, mode)
 
 
+## The window size the player picked, as `"WxH"`, or [constant UNSET] for "leave it alone".
+func resolution() -> String:
+	var stored := String(_config.get_value(VIDEO_SECTION, RESOLUTION_KEY, UNSET))
+	return stored if RESOLUTIONS.has(stored) else UNSET
+
+
+func set_resolution(value: String) -> void:
+	if value == UNSET or RESOLUTIONS.has(value):
+		_config.set_value(VIDEO_SECTION, RESOLUTION_KEY, value)
+
+
+## The monitor index the player picked, or [constant MONITOR_UNSET]. Not validated against the
+## current screen count here — a laptop that stored "monitor 2" at the desk should get its choice
+## back when it is docked again, not have it erased by one undocked run ([method apply_video]
+## simply skips it while it is out of range).
+func monitor() -> int:
+	return int(_config.get_value(VIDEO_SECTION, MONITOR_KEY, MONITOR_UNSET))
+
+
+func set_monitor(index: int) -> void:
+	_config.set_value(VIDEO_SECTION, MONITOR_KEY, maxi(index, MONITOR_UNSET))
+
+
+func max_fps() -> int:
+	return maxi(int(_config.get_value(VIDEO_SECTION, MAX_FPS_KEY, MAX_FPS_UNCAPPED)), 0)
+
+
+func set_max_fps(value: int) -> void:
+	_config.set_value(VIDEO_SECTION, MAX_FPS_KEY, maxi(value, 0))
+
+
 ## Push the stored window mode + V-Sync onto the real window. Called at boot and whenever the
 ## settings screen changes one. A headless run (tests, CI) has no real window to call into —
 ## `DisplayServer.get_name() == "headless"` is the standing guard for that, same shape as the
 ## test-runner guards on the trace writer, audio and this file's own [member persist].
 func apply_video() -> void:
+	# Not a display-server call, and meaningful on a phone (where it is a battery setting more than
+	# a smoothness one), so it is applied before the headless guard rather than after it.
+	Engine.max_fps = max_fps()
 	if DisplayServer.get_name() == "headless":
 		return
 	match window_mode():
@@ -147,6 +201,27 @@ func apply_video() -> void:
 		VSYNC_ADAPTIVE: DisplayServer.VSYNC_ADAPTIVE,
 	}
 	DisplayServer.window_set_vsync_mode(VSYNC_SERVER_MODES[vsync_mode()])
+
+	# Monitor before size: moving a window to another screen can resize it, so picking the screen
+	# first and the size second is the only order that ends up with both.
+	var screen := monitor()
+	if screen >= 0 and screen < DisplayServer.get_screen_count():
+		DisplayServer.window_set_current_screen(screen)
+
+	# **Windowed only, desktop only.** Fullscreen and borderless take their size from the screen, and
+	# on a phone the OS owns the window outright — in either case forcing a size either does nothing
+	# or fights whoever actually owns it.
+	var size := resolution()
+	if size != UNSET and window_mode() == WINDOW_MODE_WINDOWED and can_resize_window():
+		var parts := size.split("x")
+		DisplayServer.window_set_size(Vector2i(int(parts[0]), int(parts[1])))
+
+
+## Whether a window size the player picks can actually be honoured: a desktop window the app owns,
+## not a phone's OS-owned surface. The settings screen greys the control out when this is false, so
+## the reason is visible rather than the setting silently doing nothing.
+static func can_resize_window() -> bool:
+	return not OS.has_feature("mobile") and DisplayServer.get_name() != "headless"
 
 
 ## Put every stored value back to its default. Does not write — the caller decides when to commit, so
