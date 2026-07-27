@@ -110,6 +110,9 @@ func boot() -> void:
 	settings.load_from_disk()
 	settings.apply_audio(audio)
 	settings.apply_video()
+	# Register the input actions and bind them (defaults, or the player's overrides). Before any
+	# screen exists, so the first one mounted can already ask about actions rather than keycodes.
+	InputActions.install(settings)
 
 	# 2-3. Communication + state.
 	events = EventBus.new()
@@ -281,6 +284,12 @@ func _notification(what: int) -> void:
 ## true, it decided for itself (typically by doing exactly what its own on-screen Back/Cancel button
 ## does) and nothing further happens here. Anything else — no such method, or one that declines —
 ## falls through to a confirm-to-exit dialog rather than quitting outright.
+## Ask to go back, from wherever the request came from — Android's gesture/hardware back, or the
+## `back_close` key on a desktop. Both mean the same thing to the player, so both land here.
+func request_back() -> void:
+	_handle_hardware_back()
+
+
 func _handle_hardware_back() -> void:
 	var frame := Engine.get_process_frames()
 	if frame == _last_back_frame:
