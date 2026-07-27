@@ -12,7 +12,10 @@ Decisions and their evidence: `docs/decisions.md`. Measurements:
 gates. **GATE 0 there is binding: no production code before a direction review
 with the user.**
 
-Last updated: 2026-07-26 (a painted menu background and a real game icon; before that the Android UX
+Last updated: 2026-07-27 (**M8 added** — the game UX shell is wireframed and planned, and it runs
+*before* M7; it reverses the in-play time-advance call to real-time-with-pause, so `decisions.md`
+owes an entry. Before that: M6 Phase 2 — the model runs on the phone. Before that: a painted menu
+background and a real game icon; the Android UX
 pass: portrait, legible scaling, a back button that asks
 before it quits, and a keyboard that no longer covers the input — all verified on a real S26 Ultra.
 Before that: wizard choices drive the game, audio, the outpost on the overworld, a settings screen,
@@ -565,6 +568,99 @@ Android binaries) at the same pinned tag the Windows DLLs come from.
 Map, economy, settlement, factions. The brief's benchmark scene
 (`tools/benchmark.ps1`, still a stub) only becomes meaningful here — its scenarios
 are all map-idle / map-moving / large-settlement.
+
+**M8 below comes first.** Four of its seven in-game destinations (Economy, Military,
+Diplomacy, Knowledge) are the systems in this milestone, and its top bar wants numbers
+— per-tick income and upkeep, a domain-level ladder — that only exist once this lands.
+M8 ships those as honest placeholders; M7 is where they stop being placeholders.
+
+---
+
+## M8 — The game UX shell (wireframed 2026-07-27)
+
+**Sequencing: M8 runs *before* M7, despite the number.** The wireframes describe the
+shell M7's systems plug into, and it can be built ahead of them because a category page
+with nothing behind it is an honest titled empty page, not a blocker.
+
+**Full plan: `docs/ux_plan.md`.** Source: six wireframes in `docs/UX/` — desktop and
+mobile, each in three states (main / expanded chat / menu page).
+
+**What they specify:** persistent chrome that is never replaced — top bar (flag, domain
+name, domain *level*, coins and population with per-tick deltas, date, speed buttons
+`❚❚ > >> >>>`), a left icon rail of seven destinations, a Map Layers button, and a
+chat input pinned to the bottom edge — with the overworld map as the centre. Mobile
+**re-flows the same regions rather than redesigning them**: the rail becomes a
+bottom-right menu button, the date wraps to its own row, and Map Layers folds into the
+menu list. Expanded chat and a menu page share their geometry exactly, so they are one
+component: title/close bar, body, the dock below.
+
+**Three structural moves it forces.** (1) **The map and the chat swap places** — the map
+becomes the base layer and chat a dock over it, which retires `MapOverlay` and its
+"routing away would drop the chat log" reason for existing. (2) **A second navigation
+layer**: `ScreenRouter` keeps splash → menu → wizard → game, while a *panel host* with
+persistent chrome around it handles in-game destinations; Main Menu is one of them and
+opens as a panel, so the player never involuntarily leaves the game shell. (3) **A real
+`Theme`** — six wireframes of consistent chrome is exactly where `ShellPalette`'s own
+"when a real theme lands, this is what it replaces" comes due, and it takes the
+unthemed exit dialog with it.
+
+**Layout rules agreed in the same review, not visible in the drawings:**
+
+1. Desktop, page open and chat opened → **both at half height, both interactive**; the
+   content area splits vertically so the player can read and talk at once.
+2. The split is **draggable to any position**.
+3. During an **active event** the split is locked: chat takes full height and **time is
+   stopped**. A hard state, not a preference.
+4. **Everything animates** — button hover, expand/collapse, panel open/close. Named
+   durations and easing in one place, or they drift per screen the way colours did.
+5. **Mobile has no split**: page and chat are mutually exclusive, opening chat hides the
+   page. Keyboard up halves the chat; in event mode the image hides rather than
+   shrinking the conversation further.
+6. **Keys:** `Esc` closes the topmost thing; `Space` stops time and pressing it again
+   **returns to the previous speed**; `Enter` opens chat.
+
+Rule 6 costs almost nothing: `BACK_CLOSE` is already `KEY_ESCAPE`, and `PASS_DAY` is
+already `KEY_SPACE` and is the very action being replaced, so Space keeps its
+meaning-in-spirit while changing mechanism. `Enter` is safe because `_unhandled_input`
+already gives a focused `LineEdit` first claim — the same reason `FOCUS_INPUT` can be a
+bare letter without stealing typing.
+
+**This reverses the in-play time-advance call below (2026-07-24).** The speed buttons are
+the Paradox model — time flows, the player pauses to act — where that entry chose explicit
+"Let a day pass" over auto-advance. **`decisions.md` owes an entry** for the reversal; the
+reasoning is that the wireframed HUD is built around a world that moves on its own, and a
+strategy game's pause button is a different promise from a turn button. Mechanically it is
+contained: `GameClock` stays the authority and a `TimeDriver` calls `advance(1)` on a timer,
+so nothing below the UI learns that time became continuous. What it does change is that
+**`PlanTicker`'s drain guard becomes load-bearing** — it was written for a race that only
+occurred when `advance(n)` emitted several `day_passed` at once, and real time will hit it
+constantly. The driver reads a **world gate** (orchestrator busy, `confirm` pending, or a
+tick draining) rather than asking the UI anything; "active event" is the UI's name for that
+same predicate being closed.
+
+**Phases** (detail and acceptance criteria in `docs/ux_plan.md`): 1 — the HUD shell and
+the map as base layer, **with nothing regressing** (the dev row moves into the Main Menu
+panel; the on-screen-keyboard handling moves to the dock, since it is the fix for a real
+device bug). 2 — `Theme`, motion, and the top bar reading live state, which needs a date
+formatter (`total_days` and 30-day months exist; month names and an era do not). 3 — the
+chat dock: message rows with avatar slots, and the reasoning timeline, which maps onto
+`AiTrace` almost exactly (classify → roll → narrate) so the playground's renderer gets
+extracted rather than written twice. **In-chat dice are a deliberate design statement:**
+D4 says the rules decide every number and the AI only narrates, and this makes that
+invariant visible to the player instead of merely promised by the architecture. 4 — time:
+`TimeDriver`, the four speeds, the world gate, event mode, and the new bindings
+(`toggle_pause`, `speed_1/2/3`, `open_chat`; `PASS_DAY` retires), off under
+`OUTPOST_TEST_RUN` so the suite stays deterministic, and speed deliberately **not**
+persisted — a loaded game opens paused. 5 — a panel registry so modules contribute pages,
+mirroring how they already register screens and commands.
+
+**Systems the wireframes assume and the game lacks** — named so nobody builds a
+convincing-looking lie into the top bar: the `-123`/`+12` deltas are per-tick income and
+upkeep that no economy produces (seed `population`, render `0` until M7); **domain level**
+("Outpost") implies a growth ladder nothing models; event imagery needs an art key and a
+pipeline; Map Layers has one layer, since corner blending, decorations and season tint were
+deferred. Four of the seven destinations — Economy, Military, Diplomacy, Knowledge — are
+titled empty pages until M7, on purpose.
 
 ---
 
