@@ -53,6 +53,8 @@ func _build_ui() -> void:
 	col.add_child(_menu_button("Settings", _on_settings, true))
 	col.add_child(_menu_button("Help", Callable(), false))
 	col.add_child(_menu_button("News", Callable(), false))
+	col.add_child(_spacer(8))
+	col.add_child(_menu_button("Exit Game", _on_exit, true))
 
 
 func _menu_button(text: String, on_press: Callable, enabled: bool) -> Button:
@@ -91,3 +93,7 @@ func _on_load() -> void:
 ## to be reachable from inside a game later, and the router keeps no history to infer it from.
 func _on_settings() -> void:
 	Kernel.router.goto("core.settings", {"back": "core.main_menu"})
+
+
+func _on_exit() -> void:
+	Kernel.request_exit()

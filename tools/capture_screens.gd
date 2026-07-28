@@ -39,6 +39,9 @@ func _initialize() -> void:
 	await process_frame
 	# The autoload identifier also does not resolve at compile time in a `-s` SceneTree script.
 	_kernel = root.get_node("Kernel")
+	# Captures deliberately exercise both desktop and mobile breakpoints in one known-size window;
+	# the player's normal launch policy is fullscreen.
+	DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
 	DisplayServer.window_set_size(VIEWPORT_SIZE)
 	await _run()
 	print("\nWrote %d capture(s) to %s" % [_saved.size(), ProjectSettings.globalize_path(_out_dir)])

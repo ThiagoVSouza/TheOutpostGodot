@@ -319,6 +319,15 @@ func request_back() -> void:
 	_handle_hardware_back()
 
 
+## Show the one process-owned exit confirmation. An on-screen Exit Game action must use this rather
+## than making a second dialog, so hardware Back and the main menu always ask the same question.
+func request_exit() -> void:
+	var dialog := _ensure_exit_confirm()
+	# The dialog is still built in headless tests, but only a real display server can show it.
+	if DisplayServer.get_name() != "headless":
+		dialog.popup_centered()
+
+
 func _handle_hardware_back() -> void:
 	var frame := Engine.get_process_frames()
 	if frame == _last_back_frame:
@@ -327,12 +336,10 @@ func _handle_hardware_back() -> void:
 	var screen: Node = router.current_screen() if router != null else null
 	if screen != null and screen.has_method("on_hardware_back") and bool(screen.call("on_hardware_back")):
 		return
-	var dialog := _ensure_exit_confirm()
+	request_exit()
 	# The headless test runner has no real display server to pop a Window into — the same guard
 	# `AppSettings.apply_video()` uses. The dialog still gets built either way, so a test can assert
 	# on it without triggering the OS call that only a real window can answer.
-	if DisplayServer.get_name() != "headless":
-		dialog.popup_centered()
 
 
 func _ensure_exit_confirm() -> ConfirmationDialog:
