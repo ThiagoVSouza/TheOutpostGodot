@@ -23,6 +23,10 @@ const NARRATION_KEY := "narration_level"
 const VIDEO_SECTION := "video"
 const WINDOW_MODE_KEY := "window_mode"
 const VSYNC_KEY := "vsync_mode"
+## Marks settings files that have seen the fullscreen-at-launch policy. It lets us distinguish the
+## former implicit Windowed default from a player deliberately choosing Windowed for a resolution.
+const VIDEO_POLICY_KEY := "policy_version"
+const VIDEO_POLICY_VERSION := 1
 
 const WINDOW_MODE_WINDOWED := "windowed"
 const WINDOW_MODE_BORDERLESS := "borderless"
@@ -38,10 +42,10 @@ const RESOLUTION_KEY := "resolution"
 const MONITOR_KEY := "monitor"
 const MAX_FPS_KEY := "max_fps"
 
-## "Leave it alone." The default for both window size and monitor, and the reason they have one:
-## on a first run the OS (or the player's window manager) has already placed and sized the window
-## sensibly, and forcing a stored guess over that is worse than doing nothing. Only an explicit
-## pick from the settings screen ever moves them.
+## "Leave it alone." The default for both window size and monitor: it means the player's settings
+## do not override the project's platform launch policy. Desktop starts fullscreen; mobile owns its
+## portrait surface through the OS. Only an explicit Windowed-mode choice replaces the desktop
+## launch size.
 const UNSET := ""
 const MONITOR_UNSET := -1
 
@@ -64,10 +68,12 @@ const NO_KEY := KEY_NONE
 ## fall back to the default — the very key that was just taken away — and the conflict would survive.
 const UNBOUND := -1
 
-## Sizes the settings screen offers. Not a capability query: [method DisplayServer.screen_get_size]
-## reports what the monitor can do, not what a window should sensibly be, and a list the player
-## recognises beats an exhaustive one they have to read.
-const RESOLUTIONS: Array = ["1280x720", "1600x900", "1920x1080", "2560x1440"]
+## Familiar Windowed sizes. The settings screen filters this short list against the selected
+## monitor's usable desktop area rather than offering every possible resolution.
+const RESOLUTIONS: Array = ["960x540", "1024x576", "1280x720", "1600x900", "1920x1080", "2560x1440"]
+## A native window has borders and a title bar in addition to the client area Godot sizes. Reserve
+## conservative room for them when deciding which resolution fits a desktop work area.
+const WINDOWED_DECORATION_ALLOWANCE := Vector2i(32, 80)
 
 ## Default levels, 0..1 linear. Music sits below effects so narration and UI stay legible over it.
 const DEFAULTS := {
@@ -94,6 +100,25 @@ func _init(path: String = PATH) -> void:
 func load_from_disk() -> void:
 	if _config.load(_path) != OK:
 		_config.clear()
+		return
+	_migrate_video_policy()
+
+
+## Older versions wrote `windowed` even when the player had never chosen a window mode. Upgrade
+## that bare legacy default once, so an existing install adopts the current fullscreen launch
+## policy while a deliberate Windowed choice remains a deliberate choice.
+func _migrate_video_policy() -> void:
+	if int(_config.get_value(VIDEO_SECTION, VIDEO_POLICY_KEY, 0)) >= VIDEO_POLICY_VERSION:
+		return
+	var legacy_default := (
+		String(_config.get_value(VIDEO_SECTION, WINDOW_MODE_KEY, "")) == WINDOW_MODE_WINDOWED
+		and not _config.has_section_key(VIDEO_SECTION, RESOLUTION_KEY)
+		and not _config.has_section_key(VIDEO_SECTION, MONITOR_KEY)
+	)
+	if legacy_default:
+		_config.set_value(VIDEO_SECTION, WINDOW_MODE_KEY, WINDOW_MODE_FULLSCREEN)
+	_config.set_value(VIDEO_SECTION, VIDEO_POLICY_KEY, VIDEO_POLICY_VERSION)
+	save()
 
 
 ## Write the config, if persistence is on. Returns whether anything was written.
@@ -141,13 +166,14 @@ func set_narration_level(level: String) -> void:
 
 
 func window_mode() -> String:
-	var stored := String(_config.get_value(VIDEO_SECTION, WINDOW_MODE_KEY, WINDOW_MODE_WINDOWED))
-	return stored if WINDOW_MODES.has(stored) else WINDOW_MODE_WINDOWED
+	var stored := String(_config.get_value(VIDEO_SECTION, WINDOW_MODE_KEY, WINDOW_MODE_FULLSCREEN))
+	return stored if WINDOW_MODES.has(stored) else WINDOW_MODE_FULLSCREEN
 
 
 func set_window_mode(mode: String) -> void:
 	if WINDOW_MODES.has(mode):
 		_config.set_value(VIDEO_SECTION, WINDOW_MODE_KEY, mode)
+		_config.set_value(VIDEO_SECTION, VIDEO_POLICY_KEY, VIDEO_POLICY_VERSION)
 
 
 func vsync_mode() -> String:
@@ -169,6 +195,32 @@ func resolution() -> String:
 func set_resolution(value: String) -> void:
 	if value == UNSET or RESOLUTIONS.has(value):
 		_config.set_value(VIDEO_SECTION, RESOLUTION_KEY, value)
+
+
+## The fixed choices that fit within a monitor's usable work area, with room for normal window
+## decorations. Kept pure so the screen picker and the boot-time application use the same rule.
+static func suitable_resolutions(usable: Rect2i) -> Array[String]:
+	var suitable: Array[String] = []
+	for value: String in RESOLUTIONS:
+		var size := resolution_size(value)
+		if (size.x + WINDOWED_DECORATION_ALLOWANCE.x <= usable.size.x
+				and size.y + WINDOWED_DECORATION_ALLOWANCE.y <= usable.size.y):
+			suitable.append(value)
+	return suitable
+
+
+## A stored size remains meaningful when the player returns to its larger monitor. Until then,
+## select the largest fitting choice instead of opening an oversized, unreachable window.
+static func effective_windowed_resolution(stored: String, usable: Rect2i) -> String:
+	var suitable := suitable_resolutions(usable)
+	if suitable.has(stored):
+		return stored
+	return String(suitable.back()) if not suitable.is_empty() else UNSET
+
+
+static func resolution_size(value: String) -> Vector2i:
+	var parts := value.split("x")
+	return Vector2i(int(parts[0]), int(parts[1]))
 
 
 ## The monitor index the player picked, or [constant MONITOR_UNSET]. Not validated against the
@@ -248,10 +300,47 @@ func apply_video() -> void:
 	# **Windowed only, desktop only.** Fullscreen and borderless take their size from the screen, and
 	# on a phone the OS owns the window outright — in either case forcing a size either does nothing
 	# or fights whoever actually owns it.
-	var size := resolution()
-	if size != UNSET and window_mode() == WINDOW_MODE_WINDOWED and can_resize_window():
-		var parts := size.split("x")
-		DisplayServer.window_set_size(Vector2i(int(parts[0]), int(parts[1])))
+	if window_mode() == WINDOW_MODE_WINDOWED and can_resize_window():
+		var usable := _window_usable_rect()
+		var selected := effective_windowed_resolution(resolution(), usable)
+		if selected != UNSET:
+			DisplayServer.window_set_size(resolution_size(selected))
+		_center_window(usable)
+
+
+## Find the current desktop work area after a requested monitor change, so size filtering and
+## placement both use the display the player chose.
+func _window_usable_rect() -> Rect2i:
+	var screen := DisplayServer.window_get_current_screen()
+	if screen < 0 or screen >= DisplayServer.get_screen_count():
+		screen = 0
+	return DisplayServer.screen_get_usable_rect(screen)
+
+
+func _center_window(usable: Rect2i) -> void:
+	if usable.size.x <= 0 or usable.size.y <= 0:
+		return
+	# Godot sets the *client-area* position, while the desired visual center is the decorated native
+	# window. Add the title-bar/border offset back before setting the client-area coordinate.
+	var decoration_offset := (
+		DisplayServer.window_get_position() - DisplayServer.window_get_position_with_decorations())
+	DisplayServer.window_set_position(client_position_for_centered_window(
+		DisplayServer.window_get_size_with_decorations(), decoration_offset, usable))
+
+
+## Pure so multi-monitor placement stays testable without a real DisplayServer. An oversized window
+## begins at the usable top-left, keeping its title bar available to move it.
+static func centered_window_position(window_size: Vector2i, usable: Rect2i) -> Vector2i:
+	return usable.position + Vector2i(
+		maxi(0, int((usable.size.x - window_size.x) / 2)),
+		maxi(0, int((usable.size.y - window_size.y) / 2)))
+
+
+## `window_set_position` uses the client area, not the decorated outer window. Keep that platform
+## detail in one small conversion so all callers center what the player can actually see.
+static func client_position_for_centered_window(decorated_size: Vector2i, decoration_offset: Vector2i,
+		usable: Rect2i) -> Vector2i:
+	return centered_window_position(decorated_size, usable) + decoration_offset
 
 
 ## Whether a window size the player picks can actually be honoured: a desktop window the app owns,

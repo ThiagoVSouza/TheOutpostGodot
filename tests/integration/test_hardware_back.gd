@@ -71,6 +71,17 @@ func test_a_screen_with_nowhere_to_go_raises_the_exit_confirm_dialog() -> void:
 	assert_string_contains(dialog.dialog_text, "Exit")
 
 
+func test_the_main_menu_exit_action_uses_the_same_confirm_dialog() -> void:
+	var screen := _screen("core.main_menu")
+	Kernel.set("_exit_confirm", null)
+
+	screen.call("_on_exit")
+
+	var dialog: ConfirmationDialog = Kernel.get("_exit_confirm")
+	assert_not_null(dialog)
+	assert_eq(dialog.dialog_text, "Exit The Outpost?")
+
+
 func test_the_game_screen_also_falls_through_to_the_exit_dialog() -> void:
 	# The game screen has no on-screen "back" of its own to mirror — it should behave like the main
 	# menu, not silently do nothing.

@@ -325,14 +325,19 @@ func _build_video_tab() -> Control:
 	# a control that is finished but not applicable right now.
 	var windowed := Kernel.settings.window_mode() == AppSettings.WINDOW_MODE_WINDOWED
 	var resizable := AppSettings.can_resize_window()
-	var resolution := _options(_resolution_rows(), Kernel.settings.resolution(), _on_resolution_changed)
-	resolution.disabled = not (windowed and resizable)
+	var resolution_rows := _resolution_rows()
+	var resolution := _options(resolution_rows,
+		AppSettings.effective_windowed_resolution(Kernel.settings.resolution(), _windowed_usable_rect()),
+		_on_resolution_changed)
+	resolution.disabled = not (windowed and resizable) or resolution_rows.is_empty()
 	var resolution_note := ""
 	if not resizable:
 		resolution_note = "The window is the operating system's to size on this device."
 	elif not windowed:
-		resolution_note = "Only in Windowed mode — the others take their size from the screen."
-	_row(col, "Resolution", resolution, resolution_note)
+		resolution_note = "Choose Windowed first; fullscreen and borderless use the screen's size."
+	elif resolution_rows.is_empty():
+		resolution_note = "No supported window size fits this display."
+	_row(col, "Windowed resolution", resolution, resolution_note)
 
 	# One monitor means no choice to make, and a dropdown with a single entry is furniture.
 	var screens := DisplayServer.get_screen_count()
@@ -449,11 +454,20 @@ func _on_reset_bindings() -> void:
 ## `{id, label}` rows for the resolution picker, led by "Default" — the honest name for
 ## [constant AppSettings.UNSET], which leaves whatever size the window already had.
 func _resolution_rows() -> Array:
-	var rows: Array = [{"id": AppSettings.UNSET, "label": "Default"}]
-	for size: String in AppSettings.RESOLUTIONS:
+	var rows: Array = []
+	for size: String in AppSettings.suitable_resolutions(_windowed_usable_rect()):
 		var parts := size.split("x")
 		rows.append({"id": size, "label": "%s × %s" % [parts[0], parts[1]]})
 	return rows
+
+
+func _windowed_usable_rect() -> Rect2i:
+	var screen := Kernel.settings.monitor()
+	if screen < 0 or screen >= DisplayServer.get_screen_count():
+		screen = DisplayServer.window_get_current_screen()
+	if screen < 0 or screen >= DisplayServer.get_screen_count():
+		screen = 0
+	return DisplayServer.screen_get_usable_rect(screen)
 
 
 func _monitor_rows(screens: int) -> Array:
@@ -481,6 +495,7 @@ func _on_monitor_changed(value: String) -> void:
 	Kernel.settings.set_monitor(int(value))
 	Kernel.settings.save()
 	Kernel.settings.apply_video()
+	_rebuild()
 
 
 func _on_max_fps_changed(value: String) -> void:

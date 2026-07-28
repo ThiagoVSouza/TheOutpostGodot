@@ -75,20 +75,35 @@ func test_an_unreadable_narration_level_is_refused() -> void:
 
 func test_window_mode_and_vsync_default_to_a_playable_configuration() -> void:
 	var settings := AppSettings.new(SCRATCH)
-	assert_eq(settings.window_mode(), AppSettings.WINDOW_MODE_WINDOWED)
+	assert_eq(settings.window_mode(), AppSettings.WINDOW_MODE_FULLSCREEN)
 	assert_eq(settings.vsync_mode(), AppSettings.VSYNC_ON)
 
 
 func test_window_mode_and_vsync_survive_a_restart() -> void:
 	var settings := _settings()
-	settings.set_window_mode(AppSettings.WINDOW_MODE_FULLSCREEN)
+	settings.set_window_mode(AppSettings.WINDOW_MODE_WINDOWED)
 	settings.set_vsync_mode(AppSettings.VSYNC_OFF)
 	assert_true(settings.save())
 
 	var reopened := AppSettings.new(SCRATCH)
 	reopened.load_from_disk()
-	assert_eq(reopened.window_mode(), AppSettings.WINDOW_MODE_FULLSCREEN)
+	assert_eq(reopened.window_mode(), AppSettings.WINDOW_MODE_WINDOWED)
 	assert_eq(reopened.vsync_mode(), AppSettings.VSYNC_OFF)
+
+
+func test_a_bare_legacy_windowed_default_migrates_to_fullscreen() -> void:
+	var file := FileAccess.open(SCRATCH, FileAccess.WRITE)
+	file.store_string("[video]\nwindow_mode=\"windowed\"\n")
+	file.close()
+
+	var settings := _settings()
+	settings.load_from_disk()
+	assert_eq(settings.window_mode(), AppSettings.WINDOW_MODE_FULLSCREEN)
+
+	var reopened := _settings()
+	reopened.load_from_disk()
+	assert_eq(reopened.window_mode(), AppSettings.WINDOW_MODE_FULLSCREEN,
+		"the migration is saved, so it runs only once")
 
 
 func test_an_unknown_window_mode_or_vsync_value_is_refused() -> void:
@@ -102,7 +117,7 @@ func test_an_unknown_window_mode_or_vsync_value_is_refused() -> void:
 
 
 func test_resolution_monitor_and_fps_default_to_leaving_things_alone() -> void:
-	# A first run must not force a stored guess over the size and screen the OS already chose, and
+	# A first run uses the project's platform launch policy instead of a stored user override, and
 	# must not cap the frame rate behind V-Sync's back.
 	var settings := AppSettings.new(SCRATCH)
 	assert_eq(settings.resolution(), AppSettings.UNSET)
@@ -166,6 +181,28 @@ func test_applying_video_does_not_crash_headless() -> void:
 	assert_true(true, "apply_video() returned instead of calling into a display server that is not there")
 
 
+func test_suitable_resolutions_only_include_sizes_that_leave_room_for_window_chrome() -> void:
+	var usable := Rect2i(Vector2i(1920, 0), Vector2i(1920, 1040))
+	assert_eq(AppSettings.suitable_resolutions(usable),
+		["960x540", "1024x576", "1280x720", "1600x900"])
+	assert_eq(AppSettings.effective_windowed_resolution("1920x1080", usable), "1600x900")
+
+
+func test_centered_window_position_ignores_the_previous_offscreen_coordinate() -> void:
+	var usable := Rect2i(Vector2i(1920, 0), Vector2i(1920, 1040))
+	var centered := AppSettings.centered_window_position(Vector2i(1312, 980), usable)
+	assert_eq(centered, Vector2i(2224, 30), "the full native window is centered on monitor two")
+	assert_eq(AppSettings.client_position_for_centered_window(
+		Vector2i(1312, 980), Vector2i(8, 32), usable), Vector2i(2232, 62),
+		"the client position accounts for the title bar above it")
+
+
+func test_centered_window_position_keeps_an_oversized_window_movable() -> void:
+	var usable := Rect2i(Vector2i(0, 0), Vector2i(1280, 720))
+	var centered := AppSettings.centered_window_position(Vector2i(1920, 1080), usable)
+	assert_eq(centered, Vector2i.ZERO, "oversized windows start at the visible top-left")
+
+
 func test_applying_puts_the_levels_on_the_buses() -> void:
 	var audio := AudioManager.new()
 	add_child_autofree(audio)
@@ -203,7 +240,7 @@ func test_reset_returns_every_value_to_its_default() -> void:
 	assert_almost_eq(settings.audio_volume(AudioManager.MUSIC),
 		float(AppSettings.DEFAULTS[AudioManager.MUSIC]), 0.001)
 	assert_eq(settings.narration_level(), NarrationSettings.LEVEL_NORMAL)
-	assert_eq(settings.window_mode(), AppSettings.WINDOW_MODE_WINDOWED)
+	assert_eq(settings.window_mode(), AppSettings.WINDOW_MODE_FULLSCREEN)
 	assert_eq(settings.vsync_mode(), AppSettings.VSYNC_ON)
 	assert_eq(settings.resolution(), AppSettings.UNSET)
 	assert_eq(settings.monitor(), AppSettings.MONITOR_UNSET)

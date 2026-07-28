@@ -33,6 +33,9 @@ pointing/android/enable_pan_and_scale_gestures=true
 
 window/size/viewport_width=720
 window/size/viewport_height=1280
+# Desktop starts fullscreen. The portrait viewport remains the UI's mobile design reference; the
+# operating system owns the mobile surface and honours the portrait orientation below.
+window/size/mode=3
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
 window/handheld/orientation=1
