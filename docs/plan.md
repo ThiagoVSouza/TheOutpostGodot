@@ -666,6 +666,37 @@ titled empty pages until M7, on purpose.
 
 ## Unscheduled — cheap, self-contained, do anytime
 
+**UI skin — textures still to draw (2026-07-28).** The painted shell landed for the splash, menu,
+exit modal, loading bar and settings page (`core/ui/theme/ui_skin.gd` + `SkinnedButton`,
+`SkinnedProgressBar`, `ModalDialog`). Three controls on the settings page are still Godot's stock
+dark widgets sitting on parchment, and each is blocked only on art:
+
+| Asset | Suggested size | Blocks |
+|---|---|---|
+| `dropdown_arrow.png` | ~32x32 | Every `OptionButton` — the field is skinned, but Godot draws the arrow as its own icon and the stock one is invisible on parchment |
+| `toggle_on.png` / `toggle_off.png` | ~110x56, matching footprints | `CheckButton` — currently dark blobs. One image per state is simplest; separate track + knob would let it slide but needs animation |
+| `slider_groove.png` / `slider_fill.png` / `slider_grabber.png` | ~420x32 (groove and fill sharing a footprint exactly), ~48x48 | `HSlider` — the whole Audio tab. The groove/fill pair should overlay like `progress_bar_background`/`_fill` did; that made the superposition free |
+
+Optional after those: `separator.png` (~400x8) for the section rules, which are still the stock
+bluish `HSeparator`; and scrollbar track/grabber, visible on any tab taller than the screen — which
+on a phone is most of them.
+
+**Conventions that earned themselves** — draw near the final size, opaque edge to edge, and keep
+ornaments inside a predictable corner inset. Two bugs came from ignoring this: `frame1` at 210x239
+stretched its top rail **17x** on the settings page (fixed by `frame2` at 1496x986, now 1.5x), and
+`TILE_FIT` on that frame repeated the paper grain about four times over as visible banding.
+`UiSkin._slice()` now takes the stretch mode per texture, with the reasoning on both sides.
+
+**Move module loading into the loading screen — deferred 2026-07-28, do not lose.** `modules.load_all()`
+runs inside `GameKernel.boot()`, so it happens *before* the first scene can mount. Measured at **170ms
+of the ~2.3s startup** — small, but it is real work sitting in front of the first frame, and the
+loading screen exists precisely to be where loading is visible. The reason it was not done with the
+splash consolidation: `boot()` returning a fully-wired kernel is what the entire test suite builds on
+(`GameKernel.new()` + `add_child_autofree`), so moving a boot step out is an architectural change that
+has to be designed against that contract rather than folded into a UI fix. The same slot is where the
+**AI prefix-cache warm-up (D8)** belongs — `loading_screen.gd` already carries a TODO for it, and that
+one is not 170ms. Do both at once.
+
 **App shell + new-game flow** — **first pass done (2026-07-23)**: the full flow **splash →
 loading → main menu → new game → game start** runs with placeholder UI. New pieces: a
 `ScreenRouter` (`core/navigation/`) since no navigation existed (boot mounted one screen);

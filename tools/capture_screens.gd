@@ -56,20 +56,20 @@ func _run() -> void:
 	root.add_child(_host)
 	_kernel.router.set_host(_host)
 
-	# The pre-menu screens advance on their own (a timer, a tap, a finished load), so they are shot
-	# on the frame they mount rather than left to run. `core.loading` is given the target it would
-	# normally be handed; it is captured mid-flight, before it navigates on.
-	await _capture_screen("core.splash", "00a_splash")
+	# The pre-menu screens advance on their own (a timer, a finished load), so they are shot on the
+	# frame they mount rather than left to run. `core.loading` is given the target it would normally
+	# be handed; it is captured mid-flight, before it navigates on. There is no splash capture: the
+	# splash is the engine's boot splash, which no scene can mount and no screenshot here can reach.
 	await _capture_screen("core.loading", "00b_loading", {"next": "core.main_menu"})
 	await _capture_screen("core.main_menu", "01_main_menu")
 
 	# The exit-confirm dialog (M8 Phase 2 "done when": the real Theme reaches it too, ux_plan.md
 	# §2.4) — kernel-owned, not screen-owned, so it is reached through the kernel rather than a
 	# screen's own private state.
-	var exit_dialog: ConfirmationDialog = _kernel.call("_ensure_exit_confirm")
-	exit_dialog.popup_centered()
+	var exit_dialog: ModalDialog = _kernel.call("_ensure_exit_confirm")
+	exit_dialog.open()
 	await _shoot("01z_exit_confirm")
-	exit_dialog.hide()
+	exit_dialog.close()
 
 	# Every settings tab, not just the one that opens: most of the screen is placeholders whose whole
 	# job is to be looked at, and a tab nobody captures is a tab nobody checks.

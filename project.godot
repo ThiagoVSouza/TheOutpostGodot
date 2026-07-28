@@ -16,7 +16,25 @@ run/main_scene="res://core/bootstrap/boot.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
 config/icon="res://core/assets/game_icon.png"
 config/quit_on_go_back=false
-boot_splash/show_image=false
+; **This is the game's splash screen.** Not a placeholder before one — the engine draws it, and there
+; is no second splash scene behind it. `stretch_mode` 0 is "disabled", which draws the image centred
+; at its own pixel size rather than scaling it to the window.
+;
+; `minimum_display_time` is what makes it a splash rather than a blank window. The *background* is
+; painted the moment the window exists, but the *image* needs the renderer, and bringing the display
+; server up is the single largest cost in startup — without a hold the engine reaches the first scene
+; at about the moment it could first draw the mark, so the mark is never seen. Measured: the window
+; appears at ~1.2s and the first scene frame lands ~640ms later. This holds it long enough to read,
+; and it costs nothing overall because it replaced a 1.5s scene-based splash rather than adding to it.
+;
+; Comments here begin with `;`, never `#`: Godot's parser folds a `#` line into the *key name* of the
+; setting below it, silently disabling that setting. A stray `#` comment is what stopped
+; `window/size/mode` below from ever being read.
+boot_splash/show_image=true
+boot_splash/image="res://core/assets/pangea_logo.png"
+boot_splash/stretch_mode=0
+boot_splash/minimum_display_time=1200
+boot_splash/bg_color=Color(0, 0, 0, 1)
 
 [autoload]
 
@@ -33,9 +51,15 @@ pointing/android/enable_pan_and_scale_gestures=true
 
 window/size/viewport_width=720
 window/size/viewport_height=1280
-# Desktop starts fullscreen. The portrait viewport remains the UI's mobile design reference; the
-# operating system owns the mobile surface and honours the portrait orientation below.
-window/size/mode=3
+; The window the OS creates before a single script has run. It cannot know the player's stored window
+; mode — `AppSettings.apply_video()` applies that on the kernel's first frame, and desktop still
+; defaults to fullscreen there — so it opens as a small landscape window instead of taking its shape
+; from the portrait viewport above, which showed as a tall empty band for as long as the engine took
+; to start. The overrides leave the viewport itself alone: it stays the UI's mobile design reference.
+; Mobile ignores all of this; the OS owns that surface and honours the portrait orientation below.
+window/size/mode=0
+window/size/window_width_override=1280
+window/size/window_height_override=720
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
 window/handheld/orientation=1
@@ -52,6 +76,9 @@ enabled=PackedStringArray("res://addons/gut/plugin.cfg")
 
 [rendering]
 
+; Black, matching the boot splash: the frames between the splash image going away and the first
+; screen painting are cleared with this, and Godot's stock grey is what made that gap visible.
+environment/defaults/default_clear_color=Color(0, 0, 0, 1)
 renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
 textures/vram_compression/import_etc2_astc=true

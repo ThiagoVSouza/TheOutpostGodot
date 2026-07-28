@@ -26,11 +26,18 @@ const PLANNED_TAG := "planned"
 ## Marks a control as not-yet-built, so it can be told apart from one that is finished but simply
 ## does not apply in the current state. Both are greyed out; only this one is a promise.
 const PLANNED_META := "outpost_planned"
-const PLANNED_COLOR := Color(0.95, 0.75, 0.35)
-const NOTE_COLOR := Color(1, 1, 1, 0.55)
+## Both read against parchment now, not against a dark panel: the tab body is `frame_thin`, whose
+## middle is transparent, so the page's own paper is what every row sits on.
+const PLANNED_COLOR := Color(0.58, 0.34, 0.05)
+const NOTE_COLOR := UiSkin.INK_MUTED
 
 const LABEL_WIDTH := 260.0
 const CONTROL_WIDTH := 320.0
+## Back has one short word in it, so left to itself the plate would be far narrower than Reset's.
+const BACK_WIDTH := 240.0
+## The narrowest a row's explanatory hint may be before it takes a line of its own rather than a
+## sliver beside the control. See [method _row].
+const HINT_MIN_WIDTH := 220.0
 
 ## Audio levels the player can set, in the order a mixer shows them.
 const AUDIO_ROWS := [
@@ -153,48 +160,77 @@ func _build_ui() -> void:
 	margin.add_theme_constant_override("margin_bottom", 20 + SafeArea.bottom(get_viewport()))
 	add_child(margin)
 
+	# The same frame the menu and the modal sit on, so Settings reads as part of the shell rather than
+	# a bare page.
+	var shadow := PanelContainer.new()
+	shadow.add_theme_stylebox_override("panel", UiSkin.frame_shadow_style())
+	margin.add_child(shadow)
+
+	var frame := PanelContainer.new()
+	frame.add_theme_stylebox_override("panel", UiSkin.frame_style())
+	shadow.add_child(frame)
+
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", 12)
-	margin.add_child(col)
+	frame.add_child(col)
 
 	var title := Label.new()
 	title.text = "Settings"
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.add_theme_font_size_override("font_size", 28)
+	title.add_theme_font_size_override("font_size", UiSkin.FONT_TITLE)
+	# Ink: the frame's middle is pale parchment, where the shell's near-white text vanishes.
+	title.add_theme_color_override("font_color", UiSkin.INK)
 	col.add_child(title)
 
 	var legend := Label.new()
 	legend.text = "Items marked “%s” are not implemented yet — they show what is coming." % PLANNED_TAG
 	legend.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	legend.modulate = NOTE_COLOR
+	legend.add_theme_font_size_override("font_size", UiSkin.FONT_SMALL)
+	legend.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	legend.add_theme_color_override("font_color", UiSkin.INK_MUTED)
 	col.add_child(legend)
 
 	var tabs := TabContainer.new()
 	tabs.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	# The body is the border-only frame, so the rows sit straight on the page's parchment rather than
+	# on a dark slab laid over it. Everything inside is therefore written in ink.
+	tabs.add_theme_stylebox_override("panel", UiSkin.thin_frame_style())
+	tabs.add_theme_stylebox_override("tab_selected", UiSkin.tab_style(true))
+	tabs.add_theme_stylebox_override("tab_unselected", UiSkin.tab_style(false))
+	tabs.add_theme_stylebox_override("tab_hovered", UiSkin.tab_style(false))
+	tabs.add_theme_stylebox_override("tab_disabled", UiSkin.tab_style(false))
+	# The strip's own background and the little separators between tabs would draw the stock dark
+	# theme behind the plates; there is nothing to show there but the page.
+	tabs.add_theme_stylebox_override("tabbar_background", StyleBoxEmpty.new())
+	tabs.add_theme_color_override("font_selected_color", UiSkin.INK)
+	tabs.add_theme_color_override("font_unselected_color", UiSkin.LABEL)
+	tabs.add_theme_color_override("font_hovered_color", UiSkin.LABEL)
+	tabs.add_theme_font_size_override("font_size", UiSkin.FONT_BODY)
 	col.add_child(tabs)
 	_add_tab(tabs, "Gameplay", _build_gameplay_tab())
 	_add_tab(tabs, "Audio", _build_audio_tab())
 	_add_tab(tabs, "Video", _build_video_tab())
 	_add_tab(tabs, "Controls", _build_controls_tab())
-	_add_tab(tabs, "Language", _build_language_tab())
-	_add_tab(tabs, "Accessibility", _build_accessibility_tab())
 
+	# Back on the left, Reset on the right, at opposite edges with the gap between them — the same
+	# hands as the exit modal, where leaving is the left plate and the destructive answer is the right
+	# one. Keeping the sides consistent is what stops a reflex tap from resetting the settings.
 	var footer := HBoxContainer.new()
-	footer.add_theme_constant_override("separation", 10)
+	footer.add_theme_constant_override("separation", 0)
 	col.add_child(footer)
-	var reset := Button.new()
-	reset.text = "Reset all to defaults"
-	reset.custom_minimum_size = Vector2(0, 40)
-	reset.pressed.connect(_on_reset)
-	footer.add_child(reset)
-	var spacer := Control.new()
-	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	footer.add_child(spacer)
-	var back := Button.new()
-	back.text = "Back"
-	back.custom_minimum_size = Vector2(160, 40)
+	var back := SkinnedButton.create("Back", UiSkin.BROWN, UiSkin.BUTTON_HEIGHT,
+		UiSkin.BUTTON_FONT_SIZE)
+	back.custom_minimum_size.x = BACK_WIDTH
 	back.pressed.connect(func() -> void: Kernel.router.goto(_back))
 	footer.add_child(back)
+	var spacer := Control.new()
+	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	footer.add_child(spacer)
+	var reset := SkinnedButton.create("Reset all to defaults", UiSkin.BROWN, UiSkin.BUTTON_HEIGHT,
+		UiSkin.BUTTON_FONT_SIZE)
+	reset.pressed.connect(_on_reset)
+	footer.add_child(reset)
 
 
 ## Wrap a tab's content in a scroll container: several of these sections are already taller than a
@@ -235,6 +271,13 @@ func _build_gameplay_tab() -> Control:
 	_planned_row(col, "Tooltips", _check_mock(true), "")
 	_planned_row(col, "Show dice rolls", _check_mock(false),
 		"The die is traced but deliberately never narrated; this would surface it in the log.")
+
+	# Language and Accessibility live here rather than in tabs of their own. Between them they hold
+	# one real setting and a dozen placeholders, and a tab the player opens to find nothing they can
+	# change is worse than a section they scroll past — the sections still name them, so nothing is
+	# hidden. When either grows something wired, it earns its tab back.
+	_add_language_sections(col)
+	_add_accessibility_sections(col)
 	return col
 
 
@@ -264,11 +307,13 @@ func _build_audio_tab() -> Control:
 		slider.max_value = 1.0
 		slider.step = 0.05
 		slider.value = Kernel.settings.audio_volume(category)
-		slider.custom_minimum_size = Vector2(CONTROL_WIDTH - 60.0, 0)
+		slider.custom_minimum_size = Vector2(CONTROL_WIDTH - 60.0, UiSkin.CONTROL_HEIGHT)
 		slider.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		var readout := Label.new()
 		readout.custom_minimum_size = Vector2(50, 0)
 		readout.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		readout.add_theme_color_override("font_color", UiSkin.INK)
+		readout.add_theme_font_size_override("font_size", UiSkin.FONT_BODY)
 		_volume_readouts[category] = readout
 		_set_readout(category, slider.value)
 		slider.value_changed.connect(func(value: float) -> void: _on_volume_changed(category, value))
@@ -279,8 +324,8 @@ func _build_audio_tab() -> Control:
 		pair.add_child(readout)
 		_row(col, String(entry["label"]), pair, "")
 
-	var test := Button.new()
-	test.text = "Play a test sound"
+	var test := SkinnedButton.create("Play a test sound", UiSkin.BROWN, UiSkin.CONTROL_HEIGHT,
+		UiSkin.CONTROL_FONT_SIZE)
 	test.pressed.connect(func() -> void: Kernel.audio.play_sfx("ui_click"))
 	_row(col, "", test, "Plays the UI click at the current effects level.")
 
@@ -380,6 +425,7 @@ func _is_bindable(label: String) -> bool:
 func _binding_row(parent: Node, action_id: String, label: String) -> void:
 	var button := Button.new()
 	button.custom_minimum_size = Vector2(CONTROL_WIDTH, 0)
+	UiSkin.apply_input(button)
 	button.set_meta("action_id", action_id)
 	button.text = InputActions.key_name(InputActions.keycode_for(action_id, Kernel.settings))
 	button.toggle_mode = true
@@ -519,8 +565,8 @@ func _build_controls_tab() -> Control:
 		+ "and then watch do nothing would be worse than one that is honestly not ready.")
 		% PLANNED_TAG)
 
-	var reset := Button.new()
-	reset.text = "Reset all bindings"
+	var reset := SkinnedButton.create("Reset all bindings", UiSkin.BROWN, UiSkin.CONTROL_HEIGHT,
+		UiSkin.CONTROL_FONT_SIZE)
 	reset.pressed.connect(_on_reset_bindings)
 	_row(col, "", reset, "Leaves audio, video and gameplay settings alone.")
 
@@ -551,8 +597,7 @@ func _build_controls_tab() -> Control:
 
 # --- Language ------------------------------------------------------------------------------
 
-func _build_language_tab() -> Control:
-	var col := _tab_column()
+func _add_language_sections(col: VBoxContainer) -> void:
 	_note(col, "Interface strings are still English literals in code, and the narrator is told which "
 		+ "language to write in per beat. Internals stay English on purpose (D35) — a switch here "
 		+ "would change what the player reads, never what is stored.")
@@ -563,13 +608,11 @@ func _build_language_tab() -> Control:
 		"Español"], 0), "Classification stability across these three is measured and holds (D17).")
 	_planned_row(col, "Translate what I type", _check_mock(true),
 		"Non-English input is translated at the boundary before anything is stored (D35).")
-	return col
 
 
 # --- Accessibility -------------------------------------------------------------------------
 
-func _build_accessibility_tab() -> Control:
-	var col := _tab_column()
+func _add_accessibility_sections(col: VBoxContainer) -> void:
 	_note(col, "None of this is built. It is listed so it is budgeted for rather than discovered "
 		+ "late — a text-heavy game has more of an obligation here than most.")
 
@@ -588,7 +631,6 @@ func _build_accessibility_tab() -> Control:
 	_section(col, "Input")
 	_planned_row(col, "Hold instead of press", _check_mock(false), "")
 	_planned_row(col, "Screen-reader hints", _check_mock(false), "")
-	return col
 
 
 # --- Row-building helpers ------------------------------------------------------------------
@@ -605,8 +647,9 @@ func _section(parent: Node, title: String) -> void:
 	parent.add_child(spacer)
 	var label := Label.new()
 	label.text = title.to_upper()
-	label.add_theme_font_size_override("font_size", 13)
-	label.modulate = NOTE_COLOR
+	label.add_theme_font_size_override("font_size", UiSkin.FONT_SMALL)
+	label.add_theme_color_override("font_color", NOTE_COLOR)
+	label.add_theme_font_size_override("font_size", UiSkin.FONT_SMALL)
 	parent.add_child(label)
 	var rule := HSeparator.new()
 	parent.add_child(rule)
@@ -614,16 +657,25 @@ func _section(parent: Node, title: String) -> void:
 
 ## One setting: its name, its control, the `planned` tag when it is not wired, and an optional line of
 ## explanation. Added in that order, so the eye meets the state before the reason.
+##
+## An [HFlowContainer], not an [HBoxContainer]: name + control + hint is about 640px of fixed columns,
+## which fits a desktop window and does not fit the 720-wide portrait viewport a phone renders at —
+## an [HBoxContainer] answers that by running the hint off the right edge, where it cannot be read or
+## scrolled to (the tab's [ScrollContainer] is deliberately vertical-only). Flowing puts the hint on
+## its own line exactly when it stops fitting, and leaves the desktop row a single line as before.
 func _row(parent: Node, label_text: String, control: Control, note: String,
-		planned: bool = false) -> HBoxContainer:
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 12)
+		planned: bool = false) -> HFlowContainer:
+	var row := HFlowContainer.new()
+	row.add_theme_constant_override("h_separation", 12)
+	row.add_theme_constant_override("v_separation", 4)
 	parent.add_child(row)
 
 	var label := Label.new()
 	label.text = label_text
 	label.custom_minimum_size = Vector2(LABEL_WIDTH, 0)
 	label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	label.add_theme_color_override("font_color", UiSkin.INK)
+	label.add_theme_font_size_override("font_size", UiSkin.FONT_BODY)
 	row.add_child(label)
 
 	control.size_flags_vertical = Control.SIZE_SHRINK_CENTER
@@ -632,16 +684,21 @@ func _row(parent: Node, label_text: String, control: Control, note: String,
 	if planned:
 		var tag := Label.new()
 		tag.text = PLANNED_TAG
-		tag.modulate = PLANNED_COLOR
-		tag.add_theme_font_size_override("font_size", 11)
+		tag.add_theme_color_override("font_color", PLANNED_COLOR)
+		tag.add_theme_font_size_override("font_size", UiSkin.FONT_SMALL)
 		tag.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		row.add_child(tag)
 
 	if not note.is_empty():
 		var hint := Label.new()
 		hint.text = note
-		hint.modulate = NOTE_COLOR
+		hint.add_theme_color_override("font_color", NOTE_COLOR)
+		hint.add_theme_font_size_override("font_size", UiSkin.FONT_SMALL)
 		hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		# A wrapping label's own minimum width is its longest word, which would let the flow squeeze the
+		# hint into a sliver beside the control rather than moving it down. This is the width below
+		# which sharing the line is not worth it.
+		hint.custom_minimum_size = Vector2(HINT_MIN_WIDTH, 0)
 		hint.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		hint.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		row.add_child(hint)
@@ -670,7 +727,7 @@ func _note(parent: Node, text: String) -> void:
 	var label := Label.new()
 	label.text = text
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	label.modulate = NOTE_COLOR
+	label.add_theme_color_override("font_color", NOTE_COLOR)
 	parent.add_child(label)
 
 
@@ -678,6 +735,7 @@ func _note(parent: Node, text: String) -> void:
 func _options(entries: Array, selected_id: String, on_change: Callable) -> OptionButton:
 	var options := OptionButton.new()
 	options.custom_minimum_size = Vector2(CONTROL_WIDTH, 0)
+	UiSkin.apply_input(options)
 	for i in entries.size():
 		var entry: Dictionary = entries[i]
 		options.add_item(String(entry["label"]))
@@ -692,6 +750,7 @@ func _options(entries: Array, selected_id: String, on_change: Callable) -> Optio
 func _options_mock(labels: Array, selected: int) -> OptionButton:
 	var options := OptionButton.new()
 	options.custom_minimum_size = Vector2(CONTROL_WIDTH, 0)
+	UiSkin.apply_input(options)
 	for label: String in labels:
 		options.add_item(label)
 	if selected >= 0 and selected < labels.size():
@@ -711,7 +770,7 @@ func _slider_mock(value: float) -> HSlider:
 	slider.max_value = 1.0
 	slider.step = 0.05
 	slider.value = value
-	slider.custom_minimum_size = Vector2(CONTROL_WIDTH, 0)
+	slider.custom_minimum_size = Vector2(CONTROL_WIDTH, UiSkin.CONTROL_HEIGHT)
 	return slider
 
 

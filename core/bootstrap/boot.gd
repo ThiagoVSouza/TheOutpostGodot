@@ -22,7 +22,13 @@ func _ready() -> void:
 		return
 
 	# The normal flow: the shell owns *when* to resume — the main menu's Continue does it, not boot.
-	Kernel.router.goto("core.splash")
+	#
+	# Straight to loading, with no splash scene in between. The engine's own boot splash *is* the
+	# splash (see `application/boot_splash` in project.godot): it is already on screen, holding the
+	# mark, by the time this runs. A scene that showed the same logo again would be a second splash
+	# after the first, and the first frame this mounts is the earliest the game can show anything at
+	# all — so loading is what belongs here.
+	Kernel.router.goto("core.loading", {"next": "core.main_menu"})
 
 
 ## The two app-wide actions, handled here because they mean the same thing on every screen and boot

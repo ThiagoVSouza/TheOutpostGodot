@@ -49,6 +49,12 @@ const MAX_FPS_KEY := "max_fps"
 const UNSET := ""
 const MONITOR_UNSET := -1
 
+## The `override.cfg` this writes ([method write_launch_override]) carries display settings only, and
+## the mode is Godot's own [enum Window.Mode] rather than this file's string names.
+const OVERRIDE_SECTION := "display"
+const WINDOW_MODE_SETTING_WINDOWED := 0
+const WINDOW_MODE_SETTING_FULLSCREEN := 3
+
 ## 0 is Godot's own "no cap" — the default, so V-Sync stays what actually limits the frame rate
 ## unless the player says otherwise.
 const MAX_FPS_UNCAPPED := 0
@@ -300,12 +306,60 @@ func apply_video() -> void:
 	# **Windowed only, desktop only.** Fullscreen and borderless take their size from the screen, and
 	# on a phone the OS owns the window outright — in either case forcing a size either does nothing
 	# or fights whoever actually owns it.
+	var launch_size := Vector2i.ZERO
 	if window_mode() == WINDOW_MODE_WINDOWED and can_resize_window():
 		var usable := _window_usable_rect()
 		var selected := effective_windowed_resolution(resolution(), usable)
 		if selected != UNSET:
-			DisplayServer.window_set_size(resolution_size(selected))
+			launch_size = resolution_size(selected)
+			DisplayServer.window_set_size(launch_size)
 		_center_window(usable)
+
+	write_launch_override(launch_size)
+
+
+## Record the window this call just produced, so the *next* launch opens at that size instead of the
+## project default and then jumping.
+##
+## The engine builds the window from `project.godot` before a single script runs, so nothing here can
+## affect the window this process already has — by the time [method apply_video] is reached, roughly a
+## second of a wrong-sized window has already been shown. `override.cfg` is the one hook Godot reads
+## *before* window creation, so the fix has to be written now for next time.
+##
+## Best effort by design. A read-only install directory simply means the file is not written and the
+## launch behaves as it does today; that is a cosmetic loss, not a failure worth reporting.
+func write_launch_override(windowed_size: Vector2i) -> void:
+	if not persist or DisplayServer.get_name() == "headless" or OS.has_feature("mobile"):
+		return
+	var config := ConfigFile.new()
+	match window_mode():
+		WINDOW_MODE_FULLSCREEN:
+			config.set_value(OVERRIDE_SECTION, "window/size/mode", WINDOW_MODE_SETTING_FULLSCREEN)
+		WINDOW_MODE_BORDERLESS:
+			config.set_value(OVERRIDE_SECTION, "window/size/mode", WINDOW_MODE_SETTING_WINDOWED)
+			config.set_value(OVERRIDE_SECTION, "window/size/borderless", true)
+		_:
+			config.set_value(OVERRIDE_SECTION, "window/size/mode", WINDOW_MODE_SETTING_WINDOWED)
+			config.set_value(OVERRIDE_SECTION, "window/size/borderless", false)
+			if windowed_size.x > 0 and windowed_size.y > 0:
+				config.set_value(OVERRIDE_SECTION, "window/size/window_width_override",
+					windowed_size.x)
+				config.set_value(OVERRIDE_SECTION, "window/size/window_height_override",
+					windowed_size.y)
+	var path := launch_override_path()
+	# Rewriting an identical file on every launch is pointless disk churn, and this runs at boot.
+	var existing := ConfigFile.new()
+	if existing.load(path) == OK and existing.encode_to_text() == config.encode_to_text():
+		return
+	config.save(path)
+
+
+## Where Godot looks for `override.cfg`: the project folder when running from source, and beside the
+## executable in an exported game — where `res://` is a read-only pack and cannot be written at all.
+static func launch_override_path() -> String:
+	if OS.has_feature("editor"):
+		return "res://override.cfg"
+	return OS.get_executable_path().get_base_dir().path_join("override.cfg")
 
 
 ## Find the current desktop work area after a requested monitor change, so size filtering and
