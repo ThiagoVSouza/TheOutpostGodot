@@ -34,15 +34,9 @@ const ART := preload("res://core/assets/main_menu_background.png")
 ## outlying farms) falls outside deliberately.
 const ART_FOCUS_X := 0.58
 
-## How far the art is dimmed toward [constant BACKGROUND] behind the shell's controls. The painting
-## is bright — sunlit fields, white cloud — and the shell's text and buttons are light-on-dark, so
-## without this the menu is unreadable over the sky. Tuned on the device, not guessed: the art still
-## reads as a place, the labels still read as labels.
-const ART_SCRIM := Color(0.05, 0.05, 0.08, 0.62)
-
-
 ## A panel for controls that sit over [method paint_art], so they read against the painting rather
-## than competing with it. Slightly darker than the scrim and inset from its contents.
+## than competing with it. Opaque enough to carry light-on-dark text over the brightest part of the
+## art on its own — there is no scrim behind it doing half the work.
 static func plate_style() -> StyleBoxFlat:
 	var style := StyleBoxFlat.new()
 	style.bg_color = Color(0.04, 0.04, 0.07, 0.72)
@@ -69,13 +63,17 @@ static func paint(screen: Control, color: Color = BACKGROUND) -> ColorRect:
 	return bg
 
 
-## Add the painted background + its scrim as [param screen]'s first children. Call before content.
+## Add the painted background as [param screen]'s first child. Call before content.
 ##
 ## **Cover, never stretch**, framed on [constant ART_FOCUS_X]. The art cannot fill a portrait screen
 ## and keep its proportions, so it is scaled to cover and cropped — never distorted — and then slid
 ## so the keep sits in the middle rather than wherever the image's midpoint happened to put it.
 ## `KEEP_ASPECT_COVERED` cannot express that (it always centres the *image*), hence the manual size
 ## and offset here. The offset is clamped so the crop can never expose an edge.
+##
+## The painting is shown at full brightness. It used to carry a dimming scrim so that light-on-dark
+## text could sit anywhere over it; contrast is now the job of whatever plate the text sits on, which
+## keeps the art a painting rather than a darkened backdrop.
 static func paint_art(screen: Control) -> void:
 	var art := TextureRect.new()
 	art.texture = ART
@@ -87,12 +85,6 @@ static func paint_art(screen: Control) -> void:
 	reframe.call()
 	# The screen has no real size during `_ready`, so the first useful framing arrives with `resized`.
 	screen.resized.connect(reframe)
-
-	var scrim := ColorRect.new()
-	scrim.color = ART_SCRIM
-	scrim.set_anchors_preset(Control.PRESET_FULL_RECT)
-	scrim.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	screen.add_child(scrim)
 
 
 ## Scale [param art] to cover [param view] and position it so [constant ART_FOCUS_X] lands in the

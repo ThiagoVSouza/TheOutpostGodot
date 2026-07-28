@@ -68,7 +68,7 @@ var ai_runner: DslAiRunner
 ## lazily and kept for the process lifetime rather than one per press — a `Window`-derived node,
 ## so it needs to be in the tree, and the kernel autoload is the one thing guaranteed to outlive
 ## every screen it might be asked for from.
-var _exit_confirm: ConfirmationDialog = null
+var _exit_confirm: ModalDialog = null
 
 ## The frame the back button was last acted on. Android delivers `WM_GO_BACK_REQUEST` **twice** per
 ## press (measured on an S26 Ultra: two notifications ~2 ms apart), which without this made one press
@@ -325,7 +325,7 @@ func request_exit() -> void:
 	var dialog := _ensure_exit_confirm()
 	# The dialog is still built in headless tests, but only a real display server can show it.
 	if DisplayServer.get_name() != "headless":
-		dialog.popup_centered()
+		dialog.open()
 
 
 func _handle_hardware_back() -> void:
@@ -342,11 +342,14 @@ func _handle_hardware_back() -> void:
 	# on it without triggering the OS call that only a real window can answer.
 
 
-func _ensure_exit_confirm() -> ConfirmationDialog:
+## Exit is the destructive answer here, so it takes the red plate — the inverse of
+## [method ModalDialog.create]'s default, which is why the variants are arguments. Return is the
+## ordinary brown one rather than green: green would read as a recommendation, and going back to what
+## you were doing is simply the other choice, not the encouraged one.
+func _ensure_exit_confirm() -> ModalDialog:
 	if _exit_confirm == null:
-		_exit_confirm = ConfirmationDialog.new()
-		_exit_confirm.dialog_text = "Exit The Outpost?"
-		_exit_confirm.ok_button_text = "Exit"
+		_exit_confirm = ModalDialog.create("Exit the game?", "Exit", "Return",
+			UiSkin.RED, UiSkin.BROWN)
 		_exit_confirm.confirmed.connect(func() -> void: get_tree().quit())
 		add_child(_exit_confirm)
 	return _exit_confirm

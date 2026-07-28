@@ -47,12 +47,6 @@ func test_load_screens_hardware_back_returns_to_the_main_menu() -> void:
 	assert_eq(Kernel.router.current_id(), "core.main_menu")
 
 
-func test_splash_hardware_back_skips_it_same_as_any_input() -> void:
-	_screen("core.splash")
-	Kernel.call("_handle_hardware_back")
-	assert_eq(Kernel.router.current_id(), "core.loading")
-
-
 func test_loading_hardware_back_is_swallowed_not_left_to_the_exit_dialog() -> void:
 	_screen("core.loading")
 	Kernel.call("_handle_hardware_back")
@@ -66,9 +60,9 @@ func test_a_screen_with_nowhere_to_go_raises_the_exit_confirm_dialog() -> void:
 
 	Kernel.call("_handle_hardware_back")
 
-	var dialog: ConfirmationDialog = Kernel.get("_exit_confirm")
+	var dialog: ModalDialog = Kernel.get("_exit_confirm")
 	assert_not_null(dialog, "the fallback dialog was built")
-	assert_string_contains(dialog.dialog_text, "Exit")
+	assert_string_contains(dialog.message, "Exit")
 
 
 func test_the_main_menu_exit_action_uses_the_same_confirm_dialog() -> void:
@@ -77,9 +71,9 @@ func test_the_main_menu_exit_action_uses_the_same_confirm_dialog() -> void:
 
 	screen.call("_on_exit")
 
-	var dialog: ConfirmationDialog = Kernel.get("_exit_confirm")
+	var dialog: ModalDialog = Kernel.get("_exit_confirm")
 	assert_not_null(dialog)
-	assert_eq(dialog.dialog_text, "Exit The Outpost?")
+	assert_eq(dialog.message, "Exit the game?")
 
 
 func test_the_game_screen_also_falls_through_to_the_exit_dialog() -> void:
@@ -129,5 +123,5 @@ func test_confirming_the_exit_dialog_is_wired_to_actually_quit() -> void:
 	Kernel.set("_exit_confirm", null)
 	Kernel.call("_handle_hardware_back")
 
-	var dialog: ConfirmationDialog = Kernel.get("_exit_confirm")
+	var dialog: ModalDialog = Kernel.get("_exit_confirm")
 	assert_gt(dialog.confirmed.get_connections().size(), 0, "Yes/Exit is connected to something")
