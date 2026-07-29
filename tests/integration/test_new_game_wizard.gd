@@ -92,8 +92,26 @@ func test_every_step_fits_the_width_it_is_designed_for() -> void:
 	#
 	# Every step, not just the first: they are separate layouts and only the one on show contributes
 	# to the page's minimum, so a regression in step 3 is silent until someone walks to step 3.
-	var design_width := float(ProjectSettings.get_setting("display/window/size/viewport_width"))
-	var screen := _screen()
+	#
+	# **The screen has to be laid out at the design width before it is measured.** A test node with no
+	# size gets whatever Godot's default is — about 1100 square here — and [CardPager] answers that
+	# honestly by showing three cards, so the page reports the minimum width of a *desktop* layout and
+	# the assertion is about a screen nobody is looking at. This measured 1105 before the size was
+	# forced and 529 after: the widget was right and the test was asking the wrong question.
+	var design := Vector2(
+		float(ProjectSettings.get_setting("display/window/size/viewport_width")),
+		float(ProjectSettings.get_setting("display/window/size/viewport_height")))
+	var host := Control.new()
+	host.size = design
+	add_child_autofree(host)
+	var screen: Control = Kernel.screens.instantiate("core.new_game")
+	host.add_child(screen)
+	# The host carries the size and the screen fills it. Setting `size` on the screen directly instead
+	# would be overridden by its own full-rect anchors, and Godot says so with a warning the runner
+	# counts as a failure.
+	screen.set_anchors_preset(Control.PRESET_FULL_RECT)
+	await wait_process_frames(2)
+
 	var page: Control = null
 	for child in screen.get_children():
 		if child is MarginContainer:
@@ -105,8 +123,9 @@ func test_every_step_fits_the_width_it_is_designed_for() -> void:
 	var steps: Array = WizardScreen.STEP_TITLES
 	for step in steps.size():
 		var needed := page.get_combined_minimum_size().x
-		assert_lte(needed, design_width, "the %s step needs %.0f of the %.0f it is designed for"
-			% [steps[step], needed, design_width])
+		assert_lte(needed, design.x, "the %s step needs %.0f of the %.0f it is designed for"
+			% [steps[step], needed, design.x])
 		# Not past the last one: `_on_next` there is Start, which would seed a game.
 		if step < steps.size() - 1:
 			screen.call("_on_next")
+			await wait_process_frames(1)
