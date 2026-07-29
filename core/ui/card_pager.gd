@@ -38,8 +38,8 @@ var _cards: Array[Control] = []
 var _first := 0
 var _visible := 1
 var _strip: HBoxContainer = null
-var _left: TextureButton = null
-var _right: TextureButton = null
+var _left: SkinnedButton = null
+var _right: SkinnedButton = null
 var _dots: HBoxContainer = null
 
 
@@ -52,6 +52,9 @@ static func create(cards: Array[Control], selected: int) -> CardPager:
 
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 10)
+	# The row takes whatever height is going, and the cards in it stretch to match — see the note on
+	# [member Control.SIZE_EXPAND_FILL] below.
+	row.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	pager.add_child(row)
 
 	pager._left = UiSkin.arrow_button(true)
@@ -76,6 +79,12 @@ static func create(cards: Array[Control], selected: int) -> CardPager:
 
 	for card in cards:
 		card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		# **Every card is as tall as the tallest**, and together they are as tall as the room the step
+		# gives them. Left to their own heights the cards in a row ended at different points — the
+		# Merchant has a longer list than the Scholar — and the shorter plates read as unfinished
+		# rather than as shorter text. Filling also stops a single card on a phone from floating in
+		# the middle of an otherwise empty page.
+		card.size_flags_vertical = Control.SIZE_EXPAND_FILL
 		pager._cards.append(card)
 		pager._strip.add_child(card)
 		pager._dots.add_child(pager._dot())
@@ -100,18 +109,16 @@ func _refresh() -> void:
 		return
 	# `size.x` is zero until the first layout pass, and a zero width would compute a window of one
 	# card and then never revisit it — `resized` is what brings us back with a real number.
-	var usable := size.x - 2.0 * (_left.texture_normal.get_width() + 10.0)
+	var usable := size.x - 2.0 * (UiSkin.ARROW_LEFT_TEXTURE.get_width() + 10.0)
 	_visible = clampi(int(usable / CARD_WIDTH), 1, mini(MAX_VISIBLE, _cards.size()))
 	_first = clampi(_first, 0, maxi(0, _cards.size() - _visible))
 	for i in _cards.size():
 		_cards[i].visible = i >= _first and i < _first + _visible
-	# Hidden rather than disabled at the ends: a control that can never do anything from here is
-	# clutter, and the dots already say where in the list you are. `visible` keeps the strip centred
-	# because the arrows sit outside it either way.
-	_left.disabled = _first <= 0
-	_right.disabled = _first + _visible >= _cards.size()
-	_left.modulate.a = UiSkin.DISABLED_ALPHA if _left.disabled else 1.0
-	_right.modulate.a = UiSkin.DISABLED_ALPHA if _right.disabled else 1.0
+	# Faded rather than removed at the ends: an arrow that vanishes shifts the whole strip sideways,
+	# and the cards would jump every time the player reached either end of the list. `set_disabled`
+	# does the fading, and drops the shadow with it.
+	_left.set_disabled(_first <= 0)
+	_right.set_disabled(_first + _visible >= _cards.size())
 	# One dot per card, and the ones on screen are filled. With three cards visible that is three
 	# filled dots, which is the honest picture: the dots say what you are looking at, not where a
 	# cursor is.

@@ -42,6 +42,10 @@ const IDENTITY_COLUMN_WIDTH := 420.0
 ## Room for the longest name either field ships with, so a default value is never shown clipped.
 const FIELD_MIN_WIDTH := 300.0
 
+## The width of Back and Next. Wide enough for the longest word either shows ("Cancel", "Start") with
+## room around it, and no wider — see the note where the footer is built.
+const NAV_BUTTON_WIDTH := 240.0
+
 ## The colour swatch on a flag layer. Still Godot's stock ColorPickerButton — the painted swatch
 ## palette is the flag designer's own step of this work — but at least sized to the row it sits in.
 const SWATCH_WIDTH := 90.0
@@ -259,6 +263,11 @@ func _build_ui() -> void:
 
 	var pages_host := VBoxContainer.new()
 	pages_host.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	# **A [ScrollContainer] stretches its child to the view only if that child asks to expand.** The
+	# flag has to be on this host — the direct child — not just on the page inside it, which is what
+	# left the cards sitting in the top third of an empty page. With it, a short step fills the view
+	# and a tall one keeps its own height and scrolls.
+	pages_host.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.add_child(pages_host)
 
 	_step_pages = [
@@ -269,6 +278,12 @@ func _build_ui() -> void:
 	]
 	for page: Control in _step_pages:
 		page.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		# Vertical too, so a step that is shorter than the page takes the whole page anyway and its
+		# cards stretch to the bottom instead of floating in the top third. A [ScrollContainer] hands
+		# its child the container's height whenever the child's minimum is smaller, so this costs
+		# nothing when the step is *taller* — the scrollbar still appears and the cards keep their
+		# natural size.
+		page.size_flags_vertical = Control.SIZE_EXPAND_FILL
 		pages_host.add_child(page)
 
 	# Cancel/Back on the left and Next/Start on the right, the same hands as the settings footer and
@@ -277,14 +292,24 @@ func _build_ui() -> void:
 	nav.add_theme_constant_override("separation", 12)
 	col.add_child(nav)
 
+	# Sized to their words and pushed to opposite edges, not stretched to half the page each. A plate
+	# grows to the size of the job it does, and "Next" is not a half-screen-wide job — two enormous
+	# slabs filling the foot of the wizard read as a dialog demanding an answer rather than as a step
+	# in something. The gap between them is a spacer, so the hands stay put as the captions change
+	# from Cancel/Next to Back/Start.
 	_back = SkinnedButton.create("Back", UiSkin.BROWN, UiSkin.BUTTON_HEIGHT, UiSkin.BUTTON_FONT_SIZE)
-	_back.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_back.custom_minimum_size.x = NAV_BUTTON_WIDTH
 	_back.pressed.connect(_on_back)
 	nav.add_child(_back)
 
+	var spacer := Control.new()
+	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	nav.add_child(spacer)
+
 	# Blue: on every step the one thing the screen wants is to carry on.
 	_next = SkinnedButton.create("Next", UiSkin.BLUE, UiSkin.BUTTON_HEIGHT, UiSkin.BUTTON_FONT_SIZE)
-	_next.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_next.custom_minimum_size.x = NAV_BUTTON_WIDTH
 	_next.pressed.connect(_on_next)
 	nav.add_child(_next)
 
@@ -391,10 +416,10 @@ func _card_select_column(items: Array, default_id: String, on_select: Callable) 
 func _card(item: Dictionary, group: ButtonGroup, selected: bool, on_select: Callable) -> Control:
 	var host := PanelContainer.new()
 	host.custom_minimum_size.x = CARD_MIN_WIDTH
-	# The host is scaffolding — it exists to lay the plate and the content on top of each other, and
-	# must draw nothing itself. Left alone it takes [OutpostTheme]'s panel, which is a dark slab with
-	# a blue border, and every card gains a navy frame around its parchment.
-	host.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
+	# The host draws the card's shadow and nothing else. It has to be given a stylebox explicitly
+	# either way: left alone it takes [OutpostTheme]'s panel, which is a dark slab with a blue border,
+	# and every card gains a navy frame around its parchment.
+	host.add_theme_stylebox_override("panel", UiSkin.card_shadow_style())
 
 	var button := Button.new()
 	button.toggle_mode = true

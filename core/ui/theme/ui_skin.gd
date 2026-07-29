@@ -280,10 +280,24 @@ const BADGE_RADIUS := 4
 const BADGE_PADDING_H := 10.0
 const BADGE_PADDING_V := 3.0
 
-## The chosen card in a row of them, warmer and brighter than its neighbours. Not simply
-## [constant HOVER_TINT]: hover and selection have to be told apart at a glance, and the same lift
-## applied to both would make the pointer look like it was choosing as it passed.
-const CARD_SELECTED_TINT := Color(1.16, 1.06, 0.84)
+## The chosen card in a row of them. Not simply [constant HOVER_TINT]: hover and selection have to be
+## told apart at a glance, and the same lift applied to both would make the pointer look like it was
+## choosing as it passed.
+##
+## **Cool, against a page where everything else is warm.** It was a brighter, warmer parchment first,
+## which is the obvious move on this skin and the wrong one — a warmer tan among tans reads as *lit*
+## rather than as *picked*, and on the Location step it was easy to mistake for the card the pointer
+## happened to be over. Blue is already the skin's word for "this is the one" ([constant BLUE] is the
+## primary plate), so the selected card now says it in the same language. Multiplying rather than
+## replacing keeps the parchment's grain showing through the tint.
+const CARD_SELECTED_TINT := Color(0.74, 0.88, 1.28)
+
+## A card's own shadow, lifting it off the page. Larger and softer than a button's
+## ([constant BUTTON_SHADOW_SIZE]): a card is a much bigger object, and a shadow scaled for a plate
+## a fifth of its size reads as a hairline outline rather than depth.
+const CARD_SHADOW_SIZE := 12
+const CARD_SHADOW_OFFSET := Vector2(0, 5)
+const CARD_CORNER_RADIUS := 6
 
 ## Hover lifts the plate, pressed sinks it. The art has no second state drawn, so the state reads as a
 ## change in light on the same plate rather than a different image — and, with [SkinnedButton], as a
@@ -469,22 +483,28 @@ static func apply_input(button: Button) -> void:
 		_apply_select_popup(button as OptionButton)
 
 
-## An arrow plate that steps a list along: a [TextureButton], not a [Button] with an icon, because a
-## Button carries one icon across every state and this needs three. There is no plate behind it —
-## the art *is* the plate.
-static func arrow_button(left: bool) -> TextureButton:
-	var button := TextureButton.new()
+## One arrow plate, as a stylebox. Not nine-sliced and not stretched: the art is drawn at its own
+## size, which is what [method arrow_button] asks for.
+static func arrow_style(left: bool, tint: Color = Color.WHITE) -> StyleBoxTexture:
+	var style := StyleBoxTexture.new()
+	style.texture = ARROW_LEFT_TEXTURE if left else ARROW_RIGHT_TEXTURE
+	style.modulate_color = tint
+	return style
+
+
+## An arrow plate that steps a list along — a [SkinnedButton], so it answers the pointer the way every
+## other button on the screen does: a shadow under it, a lift in the light, and a change in size under
+## the press. It was a [TextureButton] first, which can do the light and neither of the others, and the
+## result was the one control on the page that felt dead to the touch.
+static func arrow_button(left: bool) -> SkinnedButton:
 	var texture: Texture2D = ARROW_LEFT_TEXTURE if left else ARROW_RIGHT_TEXTURE
-	button.texture_normal = texture
-	button.texture_hover = tinted_texture(texture, HOVER_TINT)
-	button.texture_pressed = tinted_texture(texture, PRESSED_TINT)
-	button.texture_disabled = texture
-	# The disabled arrow fades whole rather than swapping to a greyed plate, the same way a `planned`
-	# row does — there is no second arrow drawn, and at the end of a list "you cannot go further" is
-	# better said quietly than with a different picture.
-	button.modulate = Color.WHITE
-	apply_cursor(button)
-	return button
+	return SkinnedButton.create_bare(arrow_style(left), arrow_style(left, HOVER_TINT),
+		arrow_style(left, PRESSED_TINT), texture.get_size())
+
+
+## A card's shadow. See [method shadow_style] for why the box behind a plate has to be drawn at all.
+static func card_shadow_style() -> StyleBoxFlat:
+	return shadow_style(CARD_SHADOW_SIZE, CARD_SHADOW_OFFSET, CARD_CORNER_RADIUS)
 
 
 ## A short tag on a card — "Coins", "Trade". Ink on a faint wash rather than a plate: there are two
