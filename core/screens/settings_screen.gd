@@ -32,9 +32,22 @@ const PLANNED_COLOR := Color(0.58, 0.34, 0.05)
 const NOTE_COLOR := UiSkin.INK_MUTED
 
 const LABEL_WIDTH := 260.0
-const CONTROL_WIDTH := 320.0
+## Wide enough that a setting's value is readable rather than trimmed to a stub. It grew with the
+## type scale for the same reason the row heights did: at 320 and [constant UiSkin.FONT_BODY] the
+## narration dropdown showed "Average — bala…", which tells the player nothing about what is
+## selected. The longest label still does not fit whole on a phone — the full text is in the list —
+## but the visible part now carries the meaning.
+const CONTROL_WIDTH := 430.0
 ## Back has one short word in it, so left to itself the plate would be far narrower than Reset's.
-const BACK_WIDTH := 240.0
+## Not so wide that the two plates stop fitting on one line: see [constant RESET_LABEL].
+const BACK_WIDTH := 200.0
+
+## Deliberately not "Reset all to defaults". The footer's two plates have to sit side by side within
+## the design viewport's 720 — the page is not allowed a horizontal scroll — and at
+## [constant UiSkin.BUTTON_FONT_SIZE] that caption alone wanted 391 of the 572 available, which put
+## the whole page off the right of the screen. "all" was the word carrying the least meaning: the
+## button is in the settings footer, so what else would it reset.
+const RESET_LABEL := "Reset to defaults"
 ## The narrowest a row's explanatory hint may be before it takes a line of its own rather than a
 ## sliver beside the control. See [method _row].
 const HINT_MIN_WIDTH := 220.0
@@ -210,7 +223,7 @@ func _build_ui() -> void:
 	tabs.add_theme_color_override("font_selected_color", UiSkin.INK)
 	tabs.add_theme_color_override("font_unselected_color", UiSkin.LABEL)
 	tabs.add_theme_color_override("font_hovered_color", UiSkin.LABEL)
-	tabs.add_theme_font_size_override("font_size", UiSkin.FONT_BODY)
+	tabs.add_theme_font_size_override("font_size", UiSkin.TAB_FONT_SIZE)
 	# The tabs are the one clickable thing here that no `apply_*` helper touches — the strip is the
 	# TabContainer's own internal child, not something the screen built.
 	UiSkin.apply_cursor(tabs.get_tab_bar())
@@ -235,7 +248,7 @@ func _build_ui() -> void:
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	footer.add_child(spacer)
-	var reset := SkinnedButton.create("Reset all to defaults", UiSkin.BROWN, UiSkin.BUTTON_HEIGHT,
+	var reset := SkinnedButton.create(RESET_LABEL, UiSkin.BROWN, UiSkin.BUTTON_HEIGHT,
 		UiSkin.BUTTON_FONT_SIZE)
 	reset.pressed.connect(_on_reset)
 	footer.add_child(reset)
@@ -690,8 +703,15 @@ func _section(parent: Node, title: String) -> void:
 	parent.add_child(rule)
 
 
-## One setting: its name, its control, the `planned` tag when it is not wired, and an optional line of
+## One setting: its name, the `planned` tag when it is not wired, its control, and an optional line of
 ## explanation. Added in that order, so the eye meets the state before the reason.
+##
+## **The tag rides with the label, not after the control.** It qualifies the setting — "Difficulty,
+## planned" — rather than the widget, and putting it after the control made it the thing most likely
+## to be pushed onto a line of its own as the row narrowed, where it landed alone to the left of the
+## wrapped hint and read as a stray word. Beside the label it stays attached to what it describes,
+## and the row breaks at the two places that make sense at any width: before the control, and before
+## the hint.
 ##
 ## An [HFlowContainer], not an [HBoxContainer]: name + control + hint is about 640px of fixed columns,
 ## which fits a desktop window and does not fit the 720-wide portrait viewport a phone renders at —
@@ -713,9 +733,6 @@ func _row(parent: Node, label_text: String, control: Control, note: String,
 	label.add_theme_font_size_override("font_size", UiSkin.FONT_BODY)
 	row.add_child(label)
 
-	control.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	row.add_child(control)
-
 	if planned:
 		var tag := Label.new()
 		tag.text = PLANNED_TAG
@@ -723,6 +740,9 @@ func _row(parent: Node, label_text: String, control: Control, note: String,
 		tag.add_theme_font_size_override("font_size", UiSkin.FONT_SMALL)
 		tag.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		row.add_child(tag)
+
+	control.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	row.add_child(control)
 
 	if not note.is_empty():
 		var hint := Label.new()

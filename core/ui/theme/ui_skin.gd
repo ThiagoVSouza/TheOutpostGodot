@@ -50,8 +50,16 @@ const FRAME_THIN_RAIL := 5.0
 const TAB_SELECTED_TEXTURE := preload("res://core/assets/ui/tab_selected.png")
 const TAB_UNSELECTED_TEXTURE := preload("res://core/assets/ui/tab_unselected.png")
 const TAB_SLICE := 10.0
-const TAB_PADDING_H := 22.0
+## Tighter than a button's, and the tab strip has its own font size below, because **a tab strip has
+## to fit whole**. Godot's answer when it does not is to hide the overflow behind two little scroll
+## arrows, which on the settings page meant the Controls tab silently vanished — a destination the
+## player has no way of knowing is there. Four tabs at [constant FONT_BODY] and 22 wanted 656 of the
+## 572 a phone has; at [constant TAB_FONT_SIZE] and 16 they want 512.
+const TAB_PADDING_H := 16.0
 const TAB_PADDING_V := 12.0
+## Navigation chrome rather than something to read at length, and the words on it are short and
+## high-contrast, so it is the one place that takes the small size without straining.
+const TAB_FONT_SIZE := FONT_SMALL
 
 ## A sunken parchment field: dropdowns, and anything else that should read as somewhere a value goes
 ## rather than something you press. Its border is ~5px, so 10 carries the corner.
@@ -421,7 +429,20 @@ static func apply_input(button: Button) -> void:
 	# A field is a peer of the text beside it, so it takes the row's size, not a button's.
 	button.add_theme_font_size_override("font_size", CONTROL_FONT_SIZE)
 	button.custom_minimum_size.y = CONTROL_HEIGHT
+	# **A field must never be as wide as its longest value.** A [Button]'s minimum width is its whole
+	# caption, so a field left to itself makes its text the minimum width of its row, then of the
+	# page — and a Godot container does not clip, it overflows. Width belongs to the layout; a field
+	# takes what it is given and trims what does not fit.
+	button.clip_text = true
+	button.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	if button is OptionButton:
+		# And an [OptionButton] is worse than a [Button] here, in a way `clip_text` does not touch:
+		# `fit_to_longest_item` is **on by default**, so its minimum width is the widest entry in the
+		# list whatever is currently showing — a value the player may never even select. That is
+		# exactly how one entry, "Average — balanced narration", pushed the whole settings page 72
+		# units off the right of a 720-wide phone the moment the type scale grew. The page had no say
+		# in it, and no amount of trimming the *shown* text would have helped.
+		(button as OptionButton).fit_to_longest_item = false
 		_apply_select_arrow(button as OptionButton)
 		_apply_select_popup(button as OptionButton)
 
