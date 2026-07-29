@@ -143,13 +143,21 @@ const SCROLL_TRACK_TEXTURES := {true: preload("res://core/assets/ui/scrollbar_ve
 	false: preload("res://core/assets/ui/scrollbar_horizontal.png")}
 const SCROLL_GRABBER_TEXTURES := {true: preload("res://core/assets/ui/scrollbar_vertical_bar.png"),
 	false: preload("res://core/assets/ui/scrollbar_horizontal_bar.png")}
+## The four arrow plates. Named for the direction they point rather than for the scrollbar, because
+## the scrollbar is not the only thing that steps through something: [CardPager] uses the sideways
+## pair for its own arrows. The legacy app shipped a second, near-identical pair for exactly that job
+## and porting them would have put two hand-drawn arrows of slightly different weight on the same
+## screen.
+const ARROW_UP_TEXTURE := preload("res://core/assets/ui/scrollbar_button_up.png")
+const ARROW_DOWN_TEXTURE := preload("res://core/assets/ui/scrollbar_button_down.png")
+const ARROW_LEFT_TEXTURE := preload("res://core/assets/ui/scrollbar_button_left.png")
+const ARROW_RIGHT_TEXTURE := preload("res://core/assets/ui/scrollbar_button_right.png")
+
 ## Godot calls these decrement/increment; on a vertical bar that is up/down, on a horizontal one
 ## left/right. Keyed `[vertical][decrement]`.
 const SCROLL_ARROW_TEXTURES := {
-	true: {true: preload("res://core/assets/ui/scrollbar_button_up.png"),
-		false: preload("res://core/assets/ui/scrollbar_button_down.png")},
-	false: {true: preload("res://core/assets/ui/scrollbar_button_left.png"),
-		false: preload("res://core/assets/ui/scrollbar_button_right.png")},
+	true: {true: ARROW_UP_TEXTURE, false: ARROW_DOWN_TEXTURE},
+	false: {true: ARROW_LEFT_TEXTURE, false: ARROW_RIGHT_TEXTURE},
 }
 
 ## The size the art was drawn at, and the size it is used at. Everything else about the scrollbar is
@@ -262,6 +270,15 @@ const CONTROL_FONT_SIZE := FONT_BODY
 ## The dark wash a modal lays over whatever it interrupted. Heavy enough that the frame reads as the
 ## only live thing on screen — a lighter wash left the menu behind it competing for attention.
 const SCRIM := Color(0.01, 0.01, 0.02, 0.82)
+
+## A badge's wash and hairline. Both are ink at low alpha rather than a colour of their own: a badge
+## says "this card gives you Trade", which is a footnote to the card, not a second accent competing
+## with the one thing on the screen that is actually coloured — the selected plate.
+const BADGE_FILL := Color(0.16, 0.11, 0.07, 0.08)
+const BADGE_BORDER := Color(0.16, 0.11, 0.07, 0.28)
+const BADGE_RADIUS := 4
+const BADGE_PADDING_H := 10.0
+const BADGE_PADDING_V := 3.0
 
 ## The chosen card in a row of them, warmer and brighter than its neighbours. Not simply
 ## [constant HOVER_TINT]: hover and selection have to be told apart at a glance, and the same lift
@@ -450,6 +467,40 @@ static func apply_input(button: Button) -> void:
 		(button as OptionButton).fit_to_longest_item = false
 		_apply_select_arrow(button as OptionButton)
 		_apply_select_popup(button as OptionButton)
+
+
+## An arrow plate that steps a list along: a [TextureButton], not a [Button] with an icon, because a
+## Button carries one icon across every state and this needs three. There is no plate behind it —
+## the art *is* the plate.
+static func arrow_button(left: bool) -> TextureButton:
+	var button := TextureButton.new()
+	var texture: Texture2D = ARROW_LEFT_TEXTURE if left else ARROW_RIGHT_TEXTURE
+	button.texture_normal = texture
+	button.texture_hover = tinted_texture(texture, HOVER_TINT)
+	button.texture_pressed = tinted_texture(texture, PRESSED_TINT)
+	button.texture_disabled = texture
+	# The disabled arrow fades whole rather than swapping to a greyed plate, the same way a `planned`
+	# row does — there is no second arrow drawn, and at the end of a list "you cannot go further" is
+	# better said quietly than with a different picture.
+	button.modulate = Color.WHITE
+	apply_cursor(button)
+	return button
+
+
+## A short tag on a card — "Coins", "Trade". Ink on a faint wash rather than a plate: there are two
+## or three of them in a row and three little painted buttons under a card would read as things to
+## press.
+static func badge_style() -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	style.bg_color = BADGE_FILL
+	style.border_color = BADGE_BORDER
+	style.set_border_width_all(1)
+	style.set_corner_radius_all(BADGE_RADIUS)
+	style.content_margin_left = BADGE_PADDING_H
+	style.content_margin_right = BADGE_PADDING_H
+	style.content_margin_top = BADGE_PADDING_V
+	style.content_margin_bottom = BADGE_PADDING_V
+	return style
 
 
 ## Dress a [LineEdit] as the same sunken parchment field a dropdown wears, so a name the player types

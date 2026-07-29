@@ -11,10 +11,13 @@ const DEFAULT_OUTPOST := "Ravenwatch"
 
 const STEP_TITLES := ["Background", "Location", "Identity", "Settings"]
 
-## How small a card may get before it stops being readable. The cards flow rather than sitting in a
-## fixed number of columns, so this — not a column count — is what decides how many fit on a line.
-## It is a *minimum*: the card grows to whatever its text needs.
-const CARD_MIN_WIDTH := 240.0
+## How small a card may get before it stops being readable. [CardPager] decides how many fit on a
+## line from its own width; this is the floor a card is never squeezed below.
+const CARD_MIN_WIDTH := 260.0
+
+## The "ECONOMIC START" line over a background's prose. Warmer than the body ink and set small and
+## upper-case, so it reads as a label on the card rather than the first line of the paragraph.
+const CARD_META_COLOR := Color(0.58, 0.34, 0.05)
 
 ## How tall the painting on a card is drawn. The nine are all 688x384 (1.79:1); at the card's minimum
 ## width that is about 134, and holding the height fixed while the width flexes is what keeps a row
@@ -43,37 +46,117 @@ const FIELD_MIN_WIDTH := 300.0
 ## palette is the flag designer's own step of this work — but at least sized to the row it sits in.
 const SWATCH_WIDTH := 90.0
 
+## The five starting backgrounds, carried over from the legacy wizard's own content — the
+## prose, the "Starts with" list and the badges are its words rather than a summary of them.
+## `body` is BBCode because a card renders it through a [RichTextLabel]; the legacy stored
+## the same text as markdown.
 const BACKGROUNDS := [
 	{"id": "wealthy_merchant", "title": "Merchant",
 	 "image": "res://core/assets/wizard/background_merchant.jpg",
-	 "desc": "Economic start — 5,000 coins and a trade network."},
+	 "meta": "Economic Start",
+	 "badges": ["Coins", "Trade", "Negotiation"],
+	 "body": "You spent your life trading across the kingdom's markets, building wealth "
+		+ "through persistence and sharp instincts. You see the frontier not just as "
+		+ "a duty, but as your greatest opportunity — a chance to rise from merchant "
+		+ "to noble and build a fortune trading rare goods from the wildlands."
+		+ "\n"
+		+ "\n[b]Starts with:[/b]"
+		+ "\n5,000 personal coins"
+		+ "\nMerchant tag"
+		+ "\nFormal education, bookkeeping and logistics"},
 	{"id": "knight", "title": "Knight",
 	 "image": "res://core/assets/wizard/background_knight.jpg",
-	 "desc": "Military start — 10 soldiers, plate armor, a warhorse."},
+	 "meta": "Military Start",
+	 "badges": ["Soldiers", "Authority", "Combat"],
+	 "body": "Since youth you excelled at arms, and your talent earned you a place among "
+		+ "the King's own knights. You carry both the honor and the burden of that "
+		+ "trust — the outpost must not fail again."
+		+ "\n"
+		+ "\n[b]Starts with:[/b]"
+		+ "\n10 soldiers (sword, spear, chain armor)"
+		+ "\nFull plate armor and warhorse"
+		+ "\nKnight title"
+		+ "\nCombat tactics and leadership"},
 	{"id": "unlanded_noble", "title": "Noble",
 	 "image": "res://core/assets/wizard/background_noble.jpg",
-	 "desc": "Political start — a royal order and standing to call on."},
+	 "meta": "Political Start",
+	 "badges": ["Favor", "Politics", "Diplomacy"],
+	 "body": "You are the last heir of an ancient noble house that lost its lands and "
+		+ "title generations ago. The outpost is your chance to reclaim your "
+		+ "birthright and restore your house to its former glory."
+		+ "\n"
+		+ "\n[b]Starts with:[/b]"
+		+ "\nRoyal order for barracks, library and temple"
+		+ "\nNoble tag (rank of Lord)"
+		+ "\nDiplomacy, political acumen and scheme detection"},
 	{"id": "mercenary_captain", "title": "Mercenary",
 	 "image": "res://core/assets/wizard/background_mercenary.jpg",
-	 "desc": "Frontier start — 10 adventurers and wildlands knowledge."},
+	 "meta": "Frontier Start",
+	 "badges": ["Adventurers", "Scouting", "Survival"],
+	 "body": "You left the royal army to found your own mercenary company and have spent "
+		+ "years venturing deep into the wildlands. The outpost offers a permanent "
+		+ "base from which to launch expeditions and secure lasting fortune."
+		+ "\n"
+		+ "\n[b]Starts with:[/b]"
+		+ "\n10 adventurers (light armor, bows, spears)"
+		+ "\nAdventurer tag"
+		+ "\nWildlands knowledge, tracking and monster lore"},
 	{"id": "scholar", "title": "Scholar",
 	 "image": "res://core/assets/wizard/background_scholar.jpg",
-	 "desc": "Knowledge start — a retinue of specialists."},
+	 "meta": "Knowledge Start",
+	 "badges": ["Knowledge", "Research", "Administration"],
+	 "body": "Tutored by masters at the great library, you rose from humble origins "
+		+ "through sheer intellect. The outpost is your chance to prove that wisdom "
+		+ "and administration are worth more than swords."
+		+ "\n"
+		+ "\n[b]Starts with:[/b]"
+		+ "\nScholar, blacksmith, carpenter, doctor and mason"
+		+ "\nAdvanced education"
+		+ "\nScholar tag"
+		+ "\nLanguages, history, geography and theology"},
 ]
 
+## The four founding sites. No `meta` line: the legacy gave the backgrounds one ("Economic
+## Start") and the locations none, and the three fact lines at the foot of the body already
+## say what kind of place this is.
 const LOCATIONS := [
 	{"id": "coast", "title": "Coast",
 	 "image": "res://core/assets/wizard/location_coast.jpg",
-	 "desc": "Difficulty: Easy · Fertility: Average · Barbarians: Friendly"},
+	 "badges": ["Food", "Trade"],
+	 "body": "A sheltered bay with calm waters and easy access to sea routes. Trade with "
+		+ "the capital and foreign ships makes this the most forgiving start."
+		+ "\n"
+		+ "\n[b]Difficulty:[/b] Easy"
+		+ "\n[b]Fertility:[/b] Average"
+		+ "\n[b]Barbarians:[/b] Friendly"},
 	{"id": "valley", "title": "Valley",
 	 "image": "res://core/assets/wizard/location_valley.jpg",
-	 "desc": "Difficulty: Average · Fertility: High · Barbarians: Mixed"},
+	 "badges": ["Farming", "Growth"],
+	 "body": "A wide river valley with fertile soil and open terrain. Farming comes "
+		+ "easily, but the mixed local tribes require careful diplomacy."
+		+ "\n"
+		+ "\n[b]Difficulty:[/b] Average"
+		+ "\n[b]Fertility:[/b] High"
+		+ "\n[b]Barbarians:[/b] Mixed"},
 	{"id": "forest", "title": "Forest",
 	 "image": "res://core/assets/wizard/location_forest.jpg",
-	 "desc": "Difficulty: Hard · Fertility: Average · Barbarians: Mixed"},
+	 "badges": ["Wood", "Crafting"],
+	 "body": "Dense woodland offering abundant timber, furs and game. Clearing land for "
+		+ "settlement is slow work, and the forest tribes are unpredictable."
+		+ "\n"
+		+ "\n[b]Difficulty:[/b] Hard"
+		+ "\n[b]Fertility:[/b] Average"
+		+ "\n[b]Barbarians:[/b] Mixed"},
 	{"id": "mountains", "title": "Mountains",
 	 "image": "res://core/assets/wizard/location_mountains.jpg",
-	 "desc": "Difficulty: Very Hard · Fertility: Poor · Barbarians: Hostile"},
+	 "badges": ["Defense", "Stone"],
+	 "body": "Rocky highlands rich in ore and stone, but unforgiving terrain where "
+		+ "little grows. Hostile barbarian clans roam the passes and food will be "
+		+ "scarce."
+		+ "\n"
+		+ "\n[b]Difficulty:[/b] Very Hard"
+		+ "\n[b]Fertility:[/b] Poor"
+		+ "\n[b]Barbarians:[/b] Hostile"},
 ]
 
 const OUTPOST_NAMES := ["Ravenwatch", "Stonegate", "Ironward", "Dawnrest", "Northpass",
@@ -274,21 +357,24 @@ func _build_location_step() -> Control:
 		func(id: String) -> void: _selected_location = id)
 
 
+## The pick-one steps: a [CardPager] over the cards, which is the presentation the legacy wizard
+## named for both of them (`"presentation": "centered_pager"`).
+##
+## It replaced a flow of cards, which was the right shape while a card was three lines long and the
+## wrong one the moment the cards carried the legacy's real copy. Five cards of prose wrapped into a
+## grid put the last row well below the fold, and on a pick-one step an option the player has to
+## scroll to discover may as well not be offered.
 func _card_select_column(items: Array, default_id: String, on_select: Callable) -> Control:
-	var col := VBoxContainer.new()
-	col.add_theme_constant_override("separation", 10)
-	# An [HFlowContainer], not the fixed-column grid this used to be. A grid divides whatever width it
-	# is given by a number decided here, so at the phone's width three columns made each card a
-	# sliver; flowing lets a card keep a width it can be read at and take as many lines as that needs
-	# — three across on a desktop, two on a phone, without this screen knowing which it is on.
-	var flow := HFlowContainer.new()
-	flow.add_theme_constant_override("h_separation", 10)
-	flow.add_theme_constant_override("v_separation", 10)
-	col.add_child(flow)
 	var group := ButtonGroup.new()
-	for item: Dictionary in items:
-		flow.add_child(_card(item, group, String(item["id"]) == default_id, on_select))
-	return col
+	var cards: Array[Control] = []
+	var selected := 0
+	for i in items.size():
+		var item: Dictionary = items[i]
+		var chosen := String(item["id"]) == default_id
+		if chosen:
+			selected = i
+		cards.append(_card(item, group, chosen, on_select))
+	return CardPager.create(cards, selected)
 
 
 ## One picture card: the painting, the name, and the line that says what it gets you.
@@ -345,19 +431,61 @@ func _card(item: Dictionary, group: ButtonGroup, selected: bool, on_select: Call
 
 	var title := Label.new()
 	title.text = String(item["title"])
-	title.add_theme_font_size_override("font_size", UiSkin.FONT_BODY)
+	title.add_theme_font_size_override("font_size", UiSkin.FONT_HEADING)
 	title.add_theme_color_override("font_color", UiSkin.INK)
 	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	content.add_child(title)
 
-	var desc := Label.new()
-	desc.text = String(item["desc"])
-	desc.add_theme_font_size_override("font_size", UiSkin.FONT_SMALL)
-	desc.add_theme_color_override("font_color", UiSkin.INK_MUTED)
-	desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	desc.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	content.add_child(desc)
+	# "Economic Start" — the one-phrase answer to "what kind of start is this", above the paragraph
+	# that explains it. Only the backgrounds carry one; a location's three fact lines say it instead.
+	if item.has("meta"):
+		var meta := Label.new()
+		meta.text = String(item["meta"]).to_upper()
+		meta.add_theme_font_size_override("font_size", UiSkin.FONT_SMALL)
+		meta.add_theme_color_override("font_color", CARD_META_COLOR)
+		meta.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		content.add_child(meta)
+
+	# A [RichTextLabel], because the body is BBCode: the "Starts with:" heading and the location's
+	# "Difficulty:" labels are bold, and a plain [Label] would print the tags.
+	#
+	# `fit_content` is what makes it size to its text — without it a RichTextLabel reports a minimum
+	# height of zero, and the card collapses to the painting with the prose clipped to nothing.
+	var body := RichTextLabel.new()
+	body.bbcode_enabled = true
+	body.text = String(item["body"])
+	body.fit_content = true
+	body.scroll_active = false
+	body.add_theme_font_size_override("normal_font_size", UiSkin.FONT_SMALL)
+	body.add_theme_font_size_override("bold_font_size", UiSkin.FONT_SMALL)
+	body.add_theme_color_override("default_color", UiSkin.INK_MUTED)
+	body.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	content.add_child(body)
+
+	var badges: Array = item.get("badges", [])
+	if not badges.is_empty():
+		var strip := HFlowContainer.new()
+		strip.add_theme_constant_override("h_separation", 6)
+		strip.add_theme_constant_override("v_separation", 6)
+		strip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		content.add_child(strip)
+		for badge: String in badges:
+			strip.add_child(_badge(badge))
 	return host
+
+
+## One short tag under a card's prose — "Coins", "Trade".
+func _badge(text: String) -> Control:
+	var plate := PanelContainer.new()
+	plate.add_theme_stylebox_override("panel", UiSkin.badge_style())
+	plate.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var label := Label.new()
+	label.text = text
+	label.add_theme_font_size_override("font_size", UiSkin.FONT_SMALL)
+	label.add_theme_color_override("font_color", UiSkin.INK_MUTED)
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	plate.add_child(label)
+	return plate
 
 
 # --- Step 3: Identity ---------------------------------------------------------------------
