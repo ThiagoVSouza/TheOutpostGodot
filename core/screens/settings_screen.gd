@@ -39,6 +39,11 @@ const BACK_WIDTH := 240.0
 ## sliver beside the control. See [method _row].
 const HINT_MIN_WIDTH := 220.0
 
+## Room for the volume percentage beside its slider. Wide enough for "100%" at
+## [constant UiSkin.FONT_BODY] — a right-aligned readout that has to widen for its own maximum value
+## drags the slider a few pixels left every time the level passes 99%.
+const READOUT_WIDTH := 84.0
+
 ## How much air sits between the end of a row and the scroll bar. Smaller than the margin on the
 ## other three sides, because the bar is already a wide object with its own moulding — the usual
 ## reading margin on top of it left the rows looking pushed away from the edge.
@@ -333,7 +338,7 @@ func _build_audio_tab() -> Control:
 		slider.custom_minimum_size = Vector2(CONTROL_WIDTH - 60.0, UiSkin.CONTROL_HEIGHT)
 		slider.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		var readout := Label.new()
-		readout.custom_minimum_size = Vector2(50, 0)
+		readout.custom_minimum_size = Vector2(READOUT_WIDTH, 0)
 		readout.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		readout.add_theme_color_override("font_color", UiSkin.INK)
 		readout.add_theme_font_size_override("font_size", UiSkin.FONT_BODY)

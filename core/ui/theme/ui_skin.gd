@@ -81,10 +81,14 @@ const TOGGLE_OFF_TEXTURE := preload("res://core/assets/ui/toggle_off.png")
 ## Drawn at 194x85 and 195x85 — over a third the height of the settings frame, and far too big for a
 ## row that is [constant CONTROL_HEIGHT] tall. A [CheckButton] draws its check icon at the texture's
 ## own size (`icon_max_width` governs a [Button]'s *icon*, not this), so the size has to be settled
-## before the theme sees it: [method scaled_texture] resamples both to exactly this, which also
-## reconciles the 1px the two sources differ by. 110x48 is the art's own 2.28 aspect at the row's
-## height.
-const TOGGLE_SIZE := Vector2i(110, 48)
+## before the theme sees it: [method scaled_texture] resamples both, which also reconciles the 1px the
+## two sources differ by.
+##
+## **Derived from [constant CONTROL_HEIGHT] rather than written down.** It was a fixed 110x48 at
+## first, and when the row height grew the toggle stayed behind and started reading as a small object
+## someone had dropped into a taller row. A toggle *is* a row's control; its size is that fact, not a
+## separate decision.
+const TOGGLE_ASPECT := 194.0 / 85.0
 
 ## The slider's three parts: the groove, the gold that fills it up to the value, and the knob.
 ##
@@ -98,10 +102,25 @@ const SLIDER_FILL_TEXTURE := preload("res://core/assets/ui/slider_fill.png")
 const SLIDER_GRABBER_TEXTURE := preload("res://core/assets/ui/slider_button.png")
 
 ## The groove's rounded ends run to ~4px and the gold's taper to about the same; 6 carries both. The
-## vertical slice has to stay under half of 10, and 4 leaves a 2px middle — which is never stretched
-## anyway, since the groove is always drawn at its own height (see [method slider_style]).
+## vertical slice has to stay under half of 10, and 4 leaves a 2px middle.
 const SLIDER_SLICE_H := 6.0
 const SLIDER_SLICE_V := 4.0
+
+## The art is 10 tall; drawn at that, it was a hairline beside a [constant CONTROL_HEIGHT] row and the
+## knob looked threaded onto a wire. [constant SLIDER_HEIGHT] is what it is drawn at now.
+##
+## **Stretched by the nine-patch, not resampled** — the opposite choice from the scrollbar, and for
+## the opposite reason. The scrollbar was being made *smaller*, where a nine-patch would have shrunk
+## the corner patches and thinned the moulding unevenly. Here the groove is being made *bigger*, and
+## its 4px top and bottom edges are exactly what a nine-patch holds at their drawn size while
+## stretching only the 2px interior — which is a flat gradient, so nothing in it can smear
+## visibly. Resampling would soften the moulding for no gain.
+const SLIDER_ART_HEIGHT := 10.0
+const SLIDER_HEIGHT := 20.0
+
+## The knob is a theme icon, so it cannot be stretched by a stylebox and has to be resampled to keep
+## its footing against the thicker groove. 26x28 becomes 34x36.
+const SLIDER_GRABBER_SCALE := 1.3
 
 ## The scrollbar: a recessed channel, a stone bar that rides in it, and a plate button at each end.
 ##
@@ -189,10 +208,28 @@ const FRAME_PADDING := 34.0
 ## The type scale. Four sizes, and screens pick from them rather than inventing numbers — a page whose
 ## labels, hints and headings were each chosen separately is how a 26pt button ends up sitting next to
 ## a 16pt label looking like it wandered in from another screen.
-const FONT_TITLE := 34
-const FONT_HEADING := 26
-const FONT_BODY := 20
-const FONT_SMALL := 17
+##
+## **These are viewport units, and the phone is what sets them.** The project renders a 720-wide
+## viewport with `canvas_items` stretch, so on a 1080-wide device it is drawn at 1.5x; that screen
+## reports 450dpi, or 2.8125 device pixels per dp. One viewport unit is therefore
+## `1.5 / 2.8125 = 0.53` dp, and the scale has to be read in dp to mean anything:
+##
+## [codeblock]
+##            was    →  now      dp on the phone   Android's floor
+##   TITLE     34    →  46       18.1 → 24.5
+##   HEADING   26    →  36       13.9 → 19.2       14sp for a button caption
+##   BODY      20    →  30       10.7 → 16.0       14sp, 16sp to read comfortably
+##   SMALL     17    →  24        9.1 → 12.8       12sp
+## [/codeblock]
+##
+## Every rung of the old scale sat under the floor for its job, body text worst of all — this is a
+## text-heavy game and its prose was rendering at eleven dp. The desktop window is scaled *down* from
+## the same base (a 1280x720 window works out at 0.56x), so it was undersized there too, just less
+## obviously.
+const FONT_TITLE := 46
+const FONT_HEADING := 36
+const FONT_BODY := 30
+const FONT_SMALL := 24
 
 ## **Two control sizes, and only two.**
 ##
@@ -204,9 +241,14 @@ const FONT_SMALL := 17
 ## [constant CONTROL_HEIGHT] is everything that sits *in a row of content* — a dropdown, a field, a
 ## button belonging to one setting. It matches the body text beside it, which is the whole point: these
 ## are peers on a line, not the reason the page exists.
-const BUTTON_HEIGHT := 72.0
+## Both grew with the type scale — a taller caption needs a taller plate — and the growth fixed a
+## second thing that was never right: at 72 the page's own actions were a 38dp tap target, under
+## Android's 48dp. At 92 they clear it. A row's controls still do not (34dp), and that is the
+## accepted trade: making every dropdown 48dp tall would push a settings row past a fifth of the
+## screen.
+const BUTTON_HEIGHT := 92.0
 const BUTTON_FONT_SIZE := FONT_HEADING
-const CONTROL_HEIGHT := 48.0
+const CONTROL_HEIGHT := 64.0
 const CONTROL_FONT_SIZE := FONT_BODY
 
 ## The dark wash a modal lays over whatever it interrupted. Heavy enough that the frame reads as the
@@ -517,8 +559,9 @@ static func apply_toggle(check: CheckButton) -> void:
 	for state in ["normal", "hover", "pressed", "focus", "disabled"]:
 		check.add_theme_stylebox_override(state, StyleBoxEmpty.new())
 	check.add_theme_constant_override("h_separation", 0)
-	var on := scaled_texture(TOGGLE_ON_TEXTURE, TOGGLE_SIZE)
-	var off := scaled_texture(TOGGLE_OFF_TEXTURE, TOGGLE_SIZE)
+	var size := Vector2i(roundi(CONTROL_HEIGHT * TOGGLE_ASPECT), roundi(CONTROL_HEIGHT))
+	var on := scaled_texture(TOGGLE_ON_TEXTURE, size)
+	var off := scaled_texture(TOGGLE_OFF_TEXTURE, size)
 	check.add_theme_icon_override("checked", on)
 	check.add_theme_icon_override("checked_disabled", on)
 	check.add_theme_icon_override("unchecked", off)
@@ -527,12 +570,17 @@ static func apply_toggle(check: CheckButton) -> void:
 
 ## One half of a slider: [param fill] picks the gold rather than the groove it runs in.
 ##
-## **The content margins are deliberately left unset**, which is the one thing here that is not
-## cosmetic. Godot decides how tall to draw a slider's groove as the stylebox's minimum size *plus*
-## its centre size — so an unset margin falls back to the texture margin, the two sum back to the
-## art's own 10px, and the groove is drawn at exactly the height it was painted. Zeroing them the way
-## every other stylebox in this file does would drop the minimum to nothing and squash the groove to
-## its 2px middle.
+## **The vertical content margins are what set the drawn height**, which is the one thing here that is
+## not cosmetic. Godot works out how tall to draw a slider's groove as the stylebox's minimum size
+## *plus* its centre size, and neither is the texture's height — so this is the only lever there is.
+## The centre is fixed at [code]SLIDER_ART_HEIGHT - 2 * SLIDER_SLICE_V[/code] (2px), and the margins
+## make up the rest of [constant SLIDER_HEIGHT].
+##
+## Two ways to get this wrong, both of which look like a bug elsewhere: zeroing the margins the way
+## every other stylebox in this file does squashes the groove to that 2px centre, and leaving them
+## unset falls back to the texture margins, which sum back to the art's own 10 and silently ignores
+## [constant SLIDER_HEIGHT] entirely. The horizontal margins are zero on purpose — they would only add
+## a minimum width, and the groove is meant to take whatever width the row gives it.
 static func slider_style(fill: bool, tint: Color = Color.WHITE) -> StyleBoxTexture:
 	var style := StyleBoxTexture.new()
 	style.texture = SLIDER_FILL_TEXTURE if fill else SLIDER_TEXTURE
@@ -542,6 +590,12 @@ static func slider_style(fill: bool, tint: Color = Color.WHITE) -> StyleBoxTextu
 	style.texture_margin_bottom = SLIDER_SLICE_V
 	style.axis_stretch_horizontal = StyleBoxTexture.AXIS_STRETCH_MODE_STRETCH
 	style.axis_stretch_vertical = StyleBoxTexture.AXIS_STRETCH_MODE_STRETCH
+	var centre := SLIDER_ART_HEIGHT - 2.0 * SLIDER_SLICE_V
+	var margin := maxf(0.0, (SLIDER_HEIGHT - centre) * 0.5)
+	style.content_margin_left = 0.0
+	style.content_margin_right = 0.0
+	style.content_margin_top = margin
+	style.content_margin_bottom = margin
 	style.modulate_color = tint
 	return style
 
@@ -559,10 +613,12 @@ static func apply_slider(slider: Slider) -> void:
 	slider.add_theme_stylebox_override("slider", slider_style(false))
 	slider.add_theme_stylebox_override("grabber_area", slider_style(true))
 	slider.add_theme_stylebox_override("grabber_area_highlight", slider_style(true, HOVER_TINT))
-	slider.add_theme_icon_override("grabber", SLIDER_GRABBER_TEXTURE)
-	slider.add_theme_icon_override("grabber_highlight",
-		tinted_texture(SLIDER_GRABBER_TEXTURE, HOVER_TINT))
-	slider.add_theme_icon_override("grabber_disabled", SLIDER_GRABBER_TEXTURE)
+	var knob := scaled_texture(SLIDER_GRABBER_TEXTURE, Vector2i(
+		roundi(SLIDER_GRABBER_TEXTURE.get_width() * SLIDER_GRABBER_SCALE),
+		roundi(SLIDER_GRABBER_TEXTURE.get_height() * SLIDER_GRABBER_SCALE)))
+	slider.add_theme_icon_override("grabber", knob)
+	slider.add_theme_icon_override("grabber_highlight", tinted_texture(knob, HOVER_TINT))
+	slider.add_theme_icon_override("grabber_disabled", knob)
 
 
 ## How far the scrollbar art is taken down from the size it was drawn at.
