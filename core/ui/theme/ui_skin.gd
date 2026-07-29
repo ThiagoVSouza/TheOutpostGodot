@@ -263,6 +263,11 @@ const CONTROL_FONT_SIZE := FONT_BODY
 ## only live thing on screen — a lighter wash left the menu behind it competing for attention.
 const SCRIM := Color(0.01, 0.01, 0.02, 0.82)
 
+## The chosen card in a row of them, warmer and brighter than its neighbours. Not simply
+## [constant HOVER_TINT]: hover and selection have to be told apart at a glance, and the same lift
+## applied to both would make the pointer look like it was choosing as it passed.
+const CARD_SELECTED_TINT := Color(1.16, 1.06, 0.84)
+
 ## Hover lifts the plate, pressed sinks it. The art has no second state drawn, so the state reads as a
 ## change in light on the same plate rather than a different image — and, with [SkinnedButton], as a
 ## change in size: bigger under the cursor, smaller under the press.
@@ -445,6 +450,55 @@ static func apply_input(button: Button) -> void:
 		(button as OptionButton).fit_to_longest_item = false
 		_apply_select_arrow(button as OptionButton)
 		_apply_select_popup(button as OptionButton)
+
+
+## Dress a [LineEdit] as the same sunken parchment field a dropdown wears, so a name the player types
+## and a value they pick read as the same kind of thing.
+##
+## Not folded into [method apply_input]: that takes a [Button], and a [LineEdit] shares none of its
+## theme — different stylebox names (`read_only`, not `disabled`), and a caret and selection colours a
+## button has no use for. The *look* is shared; the wiring cannot be.
+##
+## The pointer is left alone on purpose. [method watch_cursors] skips [LineEdit] because Godot already
+## gives it an I-beam, which is the right answer for text and the wrong one for everything else here.
+static func apply_line_edit(field: LineEdit) -> void:
+	field.add_theme_stylebox_override("normal", input_style())
+	field.add_theme_stylebox_override("focus", input_style(HOVER_TINT))
+	field.add_theme_stylebox_override("read_only", input_style(Color(1, 1, 1, DISABLED_ALPHA)))
+	field.add_theme_color_override("font_color", INK)
+	field.add_theme_color_override("font_placeholder_color", INK_MUTED)
+	field.add_theme_color_override("font_uneditable_color", INK_MUTED)
+	# The caret has to be ink too — the stock one is near-white and vanishes on parchment, so the
+	# player cannot see where they are typing.
+	field.add_theme_color_override("caret_color", INK)
+	field.add_theme_color_override("font_selected_color", LABEL)
+	field.add_theme_color_override("selection_color", Color(INK, 0.4))
+	field.add_theme_font_size_override("font_size", CONTROL_FONT_SIZE)
+	field.custom_minimum_size.y = CONTROL_HEIGHT
+
+
+## A card the player picks one of: the wizard's backgrounds and locations, and anything else that is a
+## choice made by pressing rather than by opening a list.
+##
+## Selection is a *warmer, brighter* plate rather than a border or a tick, because the card carries an
+## image and a paragraph and there is nowhere to put a mark that does not fight them. Use with
+## `toggle_mode` and a [ButtonGroup]; Godot then draws [code]pressed[/code] for the chosen one, which
+## is what [constant CARD_SELECTED_TINT] paints.
+##
+## `hover_pressed` is set as well as `hover`. Without it, moving the pointer over the *already*
+## selected card drops it back to the plain hover plate and it reads as having been deselected.
+static func apply_card(button: Button) -> void:
+	button.add_theme_stylebox_override("normal", input_style())
+	button.add_theme_stylebox_override("hover", input_style(HOVER_TINT))
+	button.add_theme_stylebox_override("pressed", input_style(CARD_SELECTED_TINT))
+	button.add_theme_stylebox_override("hover_pressed", input_style(CARD_SELECTED_TINT * HOVER_TINT))
+	button.add_theme_stylebox_override("focus", input_style(HOVER_TINT))
+	button.add_theme_stylebox_override("disabled", input_style(Color(1, 1, 1, DISABLED_ALPHA)))
+	for state in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color",
+			"font_hover_pressed_color"]:
+		button.add_theme_color_override(state, INK)
+	button.add_theme_color_override("font_disabled_color", INK_MUTED)
+	button.add_theme_font_size_override("font_size", CONTROL_FONT_SIZE)
 
 
 ## The chevron, and the flip that follows the list.
