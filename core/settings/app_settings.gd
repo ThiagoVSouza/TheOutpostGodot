@@ -281,7 +281,7 @@ func apply_video() -> void:
 	Engine.max_fps = max_fps()
 	if DisplayServer.get_name() == "headless":
 		return
-	match window_mode():
+	match effective_window_mode():
 		WINDOW_MODE_BORDERLESS:
 			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
 			DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_BORDERLESS, true)
@@ -307,7 +307,7 @@ func apply_video() -> void:
 	# on a phone the OS owns the window outright — in either case forcing a size either does nothing
 	# or fights whoever actually owns it.
 	var launch_size := Vector2i.ZERO
-	if window_mode() == WINDOW_MODE_WINDOWED and can_resize_window():
+	if effective_window_mode() == WINDOW_MODE_WINDOWED and can_resize_window():
 		var usable := _window_usable_rect()
 		var selected := effective_windowed_resolution(resolution(), usable)
 		if selected != UNSET:
@@ -397,11 +397,41 @@ static func client_position_for_centered_window(decorated_size: Vector2i, decora
 	return centered_window_position(decorated_size, usable) + decoration_offset
 
 
+## Android and iOS, which Godot reports under one feature tag because the thing that matters here is
+## the same on both: **the app does not own its window.** The OS decides its size, its orientation and
+## whether it is on screen at all, and there is no second monitor, no border to remove and no desktop
+## to sit on. Everything that follows from that — [method effective_window_mode], the Display section
+## the settings screen leaves out — is this one fact.
+static func handheld() -> bool:
+	return OS.has_feature("mobile")
+
+
 ## Whether a window size the player picks can actually be honoured: a desktop window the app owns,
-## not a phone's OS-owned surface. The settings screen greys the control out when this is false, so
-## the reason is visible rather than the setting silently doing nothing.
+## not a phone's OS-owned surface.
 static func can_resize_window() -> bool:
-	return not OS.has_feature("mobile") and DisplayServer.get_name() != "headless"
+	return not handheld() and DisplayServer.get_name() != "headless"
+
+
+## The window mode actually applied, as against the one stored.
+##
+## **A handheld is always fullscreen**, whatever the config says. A phone has no window furniture to
+## keep or discard, and the alternatives are meaningless there: "windowed" would ask for a size the OS
+## will not grant, and "borderless" for the removal of a border that was never drawn. On Android this
+## is also what puts the app in immersive mode, so the status and navigation bars get out of the way
+## of a game that fills the screen.
+##
+## The *stored* value is deliberately left alone rather than rewritten to fullscreen. The same config
+## follows a player to a desktop — and this is a game whose settings are meant to survive the trip —
+## so a preference that cannot be honoured here is ignored here, not destroyed.
+func effective_window_mode() -> String:
+	return resolve_window_mode(window_mode(), handheld())
+
+
+## The rule itself, with the platform passed in rather than asked for — [method handheld] is a fact
+## about the machine the tests run on, so a rule that consulted it directly could only ever be
+## exercised in one direction. See `test_app_settings.gd`.
+static func resolve_window_mode(stored: String, on_handheld: bool) -> String:
+	return WINDOW_MODE_FULLSCREEN if on_handheld else stored
 
 
 ## Put every stored value back to its default. Does not write — the caller decides when to commit, so

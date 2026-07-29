@@ -401,14 +401,58 @@ func _set_readout(category: String, value: float) -> void:
 func _build_video_tab() -> Control:
 	var col := _tab_column()
 
+	_add_display_section(col)
+
+	_section(col, "Performance")
+	# V-Sync goes with the Display section, and for the same reason: a handheld's compositor owns
+	# frame pacing outright, every frame is presented in step with the display and there is no
+	# tearing to turn off. Offering the choice there would be offering three settings that all do the
+	# same nothing. The frame-rate cap below is the control that does bite on a phone — its own hint
+	# has said so all along — so Performance keeps the thing that works and loses the thing that
+	# cannot.
+	if not AppSettings.handheld():
+		var vsync := _options(VSYNC_ROWS, Kernel.settings.vsync_mode(), _on_vsync_changed)
+		_row(col, "V-Sync", vsync, "")
+	var fps := _options(FPS_ROWS, str(Kernel.settings.max_fps()), _on_max_fps_changed)
+	_row(col, "Frame rate cap", fps,
+		"Matters most on a phone, where it is a battery setting more than a smoothness one.")
+	_planned_row(col, "Render scale", _options_mock(["75%", "100%", "125%"], 1),
+		"A 3D setting (the viewport's 3D scale). This is a 2D game, so there is nothing for it to "
+		+ "scale — it stays here as a reminder to remove it, not to build it.")
+
+	_section(col, "Presentation")
+	_planned_row(col, "UI scale", _options_mock(["Small", "Normal", "Large"], 1),
+		"Every screen is built in code with no theme yet, so there is nothing to scale.")
+	_planned_row(col, "Brightness", _slider_mock(0.5), "")
+	_planned_row(col, "Map season tint", _check_mock(true),
+		"The map's season tint is one of the deferred pieces of the legacy renderer.")
+	_planned_row(col, "Screen shake", _check_mock(true), "")
+	return col
+
+
+## Window mode, resolution and monitor — **desktop only, and left out entirely on a handheld.**
+##
+## All three are answers to "how should this window sit on your desktop", and a phone has no desktop
+## and no window the app owns: it is always fullscreen ([method AppSettings.effective_window_mode]),
+## its size is the OS's to decide, and there is no second display. Three greyed-out dropdowns with
+## three different excuses beside them is worse than an absent section — it invites the player to
+## keep trying, and it costs a third of the tab on the screen with the least room.
+##
+## This is emphatically *not* the [constant PLANNED_TAG] case, and not the greyed-but-applicable case
+## either. Those two are both promises: something that will work, or something that would work
+## elsewhere in this same app. A window mode on a phone is neither. It is a question the platform
+## does not ask.
+func _add_display_section(col: VBoxContainer) -> void:
+	if AppSettings.handheld():
+		return
+
 	_section(col, "Display")
 	var window_mode := _options(WINDOW_MODE_ROWS, Kernel.settings.window_mode(), _on_window_mode_changed)
 	_row(col, "Window mode", window_mode, "Borderless keeps the current window size without decorations.")
 
-	# Resolution is a *windowed desktop* setting: fullscreen and borderless take their size from the
-	# screen, and on a phone the OS owns the window outright. Rather than let it sit there doing
-	# nothing, it is disabled with the reason showing — the same honesty the `planned` tag buys, for
-	# a control that is finished but not applicable right now.
+	# Resolution is a *windowed* setting: fullscreen and borderless take their size from the screen.
+	# Rather than let it sit there doing nothing, it is disabled with the reason showing — the same
+	# honesty the `planned` tag buys, for a control that is finished but not applicable right now.
 	var windowed := Kernel.settings.window_mode() == AppSettings.WINDOW_MODE_WINDOWED
 	var resizable := AppSettings.can_resize_window()
 	var resolution_rows := _resolution_rows()
@@ -433,25 +477,6 @@ func _build_video_tab() -> Control:
 	monitor.disabled = screens < 2
 	UiSkin.apply_cursor(monitor, not monitor.disabled)
 	_row(col, "Monitor", monitor, "" if screens >= 2 else "Only one display is attached.")
-
-	_section(col, "Performance")
-	var vsync := _options(VSYNC_ROWS, Kernel.settings.vsync_mode(), _on_vsync_changed)
-	_row(col, "V-Sync", vsync, "")
-	var fps := _options(FPS_ROWS, str(Kernel.settings.max_fps()), _on_max_fps_changed)
-	_row(col, "Frame rate cap", fps,
-		"Matters most on a phone, where it is a battery setting more than a smoothness one.")
-	_planned_row(col, "Render scale", _options_mock(["75%", "100%", "125%"], 1),
-		"A 3D setting (the viewport's 3D scale). This is a 2D game, so there is nothing for it to "
-		+ "scale — it stays here as a reminder to remove it, not to build it.")
-
-	_section(col, "Presentation")
-	_planned_row(col, "UI scale", _options_mock(["Small", "Normal", "Large"], 1),
-		"Every screen is built in code with no theme yet, so there is nothing to scale.")
-	_planned_row(col, "Brightness", _slider_mock(0.5), "")
-	_planned_row(col, "Map season tint", _check_mock(true),
-		"The map's season tint is one of the deferred pieces of the legacy renderer.")
-	_planned_row(col, "Screen shake", _check_mock(true), "")
-	return col
 
 
 ## Whether a Controls-tab label names an action that actually exists (and so gets a live rebind

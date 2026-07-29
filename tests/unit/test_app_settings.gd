@@ -245,3 +245,35 @@ func test_reset_returns_every_value_to_its_default() -> void:
 	assert_eq(settings.resolution(), AppSettings.UNSET)
 	assert_eq(settings.monitor(), AppSettings.MONITOR_UNSET)
 	assert_eq(settings.max_fps(), AppSettings.MAX_FPS_UNCAPPED)
+
+
+func test_a_handheld_is_always_fullscreen_whatever_is_stored() -> void:
+	# A phone does not own its window: there is no border to remove and no size the OS will grant, so
+	# the two other modes are not choices there. On Android this is also what puts the app in
+	# immersive mode, clearing the status and navigation bars off a game that fills the screen.
+	for stored: String in AppSettings.WINDOW_MODES:
+		assert_eq(AppSettings.resolve_window_mode(stored, true), AppSettings.WINDOW_MODE_FULLSCREEN,
+			"'%s' still comes out fullscreen on a handheld" % stored)
+
+
+func test_a_desktop_gets_exactly_what_it_stored() -> void:
+	for stored: String in AppSettings.WINDOW_MODES:
+		assert_eq(AppSettings.resolve_window_mode(stored, false), stored)
+
+
+func test_a_handheld_does_not_overwrite_the_stored_choice() -> void:
+	# The same config follows the player to a desktop, and this game's settings are meant to survive
+	# the trip — so a preference that cannot be honoured here is ignored here, never destroyed.
+	var settings := _settings()
+	settings.set_window_mode(AppSettings.WINDOW_MODE_WINDOWED)
+	assert_eq(settings.window_mode(), AppSettings.WINDOW_MODE_WINDOWED,
+		"the stored value is what was chosen, not what this device can do with it")
+	assert_eq(AppSettings.resolve_window_mode(settings.window_mode(), true),
+		AppSettings.WINDOW_MODE_FULLSCREEN, "and the device's answer is applied on top")
+
+
+func test_the_window_is_the_platforms_on_a_handheld() -> void:
+	# The one place the real platform is consulted, so the desktop side is at least pinned down.
+	assert_false(AppSettings.handheld(), "the test runner is not a handheld")
+	assert_eq(AppSettings.can_resize_window(), not AppSettings.handheld()
+		and DisplayServer.get_name() != "headless")
