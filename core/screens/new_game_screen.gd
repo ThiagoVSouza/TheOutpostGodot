@@ -15,7 +15,15 @@ const STEP_TITLES := ["Background", "Location", "Identity", "Settings"]
 ## fixed number of columns, so this — not a column count — is what decides how many fit on a line.
 ## It is a *minimum*: the card grows to whatever its text needs.
 const CARD_MIN_WIDTH := 240.0
-const CARD_MIN_HEIGHT := 130.0
+
+## How tall the painting on a card is drawn. The nine are all 688x384 (1.79:1); at the card's minimum
+## width that is about 134, and holding the height fixed while the width flexes is what keeps a row
+## of cards level with each other.
+const CARD_ART_HEIGHT := 134.0
+
+## Room between the card's plate and what is printed on it. Matches the field padding, so a card and
+## a dropdown have the same air inside their borders.
+const CARD_PADDING := UiSkin.INPUT_PADDING_H
 
 ## Wide enough that "Female" is not a tighter plate than "Male" — a pick-one pair whose halves are
 ## different sizes reads as one of them mattering more.
@@ -37,25 +45,34 @@ const SWATCH_WIDTH := 90.0
 
 const BACKGROUNDS := [
 	{"id": "wealthy_merchant", "title": "Merchant",
+	 "image": "res://core/assets/wizard/background_merchant.jpg",
 	 "desc": "Economic start — 5,000 coins and a trade network."},
 	{"id": "knight", "title": "Knight",
+	 "image": "res://core/assets/wizard/background_knight.jpg",
 	 "desc": "Military start — 10 soldiers, plate armor, a warhorse."},
 	{"id": "unlanded_noble", "title": "Noble",
+	 "image": "res://core/assets/wizard/background_noble.jpg",
 	 "desc": "Political start — a royal order and standing to call on."},
 	{"id": "mercenary_captain", "title": "Mercenary",
+	 "image": "res://core/assets/wizard/background_mercenary.jpg",
 	 "desc": "Frontier start — 10 adventurers and wildlands knowledge."},
 	{"id": "scholar", "title": "Scholar",
+	 "image": "res://core/assets/wizard/background_scholar.jpg",
 	 "desc": "Knowledge start — a retinue of specialists."},
 ]
 
 const LOCATIONS := [
 	{"id": "coast", "title": "Coast",
+	 "image": "res://core/assets/wizard/location_coast.jpg",
 	 "desc": "Difficulty: Easy · Fertility: Average · Barbarians: Friendly"},
 	{"id": "valley", "title": "Valley",
+	 "image": "res://core/assets/wizard/location_valley.jpg",
 	 "desc": "Difficulty: Average · Fertility: High · Barbarians: Mixed"},
 	{"id": "forest", "title": "Forest",
+	 "image": "res://core/assets/wizard/location_forest.jpg",
 	 "desc": "Difficulty: Hard · Fertility: Average · Barbarians: Mixed"},
 	{"id": "mountains", "title": "Mountains",
+	 "image": "res://core/assets/wizard/location_mountains.jpg",
 	 "desc": "Difficulty: Very Hard · Fertility: Poor · Barbarians: Hostile"},
 ]
 
@@ -270,17 +287,77 @@ func _card_select_column(items: Array, default_id: String, on_select: Callable) 
 	col.add_child(flow)
 	var group := ButtonGroup.new()
 	for item: Dictionary in items:
-		var card := Button.new()
-		card.toggle_mode = true
-		card.button_group = group
-		card.custom_minimum_size = Vector2(CARD_MIN_WIDTH, CARD_MIN_HEIGHT)
-		UiSkin.apply_card(card)
-		card.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		card.text = "%s\n%s" % [String(item["title"]), String(item["desc"])]
-		card.button_pressed = String(item["id"]) == default_id
-		card.pressed.connect(func() -> void: on_select.call(String(item["id"])))
-		flow.add_child(card)
+		flow.add_child(_card(item, group, String(item["id"]) == default_id, on_select))
 	return col
+
+
+## One picture card: the painting, the name, and the line that says what it gets you.
+##
+## **The plate and the content are siblings, not parent and child** — the same arrangement
+## [SkinnedButton] uses, and for the same reason. A [Button] is not a container: anything added to it
+## has to be positioned by hand and contributes nothing to its size, so a card built that way is
+## whatever height was hardcoded rather than whatever its text needs. Here a [PanelContainer] holds
+## both, each filling it, and its minimum size is the taller of the two — the [Button] keeps the press
+## behaviour, the [ButtonGroup] and the painted plate, while the content decides how big the card is.
+##
+## Everything in the content ignores the mouse, or it would swallow the click meant for the plate
+## behind it.
+func _card(item: Dictionary, group: ButtonGroup, selected: bool, on_select: Callable) -> Control:
+	var host := PanelContainer.new()
+	host.custom_minimum_size.x = CARD_MIN_WIDTH
+	# The host is scaffolding — it exists to lay the plate and the content on top of each other, and
+	# must draw nothing itself. Left alone it takes [OutpostTheme]'s panel, which is a dark slab with
+	# a blue border, and every card gains a navy frame around its parchment.
+	host.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
+
+	var button := Button.new()
+	button.toggle_mode = true
+	button.button_group = group
+	button.button_pressed = selected
+	UiSkin.apply_card(button)
+	button.pressed.connect(func() -> void: on_select.call(String(item["id"])))
+	host.add_child(button)
+
+	var padding := MarginContainer.new()
+	padding.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	padding.add_theme_constant_override("margin_left", int(CARD_PADDING))
+	padding.add_theme_constant_override("margin_right", int(CARD_PADDING))
+	padding.add_theme_constant_override("margin_top", int(CARD_PADDING))
+	padding.add_theme_constant_override("margin_bottom", int(CARD_PADDING))
+	host.add_child(padding)
+
+	var content := VBoxContainer.new()
+	content.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	content.add_theme_constant_override("separation", 6)
+	padding.add_child(content)
+
+	var art := TextureRect.new()
+	art.texture = load(String(item["image"]))
+	art.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# Cover and crop, never distort. The paintings all share one aspect, but the card's does not
+	# match it and changes with how many fit on a line, so something has to give — and a squashed
+	# landscape is far more noticeable than a slightly tighter crop of one.
+	art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	art.custom_minimum_size.y = CARD_ART_HEIGHT
+	art.clip_contents = true
+	content.add_child(art)
+
+	var title := Label.new()
+	title.text = String(item["title"])
+	title.add_theme_font_size_override("font_size", UiSkin.FONT_BODY)
+	title.add_theme_color_override("font_color", UiSkin.INK)
+	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	content.add_child(title)
+
+	var desc := Label.new()
+	desc.text = String(item["desc"])
+	desc.add_theme_font_size_override("font_size", UiSkin.FONT_SMALL)
+	desc.add_theme_color_override("font_color", UiSkin.INK_MUTED)
+	desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	desc.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	content.add_child(desc)
+	return host
 
 
 # --- Step 3: Identity ---------------------------------------------------------------------
