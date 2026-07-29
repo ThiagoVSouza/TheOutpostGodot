@@ -25,6 +25,9 @@ var label: Label = null
 
 var _font_size := UiSkin.BUTTON_FONT_SIZE
 var _tween: Tween = null
+## The shadow to put back when this is re-enabled. Plates carrying art need their own — an arrow's
+## has to be inset past its transparent corners — so it cannot be re-derived from a constant.
+var _shadow: StyleBoxFlat = null
 
 
 static func create(text: String, variant: UiSkin.Variant, height: float,
@@ -71,9 +74,10 @@ static func create(text: String, variant: UiSkin.Variant, height: float,
 ## change in size — because it is a button, and one that behaved differently from every other button
 ## on the screen is what this replaced. A [TextureButton] can do the light and nothing else.
 static func create_bare(normal_style: StyleBox, hover_style: StyleBox, pressed_style: StyleBox,
-		size: Vector2) -> SkinnedButton:
+		size: Vector2, shadow: StyleBoxFlat) -> SkinnedButton:
 	var skinned := SkinnedButton.new()
-	skinned.add_theme_stylebox_override("panel", UiSkin.button_shadow_style())
+	skinned._shadow = shadow
+	skinned.add_theme_stylebox_override("panel", shadow)
 
 	var inner := Button.new()
 	inner.custom_minimum_size = size
@@ -135,8 +139,8 @@ func set_disabled(value: bool) -> void:
 	# because the plate covers it, so a translucent plate lets that near-black show through and the
 	# button reads *darker* instead of receded. A control this faded should not be casting a shadow
 	# onto the frame anyway.
-	add_theme_stylebox_override("panel",
-		StyleBoxEmpty.new() if value else UiSkin.button_shadow_style())
+	add_theme_stylebox_override("panel", StyleBoxEmpty.new() if value
+		else (_shadow if _shadow != null else UiSkin.button_shadow_style()))
 	if value:
 		_to(1.0, UiSkin.PRESSED_TIME)
 

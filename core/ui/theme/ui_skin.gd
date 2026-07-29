@@ -280,24 +280,35 @@ const BADGE_RADIUS := 4
 const BADGE_PADDING_H := 10.0
 const BADGE_PADDING_V := 3.0
 
-## The chosen card in a row of them. Not simply [constant HOVER_TINT]: hover and selection have to be
-## told apart at a glance, and the same lift applied to both would make the pointer look like it was
-## choosing as it passed.
-##
-## **Cool, against a page where everything else is warm.** It was a brighter, warmer parchment first,
-## which is the obvious move on this skin and the wrong one — a warmer tan among tans reads as *lit*
-## rather than as *picked*, and on the Location step it was easy to mistake for the card the pointer
-## happened to be over. Blue is already the skin's word for "this is the one" ([constant BLUE] is the
-## primary plate), so the selected card now says it in the same language. Multiplying rather than
-## replacing keeps the parchment's grain showing through the tint.
-const CARD_SELECTED_TINT := Color(0.74, 0.88, 1.28)
+## Selection is [constant CARD_GLOW_COLOR] around the card, not a tint on it — see that constant. The
+## plate itself keeps its own colour in every state, so the only thing the pointer changes is the
+## ordinary hover lift.
 
-## A card's own shadow, lifting it off the page. Larger and softer than a button's
-## ([constant BUTTON_SHADOW_SIZE]): a card is a much bigger object, and a shadow scaled for a plate
-## a fifth of its size reads as a hairline outline rather than depth.
-const CARD_SHADOW_SIZE := 12
-const CARD_SHADOW_OFFSET := Vector2(0, 5)
+## A card's own shadow, lifting it off the page. **Centred, not dropped**: a card fills most of the
+## step and an offset shadow on something that large reads as the card having come unstuck rather
+## than as depth. Small, for the same reason — the card is big enough that a little separation is
+## plenty.
+const CARD_SHADOW_SIZE := 8
 const CARD_CORNER_RADIUS := 6
+## The sunken field a card wears is transparent for its outermost two pixels; three clears them. See
+## [method shadow_style].
+const CARD_SHADOW_INSET := 3.0
+
+## The selected card, said with light instead of paint. Tinting the plate blue worked but cost the
+## painting: the card's whole face went cool, and the artwork — the thing the player is actually
+## choosing between — went with it. A glow leaves every pixel of the card alone and puts the signal
+## in the space around it.
+##
+## Reusing [method shadow_style] rather than inventing a second mechanism: a glow *is* a shadow that
+## is not dark and does not fall to one side.
+const CARD_GLOW_COLOR := Color(0.36, 0.66, 1.0, 1.0)
+const CARD_GLOW_SIZE := 20
+
+## The arrow plates' corners are cut in by six transparent pixels, so their shadow box needs the
+## deepest inset of any here — this is the one that was drawing a black bar down each side.
+const ARROW_SHADOW_SIZE := 9
+const ARROW_SHADOW_INSET := 7.0
+const ARROW_CORNER_RADIUS := 8
 
 ## Hover lifts the plate, pressed sinks it. The art has no second state drawn, so the state reads as a
 ## change in light on the same plate rather than a different image — and, with [SkinnedButton], as a
@@ -499,12 +510,25 @@ static func arrow_style(left: bool, tint: Color = Color.WHITE) -> StyleBoxTextur
 static func arrow_button(left: bool) -> SkinnedButton:
 	var texture: Texture2D = ARROW_LEFT_TEXTURE if left else ARROW_RIGHT_TEXTURE
 	return SkinnedButton.create_bare(arrow_style(left), arrow_style(left, HOVER_TINT),
-		arrow_style(left, PRESSED_TINT), texture.get_size())
+		arrow_style(left, PRESSED_TINT), texture.get_size(), arrow_shadow_style())
 
 
-## A card's shadow. See [method shadow_style] for why the box behind a plate has to be drawn at all.
+## A card's shadow. See [method shadow_style] for why the box behind a plate has to be drawn at all,
+## and why it is inset.
 static func card_shadow_style() -> StyleBoxFlat:
-	return shadow_style(CARD_SHADOW_SIZE, CARD_SHADOW_OFFSET, CARD_CORNER_RADIUS)
+	return shadow_style(CARD_SHADOW_SIZE, Vector2.ZERO, CARD_CORNER_RADIUS, CARD_SHADOW_INSET)
+
+
+## The same shadow in blue and a little wider: what a chosen card sits in.
+static func card_glow_style() -> StyleBoxFlat:
+	var style := shadow_style(CARD_GLOW_SIZE, Vector2.ZERO, CARD_CORNER_RADIUS, CARD_SHADOW_INSET)
+	style.shadow_color = CARD_GLOW_COLOR
+	return style
+
+
+## An arrow plate's shadow, inset past its transparent corners.
+static func arrow_shadow_style() -> StyleBoxFlat:
+	return shadow_style(ARROW_SHADOW_SIZE, Vector2.ZERO, ARROW_CORNER_RADIUS, ARROW_SHADOW_INSET)
 
 
 ## A short tag on a card — "Coins", "Trade". Ink on a faint wash rather than a plate: there are two
@@ -551,18 +575,19 @@ static func apply_line_edit(field: LineEdit) -> void:
 ## A card the player picks one of: the wizard's backgrounds and locations, and anything else that is a
 ## choice made by pressing rather than by opening a list.
 ##
-## Selection is a *warmer, brighter* plate rather than a border or a tick, because the card carries an
-## image and a paragraph and there is nowhere to put a mark that does not fight them. Use with
-## `toggle_mode` and a [ButtonGroup]; Godot then draws [code]pressed[/code] for the chosen one, which
-## is what [constant CARD_SELECTED_TINT] paints.
+## Selection is not drawn here at all: it is [method card_glow_style], put on the container *behind*
+## the card by whoever builds it. A card carries an image and a paragraph, and there is nowhere on its
+## face to put a mark that does not fight them — so the mark goes in the space around it instead. Use
+## with `toggle_mode` and a [ButtonGroup].
 ##
 ## `hover_pressed` is set as well as `hover`. Without it, moving the pointer over the *already*
-## selected card drops it back to the plain hover plate and it reads as having been deselected.
+## selected card drops it back to the plain hover plate — harmless now that selection is the glow
+## rather than the plate, but it would still flicker under the pointer.
 static func apply_card(button: Button) -> void:
 	button.add_theme_stylebox_override("normal", input_style())
 	button.add_theme_stylebox_override("hover", input_style(HOVER_TINT))
-	button.add_theme_stylebox_override("pressed", input_style(CARD_SELECTED_TINT))
-	button.add_theme_stylebox_override("hover_pressed", input_style(CARD_SELECTED_TINT * HOVER_TINT))
+	button.add_theme_stylebox_override("pressed", input_style())
+	button.add_theme_stylebox_override("hover_pressed", input_style(HOVER_TINT))
 	button.add_theme_stylebox_override("focus", input_style(HOVER_TINT))
 	button.add_theme_stylebox_override("disabled", input_style(Color(1, 1, 1, DISABLED_ALPHA)))
 	for state in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color",
@@ -935,7 +960,17 @@ static func label_style(label: Label, font_size: int, disabled: bool = false) ->
 ## and in the game it was a hard black hairline down the menu, the settings page and the exit modal.
 ## The fill is not optional and cannot be lightened — it sits behind the dark button plates too — so
 ## the guarantee it depends on is the art's, and `test_ui_textures.gd` is what holds the art to it.
-static func shadow_style(size: int, offset: Vector2, radius: int) -> StyleBoxFlat:
+## [param inset] pulls the drawn box *inside* the plate, and is required for any plate whose art is
+## not opaque right to its edge.
+##
+## The fill is only invisible while something covers it. A button plate is opaque corner to corner so
+## nothing shows; the arrow plates are not — their rounded corners are cut in by six transparent
+## pixels, and the sunken field a card wears by two — and through those the near-black fill was
+## drawing as a hard dark band down the sides of every arrow and across the top of every card. It
+## reads exactly like a clipped shadow, which is what sent me looking at containers first; the alpha
+## of the art is where the answer was. Shrinking the box by more than the transparent margin puts the
+## fill back under paint, and the blur still spreads outward from there.
+static func shadow_style(size: int, offset: Vector2, radius: int, inset: float = 0.0) -> StyleBoxFlat:
 	var style := StyleBoxFlat.new()
 	style.draw_center = true
 	style.bg_color = SHADOW_FILL
@@ -945,6 +980,11 @@ static func shadow_style(size: int, offset: Vector2, radius: int) -> StyleBoxFla
 	style.set_corner_radius_all(radius)
 	# The shadow belongs to the plate in front of it, so the container must not inset that plate.
 	style.set_content_margin_all(0.0)
+	if inset > 0.0:
+		style.expand_margin_left = -inset
+		style.expand_margin_right = -inset
+		style.expand_margin_top = -inset
+		style.expand_margin_bottom = -inset
 	return style
 
 

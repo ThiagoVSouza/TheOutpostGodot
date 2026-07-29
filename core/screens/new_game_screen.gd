@@ -19,14 +19,14 @@ const CARD_MIN_WIDTH := 260.0
 ## upper-case, so it reads as a label on the card rather than the first line of the paragraph.
 const CARD_META_COLOR := Color(0.58, 0.34, 0.05)
 
-## How tall the painting on a card is drawn. The nine are all 688x384 (1.79:1); at the card's minimum
-## width that is about 134, and holding the height fixed while the width flexes is what keeps a row
-## of cards level with each other.
-const CARD_ART_HEIGHT := 134.0
-
-## Room between the card's plate and what is printed on it. Matches the field padding, so a card and
-## a dropdown have the same air inside their borders.
+## Room between the card's plate and the text on it. Matches the field padding, so a card and a
+## dropdown have the same air inside their borders.
 const CARD_PADDING := UiSkin.INPUT_PADDING_H
+
+## The drawn width of the sunken plate's rail. The painting stops here rather than at
+## [constant CARD_PADDING], so it reaches the card's border and no further — any less and it covers
+## the moulding, any more and it reads as a picture hung in a mount.
+const CARD_BORDER_INSET := 5.0
 
 ## Wide enough that "Female" is not a tighter plate than "Male" — a pick-one pair whose halves are
 ## different sizes reads as one of them mattering more.
@@ -261,6 +261,17 @@ func _build_ui() -> void:
 	UiSkin.apply_scroll_container(scroll)
 	col.add_child(scroll)
 
+	# **Room inside the clip for what the cards draw outside themselves.** A [ScrollContainer] clips to
+	# its own rect, and a card's shadow — and the chosen card's glow — spread past the card's edge, so
+	# without this the topmost card had its glow sliced off flat while the sides kept theirs. The
+	# margin is the widest of those spreads.
+	var bleed := MarginContainer.new()
+	bleed.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	bleed.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	for side in ["margin_left", "margin_right", "margin_top", "margin_bottom"]:
+		bleed.add_theme_constant_override(side, UiSkin.CARD_GLOW_SIZE)
+	scroll.add_child(bleed)
+
 	var pages_host := VBoxContainer.new()
 	pages_host.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	# **A [ScrollContainer] stretches its child to the view only if that child asks to expand.** The
@@ -268,7 +279,7 @@ func _build_ui() -> void:
 	# left the cards sitting in the top third of an empty page. With it, a short step fills the view
 	# and a tall one keeps its own height and scrolls.
 	pages_host.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroll.add_child(pages_host)
+	bleed.add_child(pages_host)
 
 	_step_pages = [
 		_build_background_step(),
@@ -416,10 +427,11 @@ func _card_select_column(items: Array, default_id: String, on_select: Callable) 
 func _card(item: Dictionary, group: ButtonGroup, selected: bool, on_select: Callable) -> Control:
 	var host := PanelContainer.new()
 	host.custom_minimum_size.x = CARD_MIN_WIDTH
-	# The host draws the card's shadow and nothing else. It has to be given a stylebox explicitly
-	# either way: left alone it takes [OutpostTheme]'s panel, which is a dark slab with a blue border,
-	# and every card gains a navy frame around its parchment.
-	host.add_theme_stylebox_override("panel", UiSkin.card_shadow_style())
+	# The host draws the card's shadow — and, when this is the chosen card, its glow instead. It has to
+	# be given a stylebox explicitly either way: left alone it takes [OutpostTheme]'s panel, which is a
+	# dark slab with a blue border, and every card gains a navy frame around its parchment.
+	host.add_theme_stylebox_override("panel",
+		UiSkin.card_glow_style() if selected else UiSkin.card_shadow_style())
 
 	var button := Button.new()
 	button.toggle_mode = true
@@ -427,32 +439,61 @@ func _card(item: Dictionary, group: ButtonGroup, selected: bool, on_select: Call
 	button.button_pressed = selected
 	UiSkin.apply_card(button)
 	button.pressed.connect(func() -> void: on_select.call(String(item["id"])))
+	# `toggled`, not `pressed`: a [ButtonGroup] tells the card being *deselected* too, which is what
+	# takes the glow back off it. `pressed` only ever fires on the one being chosen.
+	button.toggled.connect(func(on: bool) -> void:
+		host.add_theme_stylebox_override("panel",
+			UiSkin.card_glow_style() if on else UiSkin.card_shadow_style()))
 	host.add_child(button)
 
+	# Two insets, not one. The painting runs out to the plate's drawn rail, so only the rail's own
+	# width holds it off the edge; the lettering keeps the full field padding. One shared margin would
+	# mean choosing between a picture floating in a parchment mount and text jammed against the
+	# moulding.
 	var padding := MarginContainer.new()
 	padding.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	padding.add_theme_constant_override("margin_left", int(CARD_PADDING))
-	padding.add_theme_constant_override("margin_right", int(CARD_PADDING))
-	padding.add_theme_constant_override("margin_top", int(CARD_PADDING))
-	padding.add_theme_constant_override("margin_bottom", int(CARD_PADDING))
+	for side in ["margin_left", "margin_right", "margin_top", "margin_bottom"]:
+		padding.add_theme_constant_override(side, int(CARD_BORDER_INSET))
 	host.add_child(padding)
 
 	var content := VBoxContainer.new()
 	content.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	content.add_theme_constant_override("separation", 6)
+	content.add_theme_constant_override("separation", 0)
 	padding.add_child(content)
 
+	# **The card's width decides the painting's height**, so the whole image is shown and never
+	# cropped whatever width the pager hands the card. It was a fixed 134 with a cover-crop before,
+	# which threw away the top and bottom of every painting — and threw away *more* of it the wider
+	# the card got, which is the opposite of what extra room should buy.
+	#
+	# Godot has a mode that says exactly this, `EXPAND_FIT_WIDTH_PROPORTIONAL`, and it cannot be used
+	# here: it derives the minimum height from the control's *current* width, which is zero at the
+	# moment a container asks what its minimum is, so the picture reports no height, is given none,
+	# and never appears at all. Driving it from `resized` instead is stable — the height follows the
+	# width, and recomputing from an unchanged width yields the same number, so it settles in one pass.
 	var art := TextureRect.new()
-	art.texture = load(String(item["image"]))
+	var texture: Texture2D = load(String(item["image"]))
+	art.texture = texture
 	art.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	# Cover and crop, never distort. The paintings all share one aspect, but the card's does not
-	# match it and changes with how many fit on a line, so something has to give — and a squashed
-	# landscape is far more noticeable than a slightly tighter crop of one.
 	art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
-	art.custom_minimum_size.y = CARD_ART_HEIGHT
-	art.clip_contents = true
+	art.stretch_mode = TextureRect.STRETCH_SCALE
+	var aspect := float(texture.get_width()) / float(texture.get_height())
+	art.resized.connect(func() -> void: art.custom_minimum_size.y = art.size.x / aspect)
 	content.add_child(art)
+
+	var text := MarginContainer.new()
+	text.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	for side in ["margin_left", "margin_right"]:
+		text.add_theme_constant_override(side, int(CARD_PADDING - CARD_BORDER_INSET))
+	text.add_theme_constant_override("margin_top", int(CARD_PADDING - CARD_BORDER_INSET))
+	text.add_theme_constant_override("margin_bottom", int(CARD_PADDING - CARD_BORDER_INSET))
+	content.add_child(text)
+
+	var column := VBoxContainer.new()
+	column.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	column.add_theme_constant_override("separation", 6)
+	text.add_child(column)
+	content = column
 
 	var title := Label.new()
 	title.text = String(item["title"])
