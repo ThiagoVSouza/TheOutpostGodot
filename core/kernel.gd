@@ -121,6 +121,9 @@ func boot() -> void:
 	# screen builds picks it up automatically, including dialogs no screen owns (the exit-confirm
 	# dialog `_ensure_exit_confirm` builds on the kernel itself).
 	get_tree().root.theme = OutpostTheme.build()
+	# And the one app-wide default a Theme cannot carry: the pointer turning into a hand over anything
+	# clickable. `mouse_default_cursor_shape` is a node property, not a theme item.
+	UiSkin.watch_cursors(get_tree())
 
 	# 2-3. Communication + state.
 	events = EventBus.new()

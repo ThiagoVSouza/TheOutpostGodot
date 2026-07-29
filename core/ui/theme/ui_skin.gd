@@ -232,6 +232,21 @@ const FRAME_CORNER_RADIUS := 6
 const INK := Color(0.16, 0.11, 0.07)
 const INK_MUTED := Color(0.16, 0.11, 0.07, 0.6)
 
+## The hairline under a section heading, and between items in a list. Ink, well short of the muted
+## text above it: a rule that competes with the heading it belongs to is a rule drawn too dark.
+const RULE := Color(0.16, 0.11, 0.07, 0.3)
+
+## The wash under a hovered item in a dropdown's list, and how far Godot's own radio marks are taken
+## down to read on parchment. The marks are drawn near-white; a fifth of that is ink.
+const POPUP_HOVER := Color(0.16, 0.11, 0.07, 0.16)
+const POPUP_MARK_TINT := Color(0.2, 0.2, 0.2)
+const POPUP_ITEM_SEPARATION := 10
+
+## Marks a control whose pointer shape someone chose on purpose, so [method watch_cursors] leaves it
+## alone. See the note there for why the shape itself cannot carry that.
+const CURSOR_META := "outpost_cursor"
+
+
 ## A label on a coloured plate.
 const LABEL := Color(0.98, 0.96, 0.92)
 
@@ -351,6 +366,7 @@ static func apply_input(button: Button) -> void:
 	button.custom_minimum_size.y = CONTROL_HEIGHT
 	if button is OptionButton:
 		_apply_select_arrow(button as OptionButton)
+		_apply_select_popup(button as OptionButton)
 
 
 ## The chevron, and the flip that follows the list.
@@ -369,6 +385,105 @@ static func _apply_select_arrow(options: OptionButton) -> void:
 	popup.visibility_changed.connect(func() -> void:
 		options.add_theme_icon_override("arrow",
 			SELECT_ARROW_UP_TEXTURE if popup.visible else SELECT_ARROW_TEXTURE))
+
+
+## The list the field opens.
+##
+## **This was the gap the first pass left**: skinning an [OptionButton] dresses the *field*, and the
+## popup is a separate [PopupMenu] with its own theme — so a painted parchment field opened a flat
+## grey Godot list, on the one page that has no other stock chrome left. Nothing here needs new art:
+## the panel is the same sunken field the button wears, so the list reads as the field having grown
+## rather than as a second window over it.
+##
+## The radio marks are Godot's own, **darkened**. They are drawn near-white for a dark theme and are
+## invisible on parchment; they are also the only shape in the popup that says which item is current,
+## so dropping them was not an option. [method tinted_texture] takes them down to ink and keeps the
+## shapes — see the note there about icons whose [member Resource.resource_path] is empty, which the
+## built-in theme's are.
+static func _apply_select_popup(options: OptionButton) -> void:
+	var popup := options.get_popup()
+	popup.add_theme_stylebox_override("panel", input_style())
+	popup.add_theme_stylebox_override("hover", popup_hover_style())
+	popup.add_theme_stylebox_override("separator", separator_style())
+	for state in ["font_color", "font_hover_color", "font_accelerator_color"]:
+		popup.add_theme_color_override(state, INK)
+	popup.add_theme_color_override("font_disabled_color", INK_MUTED)
+	popup.add_theme_color_override("font_separator_color", INK_MUTED)
+	popup.add_theme_font_size_override("font_size", CONTROL_FONT_SIZE)
+	# Room to put a finger on a row, the same reasoning as CONTROL_HEIGHT.
+	popup.add_theme_constant_override("v_separation", POPUP_ITEM_SEPARATION)
+	popup.add_theme_constant_override("item_start_padding", int(INPUT_PADDING_H))
+	popup.add_theme_constant_override("item_end_padding", int(INPUT_PADDING_H))
+	for icon in ["radio_checked", "radio_unchecked", "checked", "unchecked"]:
+		var texture := popup.get_theme_icon(icon, "PopupMenu")
+		if texture != null:
+			popup.add_theme_icon_override(icon, tinted_texture(texture, POPUP_MARK_TINT))
+
+
+## The wash under the item the pointer is on. A [StyleBoxFlat], not the field texture: this is drawn
+## per *item*, and the field's moulded border repeated down every row would read as a stack of
+## separate fields rather than one list.
+static func popup_hover_style() -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	style.bg_color = POPUP_HOVER
+	style.set_corner_radius_all(4)
+	return style
+
+
+## The rule under a section heading. Brown, so it belongs to the parchment — Godot's own is a cool
+## blue-grey line drawn for a dark theme, and on this page it was the one thing still tinted from
+## somewhere else.
+static func separator_style() -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	style.bg_color = RULE
+	style.content_margin_top = 1.0
+	style.content_margin_bottom = 1.0
+	return style
+
+
+## What the pointer says about [param control]: a hand when there is something to click, the ordinary
+## arrow when there is not.
+##
+## The hand is the *default* for every interactive control in the app — see [method watch_cursors],
+## which is what actually applies it. This is for the exceptions: a control that is
+## [code]disabled[/code] but still takes the pointer, which is not something the default can know,
+## because a button is nearly always disabled after it is added rather than before. A `planned` row
+## does not need it — that sets `MOUSE_FILTER_IGNORE`, so the pointer never reaches the control at
+## all and the shape underneath is what shows.
+static func apply_cursor(control: Control, clickable: bool = true) -> void:
+	control.set_meta(CURSOR_META, true)
+	control.mouse_default_cursor_shape = (Control.CURSOR_POINTING_HAND if clickable
+		else Control.CURSOR_ARROW)
+
+
+## Make every interactive control in the app show a hand, from now on. Called once, at boot.
+##
+## **A tree hook rather than a line in each helper, because the cursor is not themeable.**
+## [member Control.mouse_default_cursor_shape] is a node property, so [OutpostTheme] — which is how
+## every other app-wide default here is set — cannot carry it. The alternative was a call beside each
+## of the ~35 places a button is built, in eight files, which is a rule that survives exactly until
+## the next screen forgets it.
+##
+## [signal SceneTree.node_added] fires for controls built long after their screen was mounted (the
+## settings page rebuilds itself on a reset; the chat log grows all game), which a one-shot walk of
+## the tree at mount time would miss.
+##
+## A control that has been through [method apply_cursor] is left alone. **"Still on
+## [constant Control.CURSOR_ARROW]" cannot stand in for "nobody has decided yet"**, which is what the
+## first cut of this tried: the arrow is also the deliberate answer for a disabled control, and since
+## a screen sets that before adding the control to the tree, the default then arrived afterwards and
+## put the hand back on the one control that had asked not to have it. The mark is what tells an
+## unset control from a settled one.
+##
+## [LineEdit] is not in the list, and for the same reason it must not be: it overrides the shape
+## itself and wants an I-beam.
+static func watch_cursors(tree: SceneTree) -> void:
+	tree.node_added.connect(func(node: Node) -> void:
+		if not (node is BaseButton or node is Slider or node is ScrollBar or node is TabBar):
+			return
+		var control := node as Control
+		if not control.has_meta(CURSOR_META):
+			apply_cursor(control))
 
 
 ## Dress a [CheckButton] as the painted toggle.
@@ -531,7 +646,14 @@ static func scaled_texture(texture: Texture2D, size: Vector2i) -> Texture2D:
 ## [param key]. Every caller here is preparing a theme icon, which cannot be adjusted once the
 ## theme holds it.
 static func _derive(texture: Texture2D, key: String, edit: Callable) -> Texture2D:
-	var cache_key := "%s|%s" % [texture.resource_path, key]
+	# Godot builds its default theme's icons at runtime from embedded SVG, so those arrive with an
+	# **empty** `resource_path` — keyed on that alone, every built-in icon would collide on one cache
+	# entry and the first one derived would be handed back for all of them. The theme returns the same
+	# instance each time it is asked, so the id is a stable key for exactly the textures the path
+	# cannot name.
+	var name := texture.resource_path if not texture.resource_path.is_empty() \
+		else str(texture.get_instance_id())
+	var cache_key := "%s|%s" % [name, key]
 	if _derived_textures.has(cache_key):
 		return _derived_textures[cache_key]
 	var image: Image = texture.get_image().duplicate()

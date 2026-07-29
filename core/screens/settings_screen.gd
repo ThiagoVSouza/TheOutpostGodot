@@ -198,6 +198,9 @@ func _build_ui() -> void:
 	tabs.add_theme_color_override("font_unselected_color", UiSkin.LABEL)
 	tabs.add_theme_color_override("font_hovered_color", UiSkin.LABEL)
 	tabs.add_theme_font_size_override("font_size", UiSkin.FONT_BODY)
+	# The tabs are the one clickable thing here that no `apply_*` helper touches — the strip is the
+	# TabContainer's own internal child, not something the screen built.
+	UiSkin.apply_cursor(tabs.get_tab_bar())
 	col.add_child(tabs)
 	_add_tab(tabs, "Gameplay", _build_gameplay_tab())
 	_add_tab(tabs, "Audio", _build_audio_tab())
@@ -374,6 +377,8 @@ func _build_video_tab() -> Control:
 		AppSettings.effective_windowed_resolution(Kernel.settings.resolution(), _windowed_usable_rect()),
 		_on_resolution_changed)
 	resolution.disabled = not (windowed and resizable) or resolution_rows.is_empty()
+	# Disabled but still hovered — unlike a `planned` row, which the pointer passes straight through.
+	UiSkin.apply_cursor(resolution, not resolution.disabled)
 	var resolution_note := ""
 	if not resizable:
 		resolution_note = "The window is the operating system's to size on this device."
@@ -387,6 +392,7 @@ func _build_video_tab() -> Control:
 	var screens := DisplayServer.get_screen_count()
 	var monitor := _options(_monitor_rows(screens), str(Kernel.settings.monitor()), _on_monitor_changed)
 	monitor.disabled = screens < 2
+	UiSkin.apply_cursor(monitor, not monitor.disabled)
 	_row(col, "Monitor", monitor, "" if screens >= 2 else "Only one display is attached.")
 
 	_section(col, "Performance")
@@ -651,6 +657,10 @@ func _section(parent: Node, title: String) -> void:
 	label.add_theme_font_size_override("font_size", UiSkin.FONT_SMALL)
 	parent.add_child(label)
 	var rule := HSeparator.new()
+	# Brown, so the rule belongs to the parchment. `OutpostTheme` draws separators in the shell's cool
+	# blue-grey, which is right on a dark panel and was the last thing on this page still tinted from
+	# the other palette.
+	rule.add_theme_stylebox_override("separator", UiSkin.separator_style())
 	parent.add_child(rule)
 
 

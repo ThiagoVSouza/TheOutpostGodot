@@ -93,6 +93,8 @@ func set_disabled(value: bool) -> void:
 	if button == null:
 		return
 	button.disabled = value
+	# A disabled plate still takes the pointer, so it has to stop claiming to be clickable.
+	UiSkin.apply_cursor(button, not value)
 	# The caption is ours now, so the disabled ink is ours to apply — the Button's own
 	# `font_disabled_color` governs text it no longer draws.
 	if label != null:
