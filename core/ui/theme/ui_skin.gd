@@ -41,6 +41,9 @@ const FRAME_THIN_TEXTURE := preload("res://core/assets/ui/frame_thin.png")
 ## Its rail is ~4px and the corner curve reaches ~12px; 16 carries the whole curve.
 const FRAME_THIN_SLICE := 16.0
 const FRAME_THIN_PADDING := 18.0
+## Just the drawn rail, for contents meant to sit *against* the frame rather than inside it. See
+## [method thin_frame_style].
+const FRAME_THIN_RAIL := 5.0
 
 ## The tab strip. Two states, drawn small (96x27 and 89x29), so the slice has to stay under half the
 ## height — 10 clears the corner on both without the top and bottom patches meeting in the middle.
@@ -102,11 +105,13 @@ const SLIDER_SLICE_V := 4.0
 
 ## The scrollbar: a recessed channel, a stone bar that rides in it, and a plate button at each end.
 ##
-## Drawn at [constant SCROLLBAR_SIZE] across, which is the art's own width — the tracks are 54 across
-## and the arrow plates are 54 on their long edge, so at that size nothing on the cross axis is
-## stretched at all. It is far wider than a desktop scrollbar, deliberately: the same reasoning as
-## [constant BUTTON_HEIGHT], since on a phone this is a thing you drag with a thumb, and the arrows
-## are a tap target rather than a decoration.
+## The art is drawn 54 across. That is what it first shipped at — nothing stretched, but on both a
+## phone and a desktop window it read as a fat band down the side of the page, taking a twelfth of a
+## 720-wide viewport for a control nobody looks at. [constant SCROLLBAR_SIZE] is the width it is
+## actually drawn at now, and every piece is resampled to match rather than squeezed by the
+## nine-patch: compressing the cross axis of a [StyleBoxTexture] shrinks the corner patches too, which
+## thins the channel's moulding unevenly, and the arrow plates are theme icons that ignore the
+## stylebox entirely. See [method _scrollbar_texture].
 const SCROLL_TRACK_TEXTURES := {true: preload("res://core/assets/ui/scrollbar_vertical.png"),
 	false: preload("res://core/assets/ui/scrollbar_horizontal.png")}
 const SCROLL_GRABBER_TEXTURES := {true: preload("res://core/assets/ui/scrollbar_vertical_bar.png"),
@@ -120,8 +125,15 @@ const SCROLL_ARROW_TEXTURES := {
 		false: preload("res://core/assets/ui/scrollbar_button_right.png")},
 }
 
-const SCROLLBAR_SIZE := 54.0
+## The size the art was drawn at, and the size it is used at. Everything else about the scrollbar is
+## derived from the ratio, so this is the one number to turn if it wants to be slimmer again.
+const SCROLLBAR_ART_SIZE := 54.0
+const SCROLLBAR_SIZE := 36.0
 
+## **These four are measured on the art, at the size it was drawn**, and are scaled to the drawn size
+## alongside the textures — see [method _scrollbar_scale]. Keeping them in the space they were
+## measured in is what lets [constant SCROLLBAR_SIZE] be turned without re-measuring anything.
+##
 ## The track's end caps run to ~13px along its length before the channel settles into a flat dark
 ## groove; 14 carries the whole cap. The channel is what stretches, and it is featureless, so it
 ## stretches invisibly however tall the page is.
@@ -140,7 +152,7 @@ const SCROLL_GRABBER_SLICE_CROSS := 7.0
 ## Godot gives the grabber the bar's full width and offers no way to inset it, so the inset is a
 ## **negative** [code]expand_margin[/code]: [method StyleBox.draw] adds the expand margins to the rect
 ## it was handed, and a negative one therefore shrinks it. Without this the 27-wide art is stretched
-## to 54 and the moulding down its sides doubles in thickness.
+## across the whole bar and the moulding down its sides doubles in thickness.
 const SCROLL_GRABBER_WIDTH := 27.0
 
 ## The progress bar's two halves. Both are 916x78 and share a footprint — the fill's opaque area is
@@ -315,11 +327,14 @@ static func apply_button(button: Button, variant: Variant) -> void:
 
 ## The border-only frame for a working area inside a page. Stretched, not tiled, for the same reason
 ## [method frame_style] is: its middle is a plain rule, and a repeat would show as a seam in it.
-static func thin_frame_style() -> StyleBoxTexture:
+## [param padding] is how far inside the rail the contents are held. The default keeps text clear of
+## it; a caller that wants something to *reach* the rail — a scrollbar running the full side of the
+## frame — asks for [constant FRAME_THIN_RAIL] instead and pads its own contents.
+static func thin_frame_style(padding: float = FRAME_THIN_PADDING) -> StyleBoxTexture:
 	var style := StyleBoxTexture.new()
 	style.texture = FRAME_THIN_TEXTURE
 	_slice(style, FRAME_THIN_SLICE, StyleBoxTexture.AXIS_STRETCH_MODE_STRETCH)
-	style.set_content_margin_all(FRAME_THIN_PADDING)
+	style.set_content_margin_all(padding)
 	return style
 
 
@@ -550,12 +565,34 @@ static func apply_slider(slider: Slider) -> void:
 	slider.add_theme_icon_override("grabber_disabled", SLIDER_GRABBER_TEXTURE)
 
 
+## How far the scrollbar art is taken down from the size it was drawn at.
+static func _scrollbar_scale() -> float:
+	return SCROLLBAR_SIZE / SCROLLBAR_ART_SIZE
+
+
+## A scrollbar texture at the size the bar is actually drawn.
+##
+## **Resampled rather than left to the nine-patch.** A [StyleBoxTexture] asked to draw into a rect
+## narrower than its own slice shrinks the corner patches to fit, so the channel's moulding would come
+## out thinner at the ends than along the sides. And the arrow plates are theme *icons*, which are
+## drawn at the texture's own size and never consult the stylebox at all — so without this they would
+## simply have stayed 54 wide beside a 36-wide track.
+static func _scrollbar_texture(texture: Texture2D) -> Texture2D:
+	var scale := _scrollbar_scale()
+	if is_equal_approx(scale, 1.0):
+		return texture
+	return scaled_texture(texture, Vector2i(
+		maxi(1, roundi(texture.get_width() * scale)),
+		maxi(1, roundi(texture.get_height() * scale))))
+
+
 ## The channel a scrollbar's grabber rides in. [param vertical] picks the art drawn for that axis —
 ## the two are not rotations of each other, and the caps would run the wrong way round.
 static func scroll_track_style(vertical: bool) -> StyleBoxTexture:
 	var style := StyleBoxTexture.new()
-	style.texture = SCROLL_TRACK_TEXTURES[vertical]
-	_slice(style, SCROLL_TRACK_SLICE, StyleBoxTexture.AXIS_STRETCH_MODE_STRETCH)
+	style.texture = _scrollbar_texture(SCROLL_TRACK_TEXTURES[vertical])
+	_slice(style, SCROLL_TRACK_SLICE * _scrollbar_scale(),
+		StyleBoxTexture.AXIS_STRETCH_MODE_STRETCH)
 	style.set_content_margin_all(0.0)
 	return style
 
@@ -564,9 +601,12 @@ static func scroll_track_style(vertical: bool) -> StyleBoxTexture:
 ## negative expand margin, and [method button_style] for what [param tint] does.
 static func scroll_grabber_style(vertical: bool, tint: Color = Color.WHITE) -> StyleBoxTexture:
 	var style := StyleBoxTexture.new()
-	style.texture = SCROLL_GRABBER_TEXTURES[vertical]
-	var along := SCROLL_GRABBER_SLICE_LONG if vertical else SCROLL_GRABBER_SLICE_CROSS
-	var across := SCROLL_GRABBER_SLICE_CROSS if vertical else SCROLL_GRABBER_SLICE_LONG
+	style.texture = _scrollbar_texture(SCROLL_GRABBER_TEXTURES[vertical])
+	var scale := _scrollbar_scale()
+	var long_slice := SCROLL_GRABBER_SLICE_LONG * scale
+	var cross_slice := SCROLL_GRABBER_SLICE_CROSS * scale
+	var along := long_slice if vertical else cross_slice
+	var across := cross_slice if vertical else long_slice
 	style.texture_margin_top = along
 	style.texture_margin_bottom = along
 	style.texture_margin_left = across
@@ -577,7 +617,7 @@ static func scroll_grabber_style(vertical: bool, tint: Color = Color.WHITE) -> S
 	# Godot builds the grabber's minimum length out of this. The inset below is the only margin here
 	# doing any work.
 	style.set_content_margin_all(0.0)
-	var inset := -(SCROLLBAR_SIZE - SCROLL_GRABBER_WIDTH) * 0.5
+	var inset := -(SCROLLBAR_SIZE - SCROLL_GRABBER_WIDTH * scale) * 0.5
 	if vertical:
 		style.expand_margin_left = inset
 		style.expand_margin_right = inset
@@ -601,7 +641,7 @@ static func apply_scroll_bar(bar: ScrollBar) -> void:
 	bar.add_theme_stylebox_override("grabber_highlight", scroll_grabber_style(vertical, HOVER_TINT))
 	bar.add_theme_stylebox_override("grabber_pressed", scroll_grabber_style(vertical, PRESSED_TINT))
 	for decrement in [true, false]:
-		var texture: Texture2D = SCROLL_ARROW_TEXTURES[vertical][decrement]
+		var texture := _scrollbar_texture(SCROLL_ARROW_TEXTURES[vertical][decrement])
 		var name := "decrement" if decrement else "increment"
 		bar.add_theme_icon_override(name, texture)
 		bar.add_theme_icon_override(name + "_highlight", tinted_texture(texture, HOVER_TINT))

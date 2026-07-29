@@ -39,6 +39,11 @@ const BACK_WIDTH := 240.0
 ## sliver beside the control. See [method _row].
 const HINT_MIN_WIDTH := 220.0
 
+## How much air sits between the end of a row and the scroll bar. Smaller than the margin on the
+## other three sides, because the bar is already a wide object with its own moulding — the usual
+## reading margin on top of it left the rows looking pushed away from the edge.
+const ROW_TO_SCROLLBAR_GAP := 10
+
 ## Audio levels the player can set, in the order a mixer shows them.
 const AUDIO_ROWS := [
 	{"id": AudioManager.MASTER, "label": "Master volume"},
@@ -186,7 +191,10 @@ func _build_ui() -> void:
 	tabs.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	# The body is the border-only frame, so the rows sit straight on the page's parchment rather than
 	# on a dark slab laid over it. Everything inside is therefore written in ink.
-	tabs.add_theme_stylebox_override("panel", UiSkin.thin_frame_style())
+	# Only the rail's own thickness, not the usual reading margin: the scroll bar is meant to run the
+	# whole side of this frame, so what sits inside it has to reach the rail. `_add_tab` puts the
+	# reading margin back around the rows, where it belongs.
+	tabs.add_theme_stylebox_override("panel", UiSkin.thin_frame_style(UiSkin.FRAME_THIN_RAIL))
 	tabs.add_theme_stylebox_override("tab_selected", UiSkin.tab_style(true))
 	tabs.add_theme_stylebox_override("tab_unselected", UiSkin.tab_style(false))
 	tabs.add_theme_stylebox_override("tab_hovered", UiSkin.tab_style(false))
@@ -240,8 +248,21 @@ func _add_tab(tabs: TabContainer, title: String, content: Control) -> void:
 	scroll.name = title
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	UiSkin.apply_scroll_container(scroll)
+
+	# The reading margin lives here rather than on the frame, and that is what puts the bar against
+	# the rail. Godot gives a ScrollContainer's bar the container's full height at its right edge, so
+	# the bar is flush with the frame exactly when the *container* is — pad the frame instead and the
+	# bar floats in the middle of the page with a strip of parchment either side of it. The right
+	# margin is the gap between the rows and the bar, not between the rows and the frame.
+	var padding := MarginContainer.new()
+	padding.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	for side in ["margin_left", "margin_top", "margin_bottom"]:
+		padding.add_theme_constant_override(side, int(UiSkin.FRAME_THIN_PADDING))
+	padding.add_theme_constant_override("margin_right", ROW_TO_SCROLLBAR_GAP)
 	content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.add_child(content)
+	padding.add_child(content)
+
+	scroll.add_child(padding)
 	tabs.add_child(scroll)
 
 
