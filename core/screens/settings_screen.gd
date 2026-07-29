@@ -32,12 +32,35 @@ const PLANNED_COLOR := Color(0.58, 0.34, 0.05)
 const NOTE_COLOR := UiSkin.INK_MUTED
 
 const LABEL_WIDTH := 260.0
-const CONTROL_WIDTH := 320.0
+## Wide enough that a setting's value is readable rather than trimmed to a stub. It grew with the
+## type scale for the same reason the row heights did: at 320 and [constant UiSkin.FONT_BODY] the
+## narration dropdown showed "Average — bala…", which tells the player nothing about what is
+## selected. The longest label still does not fit whole on a phone — the full text is in the list —
+## but the visible part now carries the meaning.
+const CONTROL_WIDTH := 430.0
 ## Back has one short word in it, so left to itself the plate would be far narrower than Reset's.
-const BACK_WIDTH := 240.0
+## Not so wide that the two plates stop fitting on one line: see [constant RESET_LABEL].
+const BACK_WIDTH := 200.0
+
+## Deliberately not "Reset all to defaults". The footer's two plates have to sit side by side within
+## the design viewport's 720 — the page is not allowed a horizontal scroll — and at
+## [constant UiSkin.BUTTON_FONT_SIZE] that caption alone wanted 391 of the 572 available, which put
+## the whole page off the right of the screen. "all" was the word carrying the least meaning: the
+## button is in the settings footer, so what else would it reset.
+const RESET_LABEL := "Reset to defaults"
 ## The narrowest a row's explanatory hint may be before it takes a line of its own rather than a
 ## sliver beside the control. See [method _row].
 const HINT_MIN_WIDTH := 220.0
+
+## Room for the volume percentage beside its slider. Wide enough for "100%" at
+## [constant UiSkin.FONT_BODY] — a right-aligned readout that has to widen for its own maximum value
+## drags the slider a few pixels left every time the level passes 99%.
+const READOUT_WIDTH := 84.0
+
+## How much air sits between the end of a row and the scroll bar. Smaller than the margin on the
+## other three sides, because the bar is already a wide object with its own moulding — the usual
+## reading margin on top of it left the rows looking pushed away from the edge.
+const ROW_TO_SCROLLBAR_GAP := 10
 
 ## Audio levels the player can set, in the order a mixer shows them.
 const AUDIO_ROWS := [
@@ -186,7 +209,10 @@ func _build_ui() -> void:
 	tabs.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	# The body is the border-only frame, so the rows sit straight on the page's parchment rather than
 	# on a dark slab laid over it. Everything inside is therefore written in ink.
-	tabs.add_theme_stylebox_override("panel", UiSkin.thin_frame_style())
+	# Only the rail's own thickness, not the usual reading margin: the scroll bar is meant to run the
+	# whole side of this frame, so what sits inside it has to reach the rail. `_add_tab` puts the
+	# reading margin back around the rows, where it belongs.
+	tabs.add_theme_stylebox_override("panel", UiSkin.thin_frame_style(UiSkin.FRAME_THIN_RAIL))
 	tabs.add_theme_stylebox_override("tab_selected", UiSkin.tab_style(true))
 	tabs.add_theme_stylebox_override("tab_unselected", UiSkin.tab_style(false))
 	tabs.add_theme_stylebox_override("tab_hovered", UiSkin.tab_style(false))
@@ -197,7 +223,7 @@ func _build_ui() -> void:
 	tabs.add_theme_color_override("font_selected_color", UiSkin.INK)
 	tabs.add_theme_color_override("font_unselected_color", UiSkin.LABEL)
 	tabs.add_theme_color_override("font_hovered_color", UiSkin.LABEL)
-	tabs.add_theme_font_size_override("font_size", UiSkin.FONT_BODY)
+	tabs.add_theme_font_size_override("font_size", UiSkin.TAB_FONT_SIZE)
 	# The tabs are the one clickable thing here that no `apply_*` helper touches — the strip is the
 	# TabContainer's own internal child, not something the screen built.
 	UiSkin.apply_cursor(tabs.get_tab_bar())
@@ -222,7 +248,7 @@ func _build_ui() -> void:
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	footer.add_child(spacer)
-	var reset := SkinnedButton.create("Reset all to defaults", UiSkin.BROWN, UiSkin.BUTTON_HEIGHT,
+	var reset := SkinnedButton.create(RESET_LABEL, UiSkin.BROWN, UiSkin.BUTTON_HEIGHT,
 		UiSkin.BUTTON_FONT_SIZE)
 	reset.pressed.connect(_on_reset)
 	footer.add_child(reset)
@@ -240,8 +266,21 @@ func _add_tab(tabs: TabContainer, title: String, content: Control) -> void:
 	scroll.name = title
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	UiSkin.apply_scroll_container(scroll)
+
+	# The reading margin lives here rather than on the frame, and that is what puts the bar against
+	# the rail. Godot gives a ScrollContainer's bar the container's full height at its right edge, so
+	# the bar is flush with the frame exactly when the *container* is — pad the frame instead and the
+	# bar floats in the middle of the page with a strip of parchment either side of it. The right
+	# margin is the gap between the rows and the bar, not between the rows and the frame.
+	var padding := MarginContainer.new()
+	padding.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	for side in ["margin_left", "margin_top", "margin_bottom"]:
+		padding.add_theme_constant_override(side, int(UiSkin.FRAME_THIN_PADDING))
+	padding.add_theme_constant_override("margin_right", ROW_TO_SCROLLBAR_GAP)
 	content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.add_child(content)
+	padding.add_child(content)
+
+	scroll.add_child(padding)
 	tabs.add_child(scroll)
 
 
@@ -312,7 +351,7 @@ func _build_audio_tab() -> Control:
 		slider.custom_minimum_size = Vector2(CONTROL_WIDTH - 60.0, UiSkin.CONTROL_HEIGHT)
 		slider.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		var readout := Label.new()
-		readout.custom_minimum_size = Vector2(50, 0)
+		readout.custom_minimum_size = Vector2(READOUT_WIDTH, 0)
 		readout.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		readout.add_theme_color_override("font_color", UiSkin.INK)
 		readout.add_theme_font_size_override("font_size", UiSkin.FONT_BODY)
@@ -664,8 +703,15 @@ func _section(parent: Node, title: String) -> void:
 	parent.add_child(rule)
 
 
-## One setting: its name, its control, the `planned` tag when it is not wired, and an optional line of
+## One setting: its name, the `planned` tag when it is not wired, its control, and an optional line of
 ## explanation. Added in that order, so the eye meets the state before the reason.
+##
+## **The tag rides with the label, not after the control.** It qualifies the setting — "Difficulty,
+## planned" — rather than the widget, and putting it after the control made it the thing most likely
+## to be pushed onto a line of its own as the row narrowed, where it landed alone to the left of the
+## wrapped hint and read as a stray word. Beside the label it stays attached to what it describes,
+## and the row breaks at the two places that make sense at any width: before the control, and before
+## the hint.
 ##
 ## An [HFlowContainer], not an [HBoxContainer]: name + control + hint is about 640px of fixed columns,
 ## which fits a desktop window and does not fit the 720-wide portrait viewport a phone renders at —
@@ -687,9 +733,6 @@ func _row(parent: Node, label_text: String, control: Control, note: String,
 	label.add_theme_font_size_override("font_size", UiSkin.FONT_BODY)
 	row.add_child(label)
 
-	control.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	row.add_child(control)
-
 	if planned:
 		var tag := Label.new()
 		tag.text = PLANNED_TAG
@@ -697,6 +740,9 @@ func _row(parent: Node, label_text: String, control: Control, note: String,
 		tag.add_theme_font_size_override("font_size", UiSkin.FONT_SMALL)
 		tag.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		row.add_child(tag)
+
+	control.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	row.add_child(control)
 
 	if not note.is_empty():
 		var hint := Label.new()

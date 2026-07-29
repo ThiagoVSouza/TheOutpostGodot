@@ -305,3 +305,31 @@ func test_every_planned_control_is_actually_inert() -> void:
 			assert_false((node as Range).editable, "a planned Range is not editable")
 		elif node is BaseButton:
 			assert_true((node as BaseButton).disabled, "a planned button is disabled")
+
+
+func test_the_page_fits_the_width_it_is_designed_for() -> void:
+	# **A page wider than the viewport does not scroll — it hangs off the right edge**, and every
+	# control on that side goes with it. Godot containers do not clip: a child whose *minimum* width
+	# exceeds its parent simply overflows, silently, and only on a device narrow enough to notice.
+	#
+	# This has now happened twice on this page, both times from a change that looks unrelated to
+	# layout. First `OptionButton.fit_to_longest_item` (on by default) made one dropdown's widest
+	# entry — a value the player may never select — the minimum width of the whole page. Then the
+	# footer's two plates stopped fitting side by side once the captions grew. Both were invisible in
+	# a desktop window with room to spare, and both took the settings page off the right of a phone.
+	#
+	# The design width is the project's own viewport, so this tracks the real target rather than a
+	# number copied here.
+	var design_width := float(ProjectSettings.get_setting("display/window/size/viewport_width"))
+	var screen := _screen()
+	var page: Control = null
+	for child in screen.get_children():
+		if child is MarginContainer:
+			page = child as MarginContainer
+			break
+	assert_not_null(page, "the screen's content is wrapped in a MarginContainer")
+	if page == null:
+		return
+	var needed := page.get_combined_minimum_size().x
+	assert_lte(needed, design_width,
+		"the settings page needs %.0f of the %.0f it is designed for" % [needed, design_width])
