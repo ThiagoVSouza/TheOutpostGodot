@@ -6,6 +6,11 @@ extends GutTest
 ## Uses the *autoload* Kernel, not a fresh GameKernel: `new_game_screen.gd` talks to `Kernel`
 ## directly, the same arrangement `test_confirmation_ui.gd` and `test_input_router.gd` use.
 
+## The screen's script, for its constants — a `.tscn`-rooted screen with no `class_name`, so a
+## preload is how the step list is shared rather than duplicated as a literal here. Same arrangement
+## as `test_settings_screen.gd`.
+const WizardScreen := preload("res://core/screens/new_game_screen.gd")
+
 func before_each() -> void:
 	# The real app sets this once from the boot scene (core/bootstrap/boot.gd); nothing plays that
 	# role in a headless test run, so router.goto would otherwise be a no-op with a push_error.
@@ -77,3 +82,31 @@ func test_defaults_are_used_when_the_player_changes_nothing() -> void:
 
 	assert_eq(String(Entities.get_entity(Kernel.state, "hero").get("name", "")), "Marcus")
 	assert_eq(String(Entities.get_entity(Kernel.state, "outpost").get("name", "")), "Ravenwatch")
+
+
+func test_every_step_fits_the_width_it_is_designed_for() -> void:
+	# Same guard as the settings page, and it caught the same thing here: a Godot container does not
+	# clip, so a step whose *minimum* width exceeds the viewport runs off the right edge with no
+	# scrollbar to reach it. The Identity step wanted 1052 of 720 when its two columns were an HBox —
+	# invisible on a desktop, and half the flag designer gone on a phone.
+	#
+	# Every step, not just the first: they are separate layouts and only the one on show contributes
+	# to the page's minimum, so a regression in step 3 is silent until someone walks to step 3.
+	var design_width := float(ProjectSettings.get_setting("display/window/size/viewport_width"))
+	var screen := _screen()
+	var page: Control = null
+	for child in screen.get_children():
+		if child is MarginContainer:
+			page = child as MarginContainer
+			break
+	assert_not_null(page, "the wizard's content is wrapped in a MarginContainer")
+	if page == null:
+		return
+	var steps: Array = WizardScreen.STEP_TITLES
+	for step in steps.size():
+		var needed := page.get_combined_minimum_size().x
+		assert_lte(needed, design_width, "the %s step needs %.0f of the %.0f it is designed for"
+			% [steps[step], needed, design_width])
+		# Not past the last one: `_on_next` there is Start, which would seed a game.
+		if step < steps.size() - 1:
+			screen.call("_on_next")
