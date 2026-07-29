@@ -687,6 +687,12 @@ static func label_style(label: Label, font_size: int, disabled: bool = false) ->
 ## transparent fill leaves a dark slab showing through the middle. Both failures were reproduced
 ## side by side before landing this. The way that works is an opaque fill ([constant SHADOW_FILL])
 ## that the plate in front covers completely, leaving only the blur beyond its edges visible.
+##
+## **Which makes a hole in the art a hole through to this.** `frame2.png` shipped with a 1px-wide,
+## 40px-tall transparent scratch in it; over flat parchment grain it is invisible in an image viewer,
+## and in the game it was a hard black hairline down the menu, the settings page and the exit modal.
+## The fill is not optional and cannot be lightened — it sits behind the dark button plates too — so
+## the guarantee it depends on is the art's, and `test_ui_textures.gd` is what holds the art to it.
 static func shadow_style(size: int, offset: Vector2, radius: int) -> StyleBoxFlat:
 	var style := StyleBoxFlat.new()
 	style.draw_center = true
