@@ -23,6 +23,10 @@ const CARD_META_COLOR := Color(0.58, 0.34, 0.05)
 ## dropdown have the same air inside their borders.
 const CARD_PADDING := UiSkin.INPUT_PADDING_H
 
+## How far a press may travel and still count as a tap rather than the start of a drag. Generous
+## enough for a thumb, which never comes down and up on exactly the same pixel.
+const TAP_SLOP := 8.0
+
 ## The drawn width of the sunken plate's rail. The painting stops here rather than at
 ## [constant CARD_PADDING], so it reaches the card's border and no further — any less and it covers
 ## the moulding, any more and it reads as a picture hung in a mount.
@@ -490,9 +494,18 @@ func _card(item: Dictionary, group: ButtonGroup, selected: bool, on_select: Call
 	var scroll := ScrollContainer.new()
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroll.mouse_filter = Control.MOUSE_FILTER_PASS
 	UiSkin.apply_scroll_container(scroll)
 	content.add_child(scroll)
+	# **The scroll region has to hand a plain tap back to the card.** It covers everything below the
+	# painting, and a ScrollContainer keeps the mouse events in that area for its own dragging — so
+	# putting the prose in one silently made the painting the only part of the card you could click.
+	#
+	# `MOUSE_FILTER_PASS` is not the fix: it would let the press through to the plate *and* leave it
+	# with the scroll, so every drag would also pick the card. What separates them is what the player
+	# did — a press and release in the same place is a choice, a press that travelled is a scroll —
+	# which is the same rule a touch screen uses everywhere, and it has to be applied here rather than
+	# guessed at by the container.
+	_forward_taps(scroll, button, func() -> void: on_select.call(String(item["id"])))
 
 	var text := MarginContainer.new()
 	text.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -554,6 +567,33 @@ func _card(item: Dictionary, group: ButtonGroup, selected: bool, on_select: Call
 		for badge: String in badges:
 			strip.add_child(_badge(badge))
 	return host
+
+
+## Make a tap anywhere in [param region] choose [param button], while a drag still scrolls.
+##
+## Told apart by whether anything moved: if the pointer finished where it started *and* the view did
+## not scroll under it, that was a choice. The scroll check is what covers a flung list on a phone,
+## where a finger can come to rest almost where it went down while the content is still travelling.
+##
+## [member BaseButton.button_pressed] rather than a synthetic press: it goes through the
+## [ButtonGroup], so the previously chosen card is told to let go and its glow comes off. It does not
+## emit [signal BaseButton.pressed] though, so the caller's own callback is invoked here too.
+func _forward_taps(region: ScrollContainer, button: Button, on_tap: Callable) -> void:
+	# A dictionary because a lambda captures by *copy*: a plain local written inside the handler would
+	# be a fresh zero on the next event.
+	var press := {"at": Vector2.ZERO, "scroll": 0}
+	region.gui_input.connect(func(event: InputEvent) -> void:
+		var click := event as InputEventMouseButton
+		if click == null or click.button_index != MOUSE_BUTTON_LEFT:
+			return
+		if click.pressed:
+			press["at"] = click.global_position
+			press["scroll"] = region.scroll_vertical
+			return
+		var still := click.global_position.distance_to(press["at"] as Vector2) <= TAP_SLOP
+		if still and absi(region.scroll_vertical - int(press["scroll"])) <= TAP_SLOP:
+			button.button_pressed = true
+			on_tap.call())
 
 
 ## One short tag under a card's prose — "Coins", "Trade".

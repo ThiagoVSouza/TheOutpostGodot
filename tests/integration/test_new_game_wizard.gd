@@ -129,3 +129,65 @@ func test_every_step_fits_the_width_it_is_designed_for() -> void:
 		if step < steps.size() - 1:
 			screen.call("_on_next")
 			await wait_process_frames(1)
+
+
+## The card's prose sits in a ScrollContainer, and a ScrollContainer keeps mouse events in its own
+## area — so adding one silently left the painting as the only clickable part of the card. These pin
+## down the rule that fixed it: a press and release in the same place is a choice, a press that
+## travelled is a scroll.
+## The *card's* scroll, found via the card's own plate. Taking the first ScrollContainer in the tree
+## instead finds the step body's, which is an ancestor of every card — and emitting into that proves
+## nothing, which is exactly how the first version of this test passed while the bug was still there.
+func _card_scroll(screen: Control) -> ScrollContainer:
+	for node in _descendants(screen):
+		if not (node is Button and (node as Button).toggle_mode):
+			continue
+		for inside in _descendants(node.get_parent()):
+			if inside is ScrollContainer:
+				return inside as ScrollContainer
+	return null
+
+
+func _descendants(node: Node) -> Array[Node]:
+	var found: Array[Node] = []
+	for child in node.get_children():
+		found.append(child)
+		found.append_array(_descendants(child))
+	return found
+
+
+func _mouse(pressed: bool, at: Vector2) -> InputEventMouseButton:
+	var event := InputEventMouseButton.new()
+	event.button_index = MOUSE_BUTTON_LEFT
+	event.pressed = pressed
+	event.position = at
+	event.global_position = at
+	return event
+
+
+func test_tapping_a_cards_prose_chooses_that_card() -> void:
+	var screen := _screen()
+	screen.set("_selected_background", "scholar")
+	var scroll := _card_scroll(screen)
+	assert_not_null(scroll, "a card wraps its prose in a scroll region")
+	if scroll == null:
+		return
+
+	var at := Vector2(40, 40)
+	scroll.gui_input.emit(_mouse(true, at))
+	scroll.gui_input.emit(_mouse(false, at))
+	assert_eq(String(screen.get("_selected_background")), "wealthy_merchant",
+		"a tap on the prose picks the card it belongs to, not just a tap on the painting")
+
+
+func test_dragging_a_cards_prose_scrolls_without_choosing() -> void:
+	var screen := _screen()
+	screen.set("_selected_background", "scholar")
+	var scroll := _card_scroll(screen)
+	if scroll == null:
+		return
+
+	scroll.gui_input.emit(_mouse(true, Vector2(40, 120)))
+	scroll.gui_input.emit(_mouse(false, Vector2(40, 20)))
+	assert_eq(String(screen.get("_selected_background")), "scholar",
+		"a press that travelled was a scroll, and must leave the choice alone")
