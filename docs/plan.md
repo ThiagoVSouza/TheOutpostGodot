@@ -671,14 +671,29 @@ landed for the splash, menu, exit modal, loading bar and settings page (`core/ui
 `SkinnedButton`, `SkinnedProgressBar`, `ModalDialog`). **The last four pieces — scrollbars, the
 dropdown chevron, the slider and the toggle — came in on 2026-07-29**: `UiSkin.apply_scroll_container`,
 `apply_slider`, `apply_toggle`, and the chevron through `apply_input`, which also turns it over while
-the list is open. **No control on that page is stock Godot chrome any more**, and the art table that
-stood here is closed.
+the list is open. The art table that stood here is closed — **no new texture is owed**.
 
-Still optional: `separator.png` (~400x8) for the section rules, which are the last stock bluish
-`HSeparator`s. And the painted controls are applied per-control rather than through a [Theme], so the
-other screens — the chat log, the HUD pages — still get Godot's own scrollbars and fields until
-someone calls the `apply_*` helpers on them. Folding these into `OutpostTheme` is the real fix and is
-the natural next step.
+**Correction (2026-07-29).** This entry claimed that no control on the settings page was stock Godot
+chrome any more. That was wrong twice over, and both were fixed the same day:
+
+- **A dropdown's *list* is a separate `PopupMenu` with its own theme.** Skinning the `OptionButton`
+  dresses the field; the flat grey list it opened went unnoticed because nothing in the first pass
+  ever opened one. Now `UiSkin._apply_select_popup` gives it the field's own parchment, ink
+  lettering, and Godot's radio marks darkened to read on it — no new art, and the list reads as the
+  field having grown rather than as a window over it.
+- **The section rules were still the shell's cool blue-grey.** They are now brown
+  (`UiSkin.separator_style`), which is what `separator.png` was going to be for; the texture is no
+  longer needed for this. Measured: the rule went from `(188,182,176)` to `(169,148,119)`.
+
+The lesson is cheap to state and was expensive to miss: **a control that opens something is two
+controls.** Check the opened state, not just the closed one.
+
+Still open, and structural rather than art: the painted controls are applied per-control rather than
+through a `Theme`, so the other screens — the chat log, the HUD pages — still get Godot's own
+scrollbars and fields until someone calls the `apply_*` helpers on them. Folding these into
+`OutpostTheme` is the real fix and is the natural next step. The one thing that **cannot** go there is
+the pointer shape: `mouse_default_cursor_shape` is a node property, not a theme item, which is why
+`UiSkin.watch_cursors` is a `SceneTree.node_added` hook installed at boot instead.
 
 Two things the finished set is worth remembering for:
 
