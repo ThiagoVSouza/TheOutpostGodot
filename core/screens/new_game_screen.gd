@@ -481,13 +481,29 @@ func _card(item: Dictionary, group: ButtonGroup, selected: bool, on_select: Call
 	art.resized.connect(func() -> void: art.custom_minimum_size.y = art.size.x / aspect)
 	content.add_child(art)
 
+	# **The prose scrolls inside the card, not the card inside the step.** The painting stays put at the
+	# top and everything under it moves, down to the card's own bottom edge. Scrolling the whole step
+	# instead — which is what this did — meant the picture slid away the moment you read past it, and on
+	# the widest card the bottom of one card's badges sat level with the middle of another's prose. Each
+	# card is now a fixed frame with its own contents, so a row of them stays aligned however much text
+	# any one of them has.
+	var scroll := ScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.mouse_filter = Control.MOUSE_FILTER_PASS
+	UiSkin.apply_scroll_container(scroll)
+	content.add_child(scroll)
+
 	var text := MarginContainer.new()
 	text.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# The scroll hands its child the full width only if the child asks to expand — the same rule that
+	# caught the step body out.
+	text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	for side in ["margin_left", "margin_right"]:
 		text.add_theme_constant_override(side, int(CARD_PADDING - CARD_BORDER_INSET))
 	text.add_theme_constant_override("margin_top", int(CARD_PADDING - CARD_BORDER_INSET))
 	text.add_theme_constant_override("margin_bottom", int(CARD_PADDING - CARD_BORDER_INSET))
-	content.add_child(text)
+	scroll.add_child(text)
 
 	var column := VBoxContainer.new()
 	column.mouse_filter = Control.MOUSE_FILTER_IGNORE

@@ -301,13 +301,22 @@ const CARD_SHADOW_INSET := 3.0
 ##
 ## Reusing [method shadow_style] rather than inventing a second mechanism: a glow *is* a shadow that
 ## is not dark and does not fall to one side.
-const CARD_GLOW_COLOR := Color(0.36, 0.66, 1.0, 1.0)
-const CARD_GLOW_SIZE := 20
+## Light, not a border. At full strength it stopped reading as a glow and started reading as a hard
+## blue rule drawn round the card — the tint problem again, one step out. Half the alpha and a
+## slightly tighter spread leaves it clearly the chosen card without anything on screen looking
+## outlined.
+const CARD_GLOW_COLOR := Color(0.40, 0.68, 1.0, 0.5)
+const CARD_GLOW_SIZE := 16
 
 ## The arrow plates' corners are cut in by six transparent pixels, so their shadow box needs the
 ## deepest inset of any here — this is the one that was drawing a black bar down each side.
-const ARROW_SHADOW_SIZE := 9
+##
+## **The size has to pay for the inset.** Seven of those pixels are spent getting the box back under
+## the paint, so a shadow the same size as a button's had two left to show and the arrows looked
+## flat. This is [constant BUTTON_SHADOW_SIZE] plus the inset, which puts the same amount of blur
+## outside the plate as every other button on the screen has.
 const ARROW_SHADOW_INSET := 7.0
+const ARROW_SHADOW_SIZE := BUTTON_SHADOW_SIZE + int(ARROW_SHADOW_INSET)
 const ARROW_CORNER_RADIUS := 8
 
 ## Hover lifts the plate, pressed sinks it. The art has no second state drawn, so the state reads as a
@@ -528,7 +537,10 @@ static func card_glow_style() -> StyleBoxFlat:
 
 ## An arrow plate's shadow, inset past its transparent corners.
 static func arrow_shadow_style() -> StyleBoxFlat:
-	return shadow_style(ARROW_SHADOW_SIZE, Vector2.ZERO, ARROW_CORNER_RADIUS, ARROW_SHADOW_INSET)
+	# The same drop as a captioned plate, so an arrow sits on the page at the same height as the
+	# buttons around it rather than looking pressed into it.
+	return shadow_style(ARROW_SHADOW_SIZE, BUTTON_SHADOW_OFFSET, ARROW_CORNER_RADIUS,
+		ARROW_SHADOW_INSET)
 
 
 ## A short tag on a card — "Coins", "Trade". Ink on a faint wash rather than a plate: there are two
