@@ -57,6 +57,92 @@ const INPUT_SLICE := 10.0
 const INPUT_PADDING_H := 16.0
 const INPUT_PADDING_V := 10.0
 
+## The chevron on a dropdown. Godot draws an [OptionButton]'s arrow as its own theme *icon* rather
+## than as part of the field's stylebox, so a skinned field with no icon override keeps the stock
+## light-grey one, which on parchment is very nearly invisible.
+##
+## Two of them, and the second is the point: the arrow turns over while the list is open. The down
+## chevron says "there is more below"; leaving it pointing down with the list already open says
+## nothing, and the flip is the cheapest possible way to show that clicking again closes it. Wired in
+## [method apply_input].
+const SELECT_ARROW_TEXTURE := preload("res://core/assets/ui/select_arrow.png")
+const SELECT_ARROW_UP_TEXTURE := preload("res://core/assets/ui/select_arrow_up.png")
+
+## The toggle, drawn as one image per state rather than a track with a knob laid over it — so the
+## knob does not slide, it simply is on the other side. Green with the knob right is on; red with it
+## left is off, which means the state reads from the colour across the room and from the knob's
+## position up close.
+const TOGGLE_ON_TEXTURE := preload("res://core/assets/ui/toggle_on.png")
+const TOGGLE_OFF_TEXTURE := preload("res://core/assets/ui/toggle_off.png")
+
+## Drawn at 194x85 and 195x85 — over a third the height of the settings frame, and far too big for a
+## row that is [constant CONTROL_HEIGHT] tall. A [CheckButton] draws its check icon at the texture's
+## own size (`icon_max_width` governs a [Button]'s *icon*, not this), so the size has to be settled
+## before the theme sees it: [method scaled_texture] resamples both to exactly this, which also
+## reconciles the 1px the two sources differ by. 110x48 is the art's own 2.28 aspect at the row's
+## height.
+const TOGGLE_SIZE := Vector2i(110, 48)
+
+## The slider's three parts: the groove, the gold that fills it up to the value, and the knob.
+##
+## The groove and the fill are both 130x10 and **share a footprint** — the fill's gold band is inset
+## to (4,3)-(127,7), exactly the groove's well — which is the same arrangement
+## [constant PROGRESS_FILL_TEXTURE] uses and for the same payoff: Godot draws both into rects that
+## start at the control's left edge, so with matching footprints the gold lands inside the groove with
+## no offsets to keep in step.
+const SLIDER_TEXTURE := preload("res://core/assets/ui/slider.png")
+const SLIDER_FILL_TEXTURE := preload("res://core/assets/ui/slider_fill.png")
+const SLIDER_GRABBER_TEXTURE := preload("res://core/assets/ui/slider_button.png")
+
+## The groove's rounded ends run to ~4px and the gold's taper to about the same; 6 carries both. The
+## vertical slice has to stay under half of 10, and 4 leaves a 2px middle — which is never stretched
+## anyway, since the groove is always drawn at its own height (see [method slider_style]).
+const SLIDER_SLICE_H := 6.0
+const SLIDER_SLICE_V := 4.0
+
+## The scrollbar: a recessed channel, a stone bar that rides in it, and a plate button at each end.
+##
+## Drawn at [constant SCROLLBAR_SIZE] across, which is the art's own width — the tracks are 54 across
+## and the arrow plates are 54 on their long edge, so at that size nothing on the cross axis is
+## stretched at all. It is far wider than a desktop scrollbar, deliberately: the same reasoning as
+## [constant BUTTON_HEIGHT], since on a phone this is a thing you drag with a thumb, and the arrows
+## are a tap target rather than a decoration.
+const SCROLL_TRACK_TEXTURES := {true: preload("res://core/assets/ui/scrollbar_vertical.png"),
+	false: preload("res://core/assets/ui/scrollbar_horizontal.png")}
+const SCROLL_GRABBER_TEXTURES := {true: preload("res://core/assets/ui/scrollbar_vertical_bar.png"),
+	false: preload("res://core/assets/ui/scrollbar_horizontal_bar.png")}
+## Godot calls these decrement/increment; on a vertical bar that is up/down, on a horizontal one
+## left/right. Keyed `[vertical][decrement]`.
+const SCROLL_ARROW_TEXTURES := {
+	true: {true: preload("res://core/assets/ui/scrollbar_button_up.png"),
+		false: preload("res://core/assets/ui/scrollbar_button_down.png")},
+	false: {true: preload("res://core/assets/ui/scrollbar_button_left.png"),
+		false: preload("res://core/assets/ui/scrollbar_button_right.png")},
+}
+
+const SCROLLBAR_SIZE := 54.0
+
+## The track's end caps run to ~13px along its length before the channel settles into a flat dark
+## groove; 14 carries the whole cap. The channel is what stretches, and it is featureless, so it
+## stretches invisibly however tall the page is.
+const SCROLL_TRACK_SLICE := 14.0
+
+## The bar is 27x100 with a ~6px moulding around it and a cap detail reaching ~8px at each end. It
+## only ever stretches along its length — how far depends on how much of the page is showing — so 12
+## across the ends and 7 down the sides is what keeps the moulding at its drawn thickness.
+const SCROLL_GRABBER_SLICE_LONG := 12.0
+const SCROLL_GRABBER_SLICE_CROSS := 7.0
+
+## The bar is drawn 27 across against the track's 54, because it is a thing that *rides in* the
+## channel rather than covering the whole rail — the channel itself is only about 19 wide, so 27 sits
+## in the groove and laps a little onto the moulding either side, which is where the art puts it.
+##
+## Godot gives the grabber the bar's full width and offers no way to inset it, so the inset is a
+## **negative** [code]expand_margin[/code]: [method StyleBox.draw] adds the expand margins to the rect
+## it was handed, and a negative one therefore shrinks it. Without this the 27-wide art is stretched
+## to 54 and the moulding down its sides doubles in thickness.
+const SCROLL_GRABBER_WIDTH := 27.0
+
 ## The progress bar's two halves. Both are 916x78 and share a footprint — the fill's opaque area is
 ## inset to (12,12)-(904,67), exactly the background's well — so drawing them into the *same* rect
 ## lands the fill inside the frame with no offsets to keep in step. See [SkinnedProgressBar].
@@ -248,6 +334,10 @@ static func input_style(tint: Color = Color.WHITE) -> StyleBoxTexture:
 
 ## Dress an [OptionButton] (or any [Button] acting as a field) as a sunken parchment input. Its
 ## lettering is ink, not the plates' near-white: the field is light.
+##
+## An [OptionButton] also gets the painted chevron, and gets it turned over while its list is open —
+## see [constant SELECT_ARROW_TEXTURE]. Anything else (a rebind button, say) simply has no arrow to
+## dress, and the icon override is skipped rather than set on a control that would ignore it.
 static func apply_input(button: Button) -> void:
 	for state in ["normal", "hover", "pressed", "focus"]:
 		button.add_theme_stylebox_override(state, input_style(
@@ -259,6 +349,198 @@ static func apply_input(button: Button) -> void:
 	# A field is a peer of the text beside it, so it takes the row's size, not a button's.
 	button.add_theme_font_size_override("font_size", CONTROL_FONT_SIZE)
 	button.custom_minimum_size.y = CONTROL_HEIGHT
+	if button is OptionButton:
+		_apply_select_arrow(button as OptionButton)
+
+
+## The chevron, and the flip that follows the list.
+##
+## [signal Window.visibility_changed] rather than a pair of open/close signals: Godot 4's [Window] has
+## `about_to_popup` but no matching hide signal, so one handler reading [member Window.visible] covers
+## both edges — including the list being dismissed by clicking away, which no open-signal pairing
+## would have seen.
+static func _apply_select_arrow(options: OptionButton) -> void:
+	options.add_theme_icon_override("arrow", SELECT_ARROW_TEXTURE)
+	# Godot insets the arrow by `arrow_margin` *only* — it does not read the stylebox's right content
+	# margin the way the text does. Left at the stock 4 the chevron sits hard against the field's
+	# moulding while the lettering is 16 clear of it, and the row reads lopsided.
+	options.add_theme_constant_override("arrow_margin", int(INPUT_PADDING_H))
+	var popup := options.get_popup()
+	popup.visibility_changed.connect(func() -> void:
+		options.add_theme_icon_override("arrow",
+			SELECT_ARROW_UP_TEXTURE if popup.visible else SELECT_ARROW_TEXTURE))
+
+
+## Dress a [CheckButton] as the painted toggle.
+##
+## **Every stylebox is emptied.** A [CheckButton] is a [Button], so it arrives wearing whatever plate
+## the default theme gives one — on this page a dark slab from [OutpostTheme], showing as a blot
+## behind the toggle. The painted art is the whole control; there is nothing for a plate to do behind
+## it. `h_separation` goes with it: that is the gap between a caption and the icon, and these carry no
+## caption, so left at its default it only pads the control out wider than the image.
+##
+## The disabled states are the same two images, as with [method apply_slider] — no third state is
+## drawn, and a `planned` row fades the whole control anyway. RTL is not handled: Godot would want
+## genuinely mirrored art for `checked_mirrored`/`unchecked_mirrored` (the knob has to change sides),
+## and nothing in the app is translated yet, so there is no right answer to bake in.
+static func apply_toggle(check: CheckButton) -> void:
+	for state in ["normal", "hover", "pressed", "focus", "disabled"]:
+		check.add_theme_stylebox_override(state, StyleBoxEmpty.new())
+	check.add_theme_constant_override("h_separation", 0)
+	var on := scaled_texture(TOGGLE_ON_TEXTURE, TOGGLE_SIZE)
+	var off := scaled_texture(TOGGLE_OFF_TEXTURE, TOGGLE_SIZE)
+	check.add_theme_icon_override("checked", on)
+	check.add_theme_icon_override("checked_disabled", on)
+	check.add_theme_icon_override("unchecked", off)
+	check.add_theme_icon_override("unchecked_disabled", off)
+
+
+## One half of a slider: [param fill] picks the gold rather than the groove it runs in.
+##
+## **The content margins are deliberately left unset**, which is the one thing here that is not
+## cosmetic. Godot decides how tall to draw a slider's groove as the stylebox's minimum size *plus*
+## its centre size — so an unset margin falls back to the texture margin, the two sum back to the
+## art's own 10px, and the groove is drawn at exactly the height it was painted. Zeroing them the way
+## every other stylebox in this file does would drop the minimum to nothing and squash the groove to
+## its 2px middle.
+static func slider_style(fill: bool, tint: Color = Color.WHITE) -> StyleBoxTexture:
+	var style := StyleBoxTexture.new()
+	style.texture = SLIDER_FILL_TEXTURE if fill else SLIDER_TEXTURE
+	style.texture_margin_left = SLIDER_SLICE_H
+	style.texture_margin_right = SLIDER_SLICE_H
+	style.texture_margin_top = SLIDER_SLICE_V
+	style.texture_margin_bottom = SLIDER_SLICE_V
+	style.axis_stretch_horizontal = StyleBoxTexture.AXIS_STRETCH_MODE_STRETCH
+	style.axis_stretch_vertical = StyleBoxTexture.AXIS_STRETCH_MODE_STRETCH
+	style.modulate_color = tint
+	return style
+
+
+## Dress a [Slider] — groove, gold, and the knob that rides between them.
+##
+## Godot calls the filled part [code]grabber_area[/code]: it is drawn from the control's left edge to
+## the knob, which is what makes it read as a level rather than a track with a marker on it. The knob
+## itself is an icon, so its hover lighting is a baked copy; see [method tinted_texture].
+##
+## The disabled knob is the same image, not a greyed one — there is no second knob drawn, and a
+## [code]planned[/code] row already fades the whole control. Compare [method apply_button], where a
+## disabled plate really does become the gray one: there the alternative art exists.
+static func apply_slider(slider: Slider) -> void:
+	slider.add_theme_stylebox_override("slider", slider_style(false))
+	slider.add_theme_stylebox_override("grabber_area", slider_style(true))
+	slider.add_theme_stylebox_override("grabber_area_highlight", slider_style(true, HOVER_TINT))
+	slider.add_theme_icon_override("grabber", SLIDER_GRABBER_TEXTURE)
+	slider.add_theme_icon_override("grabber_highlight",
+		tinted_texture(SLIDER_GRABBER_TEXTURE, HOVER_TINT))
+	slider.add_theme_icon_override("grabber_disabled", SLIDER_GRABBER_TEXTURE)
+
+
+## The channel a scrollbar's grabber rides in. [param vertical] picks the art drawn for that axis —
+## the two are not rotations of each other, and the caps would run the wrong way round.
+static func scroll_track_style(vertical: bool) -> StyleBoxTexture:
+	var style := StyleBoxTexture.new()
+	style.texture = SCROLL_TRACK_TEXTURES[vertical]
+	_slice(style, SCROLL_TRACK_SLICE, StyleBoxTexture.AXIS_STRETCH_MODE_STRETCH)
+	style.set_content_margin_all(0.0)
+	return style
+
+
+## The bar itself, inset into the channel. See [constant SCROLL_GRABBER_WIDTH] for why the inset is a
+## negative expand margin, and [method button_style] for what [param tint] does.
+static func scroll_grabber_style(vertical: bool, tint: Color = Color.WHITE) -> StyleBoxTexture:
+	var style := StyleBoxTexture.new()
+	style.texture = SCROLL_GRABBER_TEXTURES[vertical]
+	var along := SCROLL_GRABBER_SLICE_LONG if vertical else SCROLL_GRABBER_SLICE_CROSS
+	var across := SCROLL_GRABBER_SLICE_CROSS if vertical else SCROLL_GRABBER_SLICE_LONG
+	style.texture_margin_top = along
+	style.texture_margin_bottom = along
+	style.texture_margin_left = across
+	style.texture_margin_right = across
+	style.axis_stretch_horizontal = StyleBoxTexture.AXIS_STRETCH_MODE_STRETCH
+	style.axis_stretch_vertical = StyleBoxTexture.AXIS_STRETCH_MODE_STRETCH
+	# Zero, so the shortest the bar may get is its own two end caps rather than those plus padding:
+	# Godot builds the grabber's minimum length out of this. The inset below is the only margin here
+	# doing any work.
+	style.set_content_margin_all(0.0)
+	var inset := -(SCROLLBAR_SIZE - SCROLL_GRABBER_WIDTH) * 0.5
+	if vertical:
+		style.expand_margin_left = inset
+		style.expand_margin_right = inset
+	else:
+		style.expand_margin_top = inset
+		style.expand_margin_bottom = inset
+	style.modulate_color = tint
+	return style
+
+
+## Dress one [ScrollBar] — channel, bar, and the two end plates.
+##
+## The end plates are theme **icons**, and a theme icon has no modulate, so the hover and press
+## lighting the plates elsewhere get for free has to be baked into copies of the image; see
+## [method tinted_texture]. The bar is a stylebox and takes its tint directly.
+static func apply_scroll_bar(bar: ScrollBar) -> void:
+	var vertical := bar is VScrollBar
+	bar.add_theme_stylebox_override("scroll", scroll_track_style(vertical))
+	bar.add_theme_stylebox_override("scroll_focus", scroll_track_style(vertical))
+	bar.add_theme_stylebox_override("grabber", scroll_grabber_style(vertical))
+	bar.add_theme_stylebox_override("grabber_highlight", scroll_grabber_style(vertical, HOVER_TINT))
+	bar.add_theme_stylebox_override("grabber_pressed", scroll_grabber_style(vertical, PRESSED_TINT))
+	for decrement in [true, false]:
+		var texture: Texture2D = SCROLL_ARROW_TEXTURES[vertical][decrement]
+		var name := "decrement" if decrement else "increment"
+		bar.add_theme_icon_override(name, texture)
+		bar.add_theme_icon_override(name + "_highlight", tinted_texture(texture, HOVER_TINT))
+		bar.add_theme_icon_override(name + "_pressed", tinted_texture(texture, PRESSED_TINT))
+	if vertical:
+		bar.custom_minimum_size.x = SCROLLBAR_SIZE
+	else:
+		bar.custom_minimum_size.y = SCROLLBAR_SIZE
+
+
+## Dress both of a [ScrollContainer]'s bars. The container reaches its scrollbars through methods
+## rather than children, which is why this exists rather than screens walking the tree.
+static func apply_scroll_container(scroll: ScrollContainer) -> void:
+	apply_scroll_bar(scroll.get_v_scroll_bar())
+	apply_scroll_bar(scroll.get_h_scroll_bar())
+
+
+## Copies of the art made at load time, keyed by what was asked of them. The settings page rebuilds
+## every control on a reset and on a window-mode change, and asks for the same handful of images each
+## time; without this each rebuild would leave another set behind.
+static var _derived_textures: Dictionary = {}
+
+
+## A copy of [param texture] with its brightness multiplied by [param tint], for the one place a
+## stylebox's [code]modulate_color[/code] is not available: theme icons.
+static func tinted_texture(texture: Texture2D, tint: Color) -> Texture2D:
+	# The tints here are uniform greys, so brightness alone says all of it — contrast and saturation
+	# stay at 1.0, which leaves the art's own colour untouched.
+	return _derive(texture, "tint@%.3f" % tint.r,
+		func(image: Image) -> void: image.adjust_bcs(tint.r, 1.0, 1.0))
+
+
+## A copy of [param texture] resampled to [param size]. For theme icons again: a [CheckButton] draws
+## its check at the texture's own size, so art drawn larger than the control has to be resized on the
+## way in rather than constrained on the way out.
+static func scaled_texture(texture: Texture2D, size: Vector2i) -> Texture2D:
+	return _derive(texture, "size@%v" % size,
+		func(image: Image) -> void: image.resize(size.x, size.y, Image.INTERPOLATE_LANCZOS))
+
+
+## Run [param edit] over a decompressed copy of [param texture]'s image, cached under
+## [param key]. Every caller here is preparing a theme icon, which cannot be adjusted once the
+## theme holds it.
+static func _derive(texture: Texture2D, key: String, edit: Callable) -> Texture2D:
+	var cache_key := "%s|%s" % [texture.resource_path, key]
+	if _derived_textures.has(cache_key):
+		return _derived_textures[cache_key]
+	var image: Image = texture.get_image().duplicate()
+	if image.is_compressed():
+		image.decompress()
+	edit.call(image)
+	var derived := ImageTexture.create_from_image(image)
+	_derived_textures[cache_key] = derived
+	return derived
 
 
 ## Dress a button's caption: the plate's lettering, with the shadow [Button] itself cannot draw.

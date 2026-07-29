@@ -11,7 +11,9 @@ extends RefCounted
 ##
 ## When a real theme lands, this is what it replaces.
 
-## The standard page: menus, the new-game wizard, the load screen, the game itself.
+## What sits under everything. On a shell screen it is only ever glimpsed — [method paint_shell] lays
+## the painting over it, and this is what shows on an aspect the crop cannot fill. In the game it is
+## the background outright.
 const BACKGROUND := Color(0.08, 0.10, 0.15)
 
 ## Deliberately darker, for the moments before the shell proper — the eye should settle *into* the
@@ -20,7 +22,7 @@ const BACKGROUND_SPLASH := Color(0.05, 0.05, 0.08)
 const BACKGROUND_LOADING := Color(0.06, 0.06, 0.09)
 
 
-## The painted settlement behind the menu and the loading screen.
+## The painted settlement behind every screen before the game — see [method paint_shell].
 const ART := preload("res://core/assets/main_menu_background.png")
 
 ## Where the keep stands in the painting, as a fraction of its width — the point the crop keeps in
@@ -49,6 +51,24 @@ static func plate_style() -> StyleBoxFlat:
 	style.content_margin_top = 24.0
 	style.content_margin_bottom = 24.0
 	return style
+
+
+## The app shell's backdrop: the flat colour, with the painting over it.
+##
+## **Every screen before the game itself gets this** — loading, the menu, the new-game wizard, the
+## load screen, settings. The painting is what the app looks like until the wizard hands over and
+## play begins; the game screen and its HUD take the flat [constant BACKGROUND] instead, because at
+## that point the world on screen is the subject and a second painted world behind it is noise.
+##
+## A screen that calls this owes its text a plate to sit on — see [method paint_art], which shows the
+## art at full brightness on purpose. [method plate_style] is the lighter answer (dark glass, the
+## shell's own near-white lettering) and `UiSkin.frame_style()` the heavier one (parchment, and every
+## label restated in ink).
+static func paint_shell(screen: Control, color: Color = BACKGROUND) -> void:
+	# The flat colour stays underneath: the art is cropped to cover, and on an aspect it cannot fill
+	# this is what shows rather than nothing.
+	paint(screen, color)
+	paint_art(screen)
 
 
 ## Add a full-rect background of [param color] as [param screen]'s first child, behind everything
