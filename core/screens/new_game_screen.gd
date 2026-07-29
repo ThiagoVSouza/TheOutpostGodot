@@ -88,7 +88,7 @@ func _ready() -> void:
 
 func _build_ui() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
-	ShellPalette.paint(self)
+	ShellPalette.paint_shell(self)
 
 	var margin := MarginContainer.new()
 	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -99,9 +99,17 @@ func _build_ui() -> void:
 	margin.add_theme_constant_override("margin_bottom", 20 + SafeArea.bottom(get_viewport()))
 	add_child(margin)
 
+	# The wizard is the last screen before play, and it is still in the shell's plain lettering over a
+	# full-brightness painting — so its steps sit on the dark glass. It is translucent, which is the
+	# point here: the painting stays visible through the panel rather than being boxed out of a screen
+	# that fills nearly the whole viewport. See the note in `load_screen`.
+	var plate := PanelContainer.new()
+	plate.add_theme_stylebox_override("panel", ShellPalette.plate_style())
+	margin.add_child(plate)
+
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", 14)
-	margin.add_child(col)
+	plate.add_child(col)
 
 	var title := Label.new()
 	title.text = "New Game"

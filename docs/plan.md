@@ -666,20 +666,31 @@ titled empty pages until M7, on purpose.
 
 ## Unscheduled — cheap, self-contained, do anytime
 
-**UI skin — textures still to draw (2026-07-28).** The painted shell landed for the splash, menu,
-exit modal, loading bar and settings page (`core/ui/theme/ui_skin.gd` + `SkinnedButton`,
-`SkinnedProgressBar`, `ModalDialog`). Three controls on the settings page are still Godot's stock
-dark widgets sitting on parchment, and each is blocked only on art:
+**UI skin — the settings page is fully painted (2026-07-28, finished 2026-07-29).** The painted shell
+landed for the splash, menu, exit modal, loading bar and settings page (`core/ui/theme/ui_skin.gd` +
+`SkinnedButton`, `SkinnedProgressBar`, `ModalDialog`). **The last four pieces — scrollbars, the
+dropdown chevron, the slider and the toggle — came in on 2026-07-29**: `UiSkin.apply_scroll_container`,
+`apply_slider`, `apply_toggle`, and the chevron through `apply_input`, which also turns it over while
+the list is open. **No control on that page is stock Godot chrome any more**, and the art table that
+stood here is closed.
 
-| Asset | Suggested size | Blocks |
-|---|---|---|
-| `dropdown_arrow.png` | ~32x32 | Every `OptionButton` — the field is skinned, but Godot draws the arrow as its own icon and the stock one is invisible on parchment |
-| `toggle_on.png` / `toggle_off.png` | ~110x56, matching footprints | `CheckButton` — currently dark blobs. One image per state is simplest; separate track + knob would let it slide but needs animation |
-| `slider_groove.png` / `slider_fill.png` / `slider_grabber.png` | ~420x32 (groove and fill sharing a footprint exactly), ~48x48 | `HSlider` — the whole Audio tab. The groove/fill pair should overlay like `progress_bar_background`/`_fill` did; that made the superposition free |
+Still optional: `separator.png` (~400x8) for the section rules, which are the last stock bluish
+`HSeparator`s. And the painted controls are applied per-control rather than through a [Theme], so the
+other screens — the chat log, the HUD pages — still get Godot's own scrollbars and fields until
+someone calls the `apply_*` helpers on them. Folding these into `OutpostTheme` is the real fix and is
+the natural next step.
 
-Optional after those: `separator.png` (~400x8) for the section rules, which are still the stock
-bluish `HSeparator`; and scrollbar track/grabber, visible on any tab taller than the screen — which
-on a phone is most of them.
+Two things the finished set is worth remembering for:
+
+- **The groove/fill pair paid off exactly as hoped.** `slider.png` and `slider_fill.png` are both
+  130x10 with the gold inset to the groove's well, so Godot's slider — which draws both from the
+  control's left edge — lands the fill inside the groove with no offsets to keep in step, the same
+  trick `progress_bar_background`/`_fill` uses.
+- **Draw near the final size still holds, and the toggle is the exception that proves it.** At 194x85
+  it is four times the height of the row it sits in, and a `CheckButton` draws its check icon at the
+  texture's own size (`icon_max_width` governs a `Button`'s *icon*, not this), so it had to be
+  resampled on the way in — `UiSkin.scaled_texture`, cached. That works, and Lanczos down to 110x48
+  kept the corner ornaments, but it is a step the other textures do not pay.
 
 **Conventions that earned themselves** — draw near the final size, opaque edge to edge, and keep
 ornaments inside a predictable corner inset. Two bugs came from ignoring this: `frame1` at 210x239

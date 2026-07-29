@@ -31,10 +31,7 @@ func _ready() -> void:
 
 func _build_ui() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
-	# The flat colour stays underneath: the art is cropped to cover, and on an aspect it cannot fill
-	# this is what shows rather than nothing.
-	ShellPalette.paint(self)
-	ShellPalette.paint_art(self)
+	ShellPalette.paint_shell(self)
 
 	var center := CenterContainer.new()
 	center.set_anchors_preset(Control.PRESET_FULL_RECT)

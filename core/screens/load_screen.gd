@@ -15,7 +15,7 @@ func _ready() -> void:
 
 func _build_ui() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
-	ShellPalette.paint(self)
+	ShellPalette.paint_shell(self)
 
 	var margin := MarginContainer.new()
 	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -25,9 +25,24 @@ func _build_ui() -> void:
 	margin.add_theme_constant_override("margin_bottom", 40 + SafeArea.bottom(get_viewport()))
 	add_child(margin)
 
+	# This screen is still a placeholder in the shell's plain lettering, and the painting behind it is
+	# shown at full brightness — so the list needs something to read against. `plate_style` is the
+	# dark glass made for exactly this; the parchment frame the menu and settings use would mean
+	# restating every label in ink, which is the skinning pass this screen has not had yet.
+	# The plate hugs the list rather than filling the screen — this page is a title and a handful of
+	# slots, and a full-height panel over three lines would put the painting behind glass for no
+	# reason. Nothing moves: the column already packed to the top.
+	var stack := VBoxContainer.new()
+	margin.add_child(stack)
+
+	var plate := PanelContainer.new()
+	plate.add_theme_stylebox_override("panel", ShellPalette.plate_style())
+	plate.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	stack.add_child(plate)
+
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", 8)
-	margin.add_child(col)
+	plate.add_child(col)
 
 	var title := Label.new()
 	title.text = "Load Game"

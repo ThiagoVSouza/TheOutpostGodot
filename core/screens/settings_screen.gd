@@ -149,7 +149,7 @@ func _build_ui() -> void:
 	_volume_readouts.clear()
 	_binding_buttons.clear()
 	_listening_button = null
-	ShellPalette.paint(self)
+	ShellPalette.paint_shell(self)
 
 	var margin := MarginContainer.new()
 	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -181,14 +181,6 @@ func _build_ui() -> void:
 	# Ink: the frame's middle is pale parchment, where the shell's near-white text vanishes.
 	title.add_theme_color_override("font_color", UiSkin.INK)
 	col.add_child(title)
-
-	var legend := Label.new()
-	legend.text = "Items marked “%s” are not implemented yet — they show what is coming." % PLANNED_TAG
-	legend.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	legend.add_theme_font_size_override("font_size", UiSkin.FONT_SMALL)
-	legend.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	legend.add_theme_color_override("font_color", UiSkin.INK_MUTED)
-	col.add_child(legend)
 
 	var tabs := TabContainer.new()
 	tabs.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -235,10 +227,16 @@ func _build_ui() -> void:
 
 ## Wrap a tab's content in a scroll container: several of these sections are already taller than a
 ## phone screen, and a settings row the player cannot reach is the same as one that does not exist.
+##
+## The bar is the painted one. That matters more here than it would elsewhere: this is the screen
+## where scrolling is not optional, so the stock thin blue-grey bar was the one piece of Godot's own
+## chrome left sitting on the parchment, and it was on every tab. Its plate buttons also make the
+## page usable with taps alone, which a 12px drag handle on a phone is not.
 func _add_tab(tabs: TabContainer, title: String, content: Control) -> void:
 	var scroll := ScrollContainer.new()
 	scroll.name = title
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	UiSkin.apply_scroll_container(scroll)
 	content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll.add_child(content)
 	tabs.add_child(scroll)
@@ -307,6 +305,7 @@ func _build_audio_tab() -> Control:
 		slider.max_value = 1.0
 		slider.step = 0.05
 		slider.value = Kernel.settings.audio_volume(category)
+		UiSkin.apply_slider(slider)
 		slider.custom_minimum_size = Vector2(CONTROL_WIDTH - 60.0, UiSkin.CONTROL_HEIGHT)
 		slider.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		var readout := Label.new()
@@ -761,6 +760,7 @@ func _options_mock(labels: Array, selected: int) -> OptionButton:
 func _check_mock(pressed: bool) -> CheckButton:
 	var check := CheckButton.new()
 	check.button_pressed = pressed
+	UiSkin.apply_toggle(check)
 	return check
 
 
@@ -770,6 +770,7 @@ func _slider_mock(value: float) -> HSlider:
 	slider.max_value = 1.0
 	slider.step = 0.05
 	slider.value = value
+	UiSkin.apply_slider(slider)
 	slider.custom_minimum_size = Vector2(CONTROL_WIDTH, UiSkin.CONTROL_HEIGHT)
 	return slider
 
