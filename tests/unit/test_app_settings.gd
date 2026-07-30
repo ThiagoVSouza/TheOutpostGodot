@@ -24,6 +24,31 @@ func test_defaults_are_a_complete_configuration() -> void:
 		var level := settings.audio_volume(category)
 		assert_true(level > 0.0 and level <= 1.0, "'%s' has an audible default" % category)
 	assert_true(NarrationSettings.is_level(settings.narration_level()))
+	assert_eq(settings.language(), AppSettings.DEFAULT_LANGUAGE)
+
+
+func test_the_language_catalog_matches_the_supported_picker_list() -> void:
+	var expected := ["cs", "da", "de", "en", "es", "fr", "it", "hu", "nl", "nb", "pl",
+		"pt-BR", "pt-PT", "fi", "sv", "tr", "ru", "uk", "hi", "th", "ko", "ja",
+		"zh-CN", "zh-TW"]
+	var actual: Array = []
+	for entry: Dictionary in AppSettings.LANGUAGES:
+		actual.append(String(entry["code"]))
+		assert_false(String(entry["language"]).is_empty())
+		assert_false(String(entry["emoji"]).is_empty())
+	assert_eq(actual, expected)
+
+
+func test_a_language_survives_a_restart_and_unknown_codes_are_refused() -> void:
+	var settings := _settings()
+	settings.set_language("pt-BR")
+	settings.set_language("klingon")
+	assert_eq(settings.language(), "pt-BR")
+	assert_true(settings.save())
+
+	var reopened := AppSettings.new(SCRATCH)
+	reopened.load_from_disk()
+	assert_eq(reopened.language(), "pt-BR")
 
 
 func test_a_level_survives_a_restart() -> void:
@@ -229,6 +254,7 @@ func test_reset_returns_every_value_to_its_default() -> void:
 	var settings := _settings()
 	settings.set_audio_volume(AudioManager.MUSIC, 0.1)
 	settings.set_narration_level(NarrationSettings.LEVEL_TOPICS)
+	settings.set_language("ja")
 	settings.set_window_mode(AppSettings.WINDOW_MODE_FULLSCREEN)
 	settings.set_vsync_mode(AppSettings.VSYNC_OFF)
 	settings.set_resolution(String(AppSettings.RESOLUTIONS[0]))
@@ -240,6 +266,7 @@ func test_reset_returns_every_value_to_its_default() -> void:
 	assert_almost_eq(settings.audio_volume(AudioManager.MUSIC),
 		float(AppSettings.DEFAULTS[AudioManager.MUSIC]), 0.001)
 	assert_eq(settings.narration_level(), NarrationSettings.LEVEL_NORMAL)
+	assert_eq(settings.language(), AppSettings.DEFAULT_LANGUAGE)
 	assert_eq(settings.window_mode(), AppSettings.WINDOW_MODE_FULLSCREEN)
 	assert_eq(settings.vsync_mode(), AppSettings.VSYNC_ON)
 	assert_eq(settings.resolution(), AppSettings.UNSET)

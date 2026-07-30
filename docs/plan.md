@@ -787,6 +787,29 @@ green. **Still deferred:** module-pick screen + a module-config-driven wizard
 (nothing to configure yet — this wizard's fields are all base_game's); Settings/Help/News screens;
 legacy background art per card.
 
+**Wizard Hero/Banner split + banner designer — done (2026-07-30).** The flow is now five fixed
+steps on every device: Background → Location → Hero → Banner → Settings. Hero owns hero name and
+sex (with no empty appearance placeholder); Banner owns the outpost name and the flag. The three
+stock colour pickers and two blind steppers are replaced by five compact property rows: Cloth
+colour, Pattern, Pattern colour, Emblem, Emblem colour. Each opens a focused themed modal. Colour
+modals show only a simple hue-and-saturation board; shape modals contain
+None + all 14 patterns / None + all 13 emblems. A square alpha-mask shader renders thumbnails without
+a flagpole and retints them live; 72-unit cells keep every mask readable at the phone breakpoint.
+The preview is larger and an `HFlowContainer` places it beside controls on desktop and above them on
+a phone. `capture_screens.gd` records both breakpoints and both modal kinds. 445 green.
+
+**Language preference — done (2026-07-30).** Both Settings surfaces share one 24-entry catalog with
+the requested locale codes, native language names and flag emoji. The main Settings screen persists
+the player's default in `settings.cfg`; the wizard pre-selects that default and copies its code into
+the new game's `profile.language`. Bundled MIT-licensed `flag-icons` SVGs provide consistent visual
+flags on platforms such as Windows that render Unicode flags as letter pairs. Translation remains
+deliberately unchanged for now. The 24 choices open in a 560-unit themed scroll viewport on desktop
+and mobile, avoiding Godot 4.7.1's `PopupMenu.max_size` bug while keeping every language reachable.
+The selected field and each option now use phone-sized 84/80-unit touch targets. Option rows pass
+drag gestures to the modal's 16-unit-deadzone scroll container, and a bundled, label-only subset of
+Noto Sans CJK supplies the Korean, Japanese, Simplified Chinese and Traditional Chinese glyphs on
+devices whose default font does not include them.
+
 **The wizard's choices start driving the game — done (2026-07-25).** The wizard had been collecting
 answers nothing read. Two are now wired, and the flow was finally **run in a window** rather than
 asserted headless.
@@ -870,7 +893,8 @@ nobody has decided, and roughly how much is left.
   either — a greyed control reads as "unavailable right now", not "not built yet", so the tag carries
   the difference. A test asserts one tag per inert control, no more and no fewer.
 - **What actually works:** the four audio levels (master/music/effects/ambience, live on their buses
-  and persisted) and narration length.
+  and persisted), narration length, and the preferred language code. Language selection is saved
+  and pre-selects new games; interface and narration translation remain future work.
 - **New `AppSettings`** (`core/settings/`, kernel field `settings`) — a `ConfigFile` at
   `user://settings.cfg`, an ini because it is the one file a player may reasonably hand-edit when
   something has gone wrong. Deliberately narrow: it stores only settings wired to something, since a

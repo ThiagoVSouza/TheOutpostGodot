@@ -280,6 +280,16 @@ const BADGE_RADIUS := 4
 const BADGE_PADDING_H := 10.0
 const BADGE_PADDING_V := 3.0
 
+## Palette swatches and flag thumbnails use a hard ring for selection: unlike a prose card, these
+## cells are small enough that a glow would blur into the colour being judged. The neutral border
+## also keeps white and black swatches visible against parchment before either is selected.
+const PICKER_BORDER := Color(0.16, 0.11, 0.07, 0.55)
+const PICKER_SELECTED := Color(0.20, 0.48, 0.82, 1.0)
+const PICKER_FILL := Color(0.82, 0.75, 0.61, 0.32)
+const PICKER_RADIUS := 6
+const PICKER_BORDER_WIDTH := 2
+const PICKER_SELECTED_WIDTH := 5
+
 ## Selection is [constant CARD_GLOW_COLOR] around the card, not a tint on it — see that constant. The
 ## plate itself keeps its own colour in every state, so the only thing the pointer changes is the
 ## ordinary hover lift.
@@ -499,6 +509,7 @@ static func apply_input(button: Button) -> void:
 		# units off the right of a 720-wide phone the moment the type scale grew. The page had no say
 		# in it, and no amount of trimming the *shown* text would have helped.
 		(button as OptionButton).fit_to_longest_item = false
+		button.add_theme_constant_override("icon_max_width", 36)
 		_apply_select_arrow(button as OptionButton)
 		_apply_select_popup(button as OptionButton)
 
@@ -557,6 +568,48 @@ static func badge_style() -> StyleBoxFlat:
 	style.content_margin_top = BADGE_PADDING_V
 	style.content_margin_bottom = BADGE_PADDING_V
 	return style
+
+
+## One painted colour chip. [param selected] adds the blue pick-one ring without changing the colour
+## itself, so selecting a chip never makes the value being compared look different.
+static func swatch_style(color: Color, selected: bool, tint: Color = Color.WHITE) -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(
+		clampf(color.r * tint.r, 0.0, 1.0),
+		clampf(color.g * tint.g, 0.0, 1.0),
+		clampf(color.b * tint.b, 0.0, 1.0),
+		color.a)
+	style.border_color = PICKER_SELECTED if selected else PICKER_BORDER
+	style.set_border_width_all(PICKER_SELECTED_WIDTH if selected else PICKER_BORDER_WIDTH)
+	style.set_corner_radius_all(PICKER_RADIUS)
+	style.set_content_margin_all(0.0)
+	return style
+
+
+## The frame behind a square pattern/emblem sample. The sample itself is a shader child inset from
+## this border, so selection can be drawn without covering fine mask detail.
+static func thumbnail_style(selected: bool, tint: Color = Color.WHITE) -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(
+		clampf(PICKER_FILL.r * tint.r, 0.0, 1.0),
+		clampf(PICKER_FILL.g * tint.g, 0.0, 1.0),
+		clampf(PICKER_FILL.b * tint.b, 0.0, 1.0),
+		PICKER_FILL.a)
+	style.border_color = PICKER_SELECTED if selected else PICKER_BORDER
+	style.set_border_width_all(PICKER_SELECTED_WIDTH if selected else PICKER_BORDER_WIDTH)
+	style.set_corner_radius_all(PICKER_RADIUS)
+	style.set_content_margin_all(0.0)
+	return style
+
+
+static func apply_thumbnail(button: Button, selected: bool) -> void:
+	button.add_theme_stylebox_override("normal", thumbnail_style(selected))
+	button.add_theme_stylebox_override("hover", thumbnail_style(selected, HOVER_TINT))
+	button.add_theme_stylebox_override("pressed", thumbnail_style(true))
+	button.add_theme_stylebox_override("hover_pressed", thumbnail_style(true, HOVER_TINT))
+	button.add_theme_stylebox_override("focus", thumbnail_style(true, HOVER_TINT))
+	button.add_theme_stylebox_override("disabled", thumbnail_style(selected,
+		Color(1, 1, 1, DISABLED_ALPHA)))
 
 
 ## Dress a [LineEdit] as the same sunken parchment field a dropdown wears, so a name the player types
@@ -670,6 +723,9 @@ static func _apply_select_popup(options: OptionButton) -> void:
 	popup.add_theme_constant_override("v_separation", POPUP_ITEM_SEPARATION)
 	popup.add_theme_constant_override("item_start_padding", int(INPUT_PADDING_H))
 	popup.add_theme_constant_override("item_end_padding", int(INPUT_PADDING_H))
+	# Language choices carry rectangular flags whose source SVGs are intentionally high-resolution.
+	# Keep all OptionButton icons at text scale instead of letting a source asset dictate row height.
+	popup.add_theme_constant_override("icon_max_width", 36)
 	for icon in ["radio_checked", "radio_unchecked", "checked", "unchecked"]:
 		var texture := popup.get_theme_icon(icon, "PopupMenu")
 		if texture != null:

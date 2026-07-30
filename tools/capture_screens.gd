@@ -16,7 +16,7 @@ const VIEWPORT_SIZE := Vector2i(1280, 800)
 ## The project's own default portrait viewport (project.godot) — below `HudShell`'s mobile
 ## breakpoint, so the M8 shell captures show the mobile re-flow rather than a cramped desktop one.
 const MOBILE_VIEWPORT_SIZE := Vector2i(720, 1280)
-const WIZARD_STEPS := ["background", "location", "identity", "settings"]
+const WIZARD_STEPS := ["background", "location", "hero", "banner", "settings"]
 
 ## Frames to render before grabbing the image. One is not enough: layout settles on the second, a
 ## `FlagView`'s shader needs its material pushed to the renderer, and the map's biome textures are
@@ -81,21 +81,67 @@ func _run() -> void:
 				tabs.current_tab = i
 				await _shoot("01%s_settings_%s" % [char("a".unicode_at(0) + i),
 					tabs.get_tab_title(i).to_lower()])
+			# Gameplay is taller than one viewport. Its working language picker lives below the first
+			# fold, so record that end of the page too rather than proving only that it exists in code.
+			tabs.current_tab = 0
+			await _settle()
+			var gameplay_scroll := tabs.get_child(0) as ScrollContainer
+			var settings_language := settings.find_child("LanguagePicker", true, false) as Control
+			if gameplay_scroll != null and settings_language != null:
+				gameplay_scroll.ensure_control_visible(settings_language)
+				await _shoot("01aa_settings_language")
 
-	# The wizard's four steps. `goto` mounts it; stepping is what a player's Next does, so drive
-	# the same private helper the Next button drives rather than faking four separate screens.
+	# The wizard's five steps. `goto` mounts it; stepping is what a player's Next does, so drive
+	# the same private helper the Next button drives rather than faking five separate screens.
 	var wizard := await _mount("core.new_game")
 	if wizard != null:
 		for step in WIZARD_STEPS.size():
 			wizard.call("_goto_step", step)
 			await _shoot("%02d_wizard_%d_%s" % [step + 2, step + 1, WIZARD_STEPS[step]])
+		wizard.call("_goto_step", 4)
+		var language_picker := wizard.find_child("LanguagePicker", true, false) as LanguagePicker
+		if language_picker != null:
+			language_picker.open_picker()
+			await _shoot("06a_wizard_5_language_picker")
+			language_picker.close_picker()
+		# The banner is the one wizard step whose layout deliberately changes at the phone breakpoint.
+		# Its five compact rows open focused editors; capture both the main reflow and the two kinds of
+		# modal so none of that interaction is accepted from headless assertions alone.
+		wizard.call("_goto_step", 3)
+		wizard.call("_open_color_picker", "Cloth colour", "shape_color")
+		await _shoot("05b_wizard_4_banner_custom_colour")
+		wizard.call("on_hardware_back")
+		DisplayServer.window_set_size(MOBILE_VIEWPORT_SIZE)
+		await _settle()
+		wizard.call("_goto_step", 4)
+		language_picker.open_picker()
+		await _shoot("06f_wizard_5_language_picker_mobile")
+		var language_modal := language_picker.active_modal()
+		var language_scroll := language_modal.get("_scroll") as ScrollContainer
+		if language_scroll != null:
+			language_scroll.scroll_vertical = int(language_scroll.get_v_scroll_bar().max_value)
+			await _shoot("06g_wizard_5_language_picker_mobile_cjk")
+		language_picker.close_picker()
+		wizard.call("_goto_step", 3)
+		await _shoot("06b_wizard_4_banner_mobile")
+		wizard.call("_open_shape_picker", "Choose a pattern", "pattern", 14)
+		await _shoot("06c_wizard_4_banner_mobile_patterns")
+		wizard.call("on_hardware_back")
+		wizard.call("_open_shape_picker", "Choose an emblem", "emblem", 13)
+		await _shoot("06d_wizard_4_banner_mobile_emblems")
+		wizard.call("on_hardware_back")
+		wizard.call("_open_color_picker", "Cloth colour", "shape_color")
+		await _shoot("06e_wizard_4_banner_mobile_custom_colour")
+		wizard.call("on_hardware_back")
+		DisplayServer.window_set_size(VIEWPORT_SIZE)
+		await _settle()
 
 	# The game itself, over a freshly seeded world — the wizard's own output, so the captures show
 	# the choices actually landing (flag, narration length) rather than defaults. The map is the
 	# base layer now (ux_plan.md §2.1) — it is already in this capture, not a separate overlay.
 	_kernel.session.begin_new_game(_new_game_fields())
 	var chat := await _mount("base_game.chat")
-	await _shoot("06_chat_new_game")
+	await _shoot("07_chat_new_game")
 
 	# Both breakpoints of the M8 HUD shell (ux_plan.md Phase 1 "done when"). Desktop first: expand
 	# the chat dock, then open Main Menu alongside it — page + chat both at half height, the
@@ -103,37 +149,37 @@ func _run() -> void:
 	if chat != null:
 		var shell := chat.get("_shell") as HudShell
 		shell.set_chat_expanded(true)
-		await _shoot("06b_chat_expanded")
+		await _shoot("07b_chat_expanded")
 		# Phase 3's key acceptance capture: drive a real workflow through the dock and wait for
 		# its completion event, so the resulting timeline visibly includes the rules-owned roll.
 		chat.call("_on_submit", "I send scouts to forage the hills")
 		while not (chat.get("_input") as LineEdit).editable:
 			await process_frame
-		await _shoot("06bb_chat_turn_with_timeline")
+		await _shoot("07bb_chat_turn_with_timeline")
 		# Phase 4 event state: a pending confirmation forces the chat to fill the stage and prevents
 		# the panel stack from covering it. Drive the existing debug confirmation, then clear it so
 		# later captures continue through the normal menu path.
 		await chat.call("_on_dev_ask")
-		await _shoot("06bc_chat_active_event")
+		await _shoot("07bc_chat_active_event")
 		await chat.call("_answer", false)
 		chat.call("_open_main_menu")
-		await _shoot("06c_chat_and_menu_split")
+		await _shoot("07c_chat_and_menu_split")
 		chat.call("_open_destination", "domain")
-		await _shoot("06ca_domain_panel")
+		await _shoot("07ca_domain_panel")
 		chat.call("_open_destination", "map_layers")
-		await _shoot("06cb_map_layers_panel")
+		await _shoot("07cb_map_layers_panel")
 
 		# Narrow the window without remounting — crossing the breakpoint with both panels open
 		# should collapse to whichever opened more recently (rule 5), not leave both on screen.
 		DisplayServer.window_set_size(MOBILE_VIEWPORT_SIZE)
 		await _settle()
-		await _shoot("06d_mobile_exclusive")
+		await _shoot("07d_mobile_exclusive")
 		shell.call("_toggle_mobile_menu")
-		await _shoot("06e_mobile_destinations")
+		await _shoot("07e_mobile_destinations")
 		DisplayServer.window_set_size(VIEWPORT_SIZE)
 		await _settle()
 
-	await _capture_scene("res://modules/base_game/ui/flag_preview.tscn", "07_flag_preview")
+	await _capture_scene("res://modules/base_game/ui/flag_preview.tscn", "08_flag_preview")
 
 
 ## The choices a player would make, deliberately not the defaults: a distinctive flag and the
@@ -148,6 +194,7 @@ func _new_game_fields() -> Dictionary:
 		"outpost_flag": {"shapeColor": "#2f5fc0", "texture": "pattern07",
 			"textureColor": "#f3c43f", "emblem": "emblem04", "emblemColor": "#f7f7f2"},
 		"verbosity": "long",
+		"language": "pt-BR",
 	}
 
 

@@ -7,8 +7,8 @@ extends RefCounted
 ## how loud the music is belongs to the *person*, not to a settlement. Loading a different save must
 ## not change the volume, and starting a new game must not reset it.
 ##
-## Deliberately narrow. It stores only the settings that are actually **wired to something** — today
-## the audio levels. The settings screen shows a great deal more than this, all of it marked as not
+## Deliberately narrow. It stores only settings that have a working control or runtime effect. The
+## settings screen shows a great deal more than this, all of it marked as not
 ## yet implemented; adding a key here before the thing it controls exists would mean persisting a
 ## value nothing reads, which is worse than an obviously-empty section because it looks finished.
 ##
@@ -20,6 +20,9 @@ const PATH := "user://settings.cfg"
 const AUDIO_SECTION := "audio"
 const GAMEPLAY_SECTION := "gameplay"
 const NARRATION_KEY := "narration_level"
+const LANGUAGE_SECTION := "language"
+const LANGUAGE_KEY := "selected"
+const DEFAULT_LANGUAGE := "en"
 const VIDEO_SECTION := "video"
 const WINDOW_MODE_KEY := "window_mode"
 const VSYNC_KEY := "vsync_mode"
@@ -37,6 +40,36 @@ const VSYNC_OFF := "off"
 const VSYNC_ON := "on"
 const VSYNC_ADAPTIVE := "adaptive"
 const VSYNC_MODES := [VSYNC_OFF, VSYNC_ON, VSYNC_ADAPTIVE]
+
+## Languages the player may select. The preference is persisted and copied into a new game's
+## profile, but deliberately does not switch interface copy or narrator output yet. Keeping code,
+## native name and flag together makes this the one list shared by both Settings surfaces.
+const LANGUAGES := [
+	{"code": "cs", "language": "Čeština", "emoji": "🇨🇿", "flag": "cz"},
+	{"code": "da", "language": "Dansk", "emoji": "🇩🇰", "flag": "dk"},
+	{"code": "de", "language": "Deutsch", "emoji": "🇩🇪", "flag": "de"},
+	{"code": "en", "language": "English", "emoji": "🇬🇧", "flag": "gb"},
+	{"code": "es", "language": "Español", "emoji": "🇪🇸", "flag": "es"},
+	{"code": "fr", "language": "Français", "emoji": "🇫🇷", "flag": "fr"},
+	{"code": "it", "language": "Italiano", "emoji": "🇮🇹", "flag": "it"},
+	{"code": "hu", "language": "Magyar", "emoji": "🇭🇺", "flag": "hu"},
+	{"code": "nl", "language": "Nederlands", "emoji": "🇳🇱", "flag": "nl"},
+	{"code": "nb", "language": "Norsk bokmål", "emoji": "🇳🇴", "flag": "no"},
+	{"code": "pl", "language": "Polski", "emoji": "🇵🇱", "flag": "pl"},
+	{"code": "pt-BR", "language": "Português (Brasil)", "emoji": "🇧🇷", "flag": "br"},
+	{"code": "pt-PT", "language": "Português (Portugal)", "emoji": "🇵🇹", "flag": "pt"},
+	{"code": "fi", "language": "Suomi", "emoji": "🇫🇮", "flag": "fi"},
+	{"code": "sv", "language": "Svenska", "emoji": "🇸🇪", "flag": "se"},
+	{"code": "tr", "language": "Türkçe", "emoji": "🇹🇷", "flag": "tr"},
+	{"code": "ru", "language": "Русский", "emoji": "🇷🇺", "flag": "ru"},
+	{"code": "uk", "language": "Українська", "emoji": "🇺🇦", "flag": "ua"},
+	{"code": "hi", "language": "हिन्दी", "emoji": "🇮🇳", "flag": "in"},
+	{"code": "th", "language": "ไทย", "emoji": "🇹🇭", "flag": "th"},
+	{"code": "ko", "language": "한국어", "emoji": "🇰🇷", "flag": "kr"},
+	{"code": "ja", "language": "日本語", "emoji": "🇯🇵", "flag": "jp"},
+	{"code": "zh-CN", "language": "简体中文", "emoji": "🇨🇳", "flag": "cn"},
+	{"code": "zh-TW", "language": "繁體中文", "emoji": "🇹🇼", "flag": "tw"},
+]
 
 const RESOLUTION_KEY := "resolution"
 const MONITOR_KEY := "monitor"
@@ -169,6 +202,37 @@ func narration_level() -> String:
 func set_narration_level(level: String) -> void:
 	if NarrationSettings.is_level(level):
 		_config.set_value(GAMEPLAY_SECTION, NARRATION_KEY, level)
+
+
+## The preferred display language code. It is data-only until translations land: callers may save
+## and seed it, while the interface deliberately remains in English.
+func language() -> String:
+	var stored := String(_config.get_value(LANGUAGE_SECTION, LANGUAGE_KEY, DEFAULT_LANGUAGE))
+	return stored if is_language(stored) else DEFAULT_LANGUAGE
+
+
+func set_language(code: String) -> void:
+	if is_language(code):
+		_config.set_value(LANGUAGE_SECTION, LANGUAGE_KEY, code)
+
+
+static func is_language(code: String) -> bool:
+	for entry: Dictionary in LANGUAGES:
+		if String(entry["code"]) == code:
+			return true
+	return false
+
+
+## `{id, label}` rows used by the painted OptionButtons on both Settings surfaces.
+static func language_options() -> Array:
+	var rows: Array = []
+	for entry: Dictionary in LANGUAGES:
+		rows.append({
+			"id": String(entry["code"]),
+			"label": String(entry["language"]),
+			"icon": "res://core/assets/flags/%s.svg" % String(entry["flag"]),
+		})
+	return rows
 
 
 func window_mode() -> String:

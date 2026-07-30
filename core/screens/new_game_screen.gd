@@ -1,15 +1,16 @@
 extends Control
 
-## App-shell new-game wizard: Background -> Location -> Identity -> Settings, then Start seeds a
-## fresh game and enters it. Mirrors the legacy Tauri wizard's four steps (the flow captured in
-## docs/plan.md / PR #47's description); the module-pick screen and a module-config-driven wizard
-## remain deferred — there is nothing yet for a module to configure.
+## App-shell new-game wizard: Background -> Location -> Hero -> Banner -> Settings, then Start seeds
+## a fresh game and enters it. Splits the legacy Tauri wizard's Identity page on its real seam —
+## person and place — so the banner choices remain usable on a phone.
+## The module-pick screen and a module-config-driven wizard remain deferred — there is nothing yet
+## for a module to configure.
 
 const GAME_SCREEN := "base_game.chat"
 const DEFAULT_HERO := "Marcus"
 const DEFAULT_OUTPOST := "Ravenwatch"
 
-const STEP_TITLES := ["Background", "Location", "Identity", "Settings"]
+const STEP_TITLES := ["Background", "Location", "Hero", "Banner", "Settings"]
 
 ## How small a card may get before it stops being readable. [CardPager] decides how many fit on a
 ## line from its own width; this is the floor a card is never squeezed below.
@@ -37,12 +38,16 @@ const CARD_TEXT_MIN_HEIGHT := 90.0
 ## different sizes reads as one of them mattering more.
 const SEX_BUTTON_WIDTH := 150.0
 
-## The column the flag designer's layer names sit in, so its rows line up down the left.
-const FLAG_LABEL_WIDTH := 120.0
+## The five compact property rows share the phone's content width with the preview. Options live in
+## modals now, so this column no longer has to be wide enough for an entire thumbnail grid.
+const BANNER_CONTROLS_WIDTH := 300.0
 
-## How narrow either half of the Identity step may get. Both halves declare the same one so that when
-## they do share a line neither is squeezed to make room for the other.
-const IDENTITY_COLUMN_WIDTH := 420.0
+## The preview grows on desktop and gives the property column room on a phone. Both stay larger than
+## a thumbnail; [FlagView.aspect] supplies their corresponding heights.
+const FLAG_PREVIEW_MOBILE_WIDTH := 150.0
+const FLAG_PREVIEW_DESKTOP_WIDTH := 200.0
+
+const FLAG_GRID_GAP := 8
 
 ## Room for the longest name either field ships with, so a default value is never shown clipped.
 const FIELD_MIN_WIDTH := 300.0
@@ -50,10 +55,6 @@ const FIELD_MIN_WIDTH := 300.0
 ## The width of Back and Next. Wide enough for the longest word either shows ("Cancel", "Start") with
 ## room around it, and no wider — see the note where the footer is built.
 const NAV_BUTTON_WIDTH := 240.0
-
-## The colour swatch on a flag layer. Still Godot's stock ColorPickerButton — the painted swatch
-## palette is the flag designer's own step of this work — but at least sized to the row it sits in.
-const SWATCH_WIDTH := 90.0
 
 ## The five starting backgrounds, carried over from the legacy wizard's own content — the
 ## prose, the "Starts with" list and the badges are its words rather than a summary of them.
@@ -197,6 +198,9 @@ var _selected_location := ""
 ## wants long prose is not re-choosing it at every new game. Read in `_build_settings_step`, since
 ## `Kernel` is not available at property-initialisation time.
 var _selected_verbosity := NarrationSettings.LEVEL_NORMAL
+## Like narration length, this starts from the app preference but belongs to the game being created.
+## Translation is not applied yet; preserving the code now keeps saves ready for it later.
+var _selected_language := AppSettings.DEFAULT_LANGUAGE
 var _sex := "male"
 
 var _name_field: LineEdit = null
@@ -204,9 +208,10 @@ var _outpost_name_field: LineEdit = null
 
 var _flag_value := FlagValue.new()
 var _flag_view: FlagView = null
-var _flag_shape_picker: ColorPickerButton = null
-var _flag_pattern_picker: ColorPickerButton = null
-var _flag_emblem_picker: ColorPickerButton = null
+var _banner_property_buttons: Dictionary = {}
+var _banner_property_swatches: Dictionary = {}
+var _active_picker: PickerModal = null
+var _language_picker: LanguagePicker = null
 
 
 func _ready() -> void:
@@ -257,7 +262,7 @@ func _build_ui() -> void:
 	col.add_child(_step_label)
 
 	# **The steps scroll.** They did not before, and on a phone that was the same trap the settings
-	# page had: the Identity step alone is taller than the viewport, so its lower fields simply had
+	# page had: the Banner step alone is taller than the viewport, so its lower fields simply had
 	# nowhere to be. A VBox, not the old absolutely-positioned host — a hidden child contributes
 	# nothing to a container's minimum size, so the scroll region is always exactly the step on show.
 	var scroll := ScrollContainer.new()
@@ -289,13 +294,14 @@ func _build_ui() -> void:
 	_step_pages = [
 		_build_background_step(),
 		_build_location_step(),
-		_build_identity_step(),
+		_build_hero_step(),
+		_build_banner_step(),
 		_build_settings_step(),
 	]
 	for page: Control in _step_pages:
 		page.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		# Vertical too, so a step shorter than the page still takes the whole page — which is what
-		# lets the Identity and Settings steps put their footer where the eye expects it rather than
+		# lets the Hero, Banner and Settings steps put their footer where the eye expects it rather than
 		# bunched under the last field. The cards do not stretch with it; see [CardPager].
 		page.size_flags_vertical = Control.SIZE_EXPAND_FILL
 		pages_host.add_child(page)
@@ -357,6 +363,11 @@ func _on_back() -> void:
 ## Hardware/gesture back does exactly what the on-screen Back/Cancel button does (Android UX
 ## pass) — never a surprise exit mid-wizard.
 func on_hardware_back() -> bool:
+	if _language_picker != null and _language_picker.close_picker():
+		return true
+	if _active_picker != null and _active_picker.visible:
+		_active_picker.close()
+		return true
 	_on_back()
 	return true
 
@@ -383,6 +394,7 @@ func _finish() -> void:
 		"outpost_location": _selected_location,
 		"outpost_flag": _flag_value.to_dict(),
 		"verbosity": _selected_verbosity,
+		"language": _selected_language,
 	}
 	Kernel.session.begin_new_game(fields)
 	Kernel.router.goto("core.loading", {"next": GAME_SCREEN})
@@ -605,50 +617,44 @@ func _badge(text: String) -> Control:
 	return plate
 
 
-# --- Step 3: Identity ---------------------------------------------------------------------
+# --- Step 3: Hero -------------------------------------------------------------------------
 
-func _build_identity_step() -> Control:
+func _build_hero_step() -> Control:
 	var col := VBoxContainer.new()
-	col.add_theme_constant_override("separation", 14)
+	col.add_theme_constant_override("separation", 12)
 
-	# The fields and the flag designer are two columns on a desktop and two *rows* on a phone. An
-	# HFlowContainer is what makes that one layout rather than two: side by side they need about 840,
-	# which is more than a 720-wide phone has, and an HBox answers that by running the flag off the
-	# right edge where it cannot be reached. Each column keeps a minimum width it stays usable at, and
-	# the flow decides how many fit.
-	var row := HFlowContainer.new()
-	row.add_theme_constant_override("h_separation", 30)
-	row.add_theme_constant_override("v_separation", 16)
-	col.add_child(row)
-
-	var left := VBoxContainer.new()
-	left.add_theme_constant_override("separation", 8)
-	left.custom_minimum_size.x = IDENTITY_COLUMN_WIDTH
-	row.add_child(left)
-
-	left.add_child(_field_label("Hero name"))
+	col.add_child(_field_label("Hero name"))
 	_name_field = LineEdit.new()
 	_name_field.placeholder_text = DEFAULT_HERO
 	UiSkin.apply_line_edit(_name_field)
 	_name_field.custom_minimum_size.x = FIELD_MIN_WIDTH
-	left.add_child(_name_field)
+	_name_field.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	col.add_child(_name_field)
 
-	left.add_child(_field_label("Sex"))
+	# Sex is a hero attribute and already reads as a card-style pick-one. Appearance joins this step
+	# when there is art to choose; no empty promise is shown before then.
+	col.add_child(_field_label("Sex"))
 	var sex_row := HBoxContainer.new()
 	sex_row.add_theme_constant_override("separation", 8)
-	left.add_child(sex_row)
+	col.add_child(sex_row)
 	var sex_group := ButtonGroup.new()
 	sex_row.add_child(_sex_button("Male", "male", sex_group, true))
 	sex_row.add_child(_sex_button("Female", "female", sex_group, false))
+	return col
 
-	left.add_child(_field_label("Outpost name"))
-	# Flows, so the Randomize plate drops below the field rather than squeezing it. It squeezed it:
-	# with both on one line at this type scale the field had about 200 units left, and "Ravenwatch"
-	# — the default it ships with — showed as "Ravenwatc".
+
+# --- Step 4: Banner -----------------------------------------------------------------------
+
+func _build_banner_step() -> Control:
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 14)
+
+	col.add_child(_field_label("Outpost name"))
+	# Flows, so Randomize drops below the field rather than squeezing the default name on a phone.
 	var outpost_row := HFlowContainer.new()
 	outpost_row.add_theme_constant_override("h_separation", 8)
 	outpost_row.add_theme_constant_override("v_separation", 8)
-	left.add_child(outpost_row)
+	col.add_child(outpost_row)
 	_outpost_name_field = LineEdit.new()
 	_outpost_name_field.text = DEFAULT_OUTPOST
 	UiSkin.apply_line_edit(_outpost_name_field)
@@ -659,76 +665,75 @@ func _build_identity_step() -> Control:
 	reroll.pressed.connect(_randomize_outpost_name)
 	outpost_row.add_child(reroll)
 
-	var right := VBoxContainer.new()
-	right.add_theme_constant_override("separation", 8)
-	right.custom_minimum_size.x = IDENTITY_COLUMN_WIDTH
-	row.add_child(right)
-	right.add_child(_field_label("Flag"))
+	# Preview and controls share a line on desktop and wrap into preview-above-controls on a phone.
+	# One HFlowContainer owns both arrangements, so crossing the breakpoint cannot lose state.
+	var designer := HFlowContainer.new()
+	designer.add_theme_constant_override("h_separation", 16)
+	designer.add_theme_constant_override("v_separation", 16)
+	col.add_child(designer)
 
-	var flag_row := HBoxContainer.new()
-	flag_row.add_theme_constant_override("separation", 16)
-	right.add_child(flag_row)
-
+	var preview := VBoxContainer.new()
+	preview.add_theme_constant_override("separation", 8)
+	preview.add_child(_field_label("Banner preview"))
 	_flag_value.texture = "pattern03"
 	_flag_value.emblem = "emblem01"
 	_flag_view = FlagView.new()
-	_flag_view.custom_minimum_size = Vector2(140, 140 * FlagView.aspect())
-	flag_row.add_child(_flag_view)
+	_flag_view.custom_minimum_size = Vector2(
+		FLAG_PREVIEW_MOBILE_WIDTH, FLAG_PREVIEW_MOBILE_WIDTH * FlagView.aspect())
+	preview.add_child(_flag_view)
+	designer.add_child(preview)
+	designer.resized.connect(func() -> void: _size_banner_preview(designer.size.x))
 
-	var flag_controls := VBoxContainer.new()
-	flag_controls.add_theme_constant_override("separation", 6)
-	flag_row.add_child(flag_controls)
+	var controls := VBoxContainer.new()
+	controls.custom_minimum_size.x = BANNER_CONTROLS_WIDTH
+	controls.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	controls.add_theme_constant_override("separation", 10)
+	designer.add_child(controls)
 
-	_flag_shape_picker = _flag_color_picker(flag_controls, "Cloth", _flag_value.shape_color,
-		func(c: Color) -> void:
-			_flag_value.shape_color = c
-			_flag_view.set_value(_flag_value))
-	_flag_pattern_picker = _flag_color_picker(flag_controls, "Pattern", _flag_value.texture_color,
-		func(c: Color) -> void:
-			_flag_value.texture_color = c
-			_flag_view.set_value(_flag_value))
-	_flag_emblem_picker = _flag_color_picker(flag_controls, "Emblem", _flag_value.emblem_color,
-		func(c: Color) -> void:
-			_flag_value.emblem_color = c
-			_flag_view.set_value(_flag_value))
-
-	flag_controls.add_child(_flag_cycle_row("Pattern shape",
-		func(step: int) -> void: _cycle_flag_pattern(step)))
-	flag_controls.add_child(_flag_cycle_row("Emblem shape",
-		func(step: int) -> void: _cycle_flag_emblem(step)))
+	# Five compact properties are the whole flag model. Each row shows the current value and opens a
+	# focused editor, instead of making the player scroll past every possible value on the main step.
+	_banner_property_button(controls, "shape_color", "Cloth colour",
+		func() -> void: _open_color_picker("Cloth colour", "shape_color"), true)
+	_banner_property_button(controls, "texture", "Pattern",
+		func() -> void: _open_shape_picker("Choose a pattern", "pattern", FLAG_PATTERN_COUNT))
+	_banner_property_button(controls, "texture_color", "Pattern colour",
+		func() -> void: _open_color_picker("Pattern colour", "texture_color"), true)
+	_banner_property_button(controls, "emblem", "Emblem",
+		func() -> void: _open_shape_picker("Choose an emblem", "emblem", FLAG_EMBLEM_COUNT))
+	_banner_property_button(controls, "emblem_color", "Emblem colour",
+		func() -> void: _open_color_picker("Emblem colour", "emblem_color"), true)
 
 	var randomize_flag := SkinnedButton.create("Randomize flag", UiSkin.BROWN,
 		UiSkin.CONTROL_HEIGHT, UiSkin.CONTROL_FONT_SIZE)
+	randomize_flag.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	randomize_flag.pressed.connect(_randomize_flag)
-	flag_controls.add_child(randomize_flag)
+	controls.add_child(randomize_flag)
 
+	_refresh_banner_properties()
 	_flag_view.set_value(_flag_value)
 	return col
 
 
 ## One of the two sex choices. A card rather than a plate: it is a pick-one, the same kind of answer
 ## the Background and Location steps take, and it should look like one.
-func _sex_button(text: String, id: String, group: ButtonGroup, selected: bool) -> Button:
+func _sex_button(text: String, id: String, group: ButtonGroup, selected: bool) -> Control:
+	var host := PanelContainer.new()
+	host.add_theme_stylebox_override("panel",
+		UiSkin.card_glow_style() if selected else UiSkin.card_shadow_style())
+	host.custom_minimum_size = Vector2(SEX_BUTTON_WIDTH, UiSkin.CONTROL_HEIGHT)
 	var button := Button.new()
 	button.text = text
 	button.toggle_mode = true
 	button.button_group = group
 	button.button_pressed = selected
 	UiSkin.apply_card(button)
-	button.custom_minimum_size = Vector2(SEX_BUTTON_WIDTH, UiSkin.CONTROL_HEIGHT)
-	button.pressed.connect(func() -> void: _sex = id)
-	return button
-
-
-## The `<` / `>` beside a flag layer. Painted as a field rather than a plate, because it belongs to
-## the row of controls it steps through rather than being an action of its own.
-func _stepper(text: String, on_press: Callable) -> Button:
-	var button := Button.new()
-	button.text = text
-	UiSkin.apply_input(button)
-	button.custom_minimum_size = Vector2(UiSkin.CONTROL_HEIGHT, UiSkin.CONTROL_HEIGHT)
-	button.pressed.connect(on_press)
-	return button
+	button.toggled.connect(func(on: bool) -> void:
+		host.add_theme_stylebox_override("panel",
+			UiSkin.card_glow_style() if on else UiSkin.card_shadow_style())
+		if on:
+			_sex = id)
+	host.add_child(button)
+	return host
 
 
 func _field_label(text: String) -> Label:
@@ -745,51 +750,101 @@ func _field_label(text: String) -> Label:
 	return l
 
 
-func _flag_color_picker(parent: Node, label_text: String, initial: Color,
-		on_pick: Callable) -> ColorPickerButton:
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 8)
-	parent.add_child(row)
-	var l := _field_label(label_text)
-	l.custom_minimum_size = Vector2(FLAG_LABEL_WIDTH, 0)
-	l.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	row.add_child(l)
-	var picker := ColorPickerButton.new()
-	picker.custom_minimum_size = Vector2(SWATCH_WIDTH, UiSkin.CONTROL_HEIGHT)
+func _banner_property_button(parent: Node, key: String, label_text: String,
+		on_press: Callable, show_swatch: bool = false) -> void:
+	var button := Button.new()
+	button.set_meta("property_label", label_text)
+	button.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	button.custom_minimum_size.y = 72.0
+	UiSkin.apply_input(button)
+	button.pressed.connect(on_press)
+	_banner_property_buttons[key] = button
+	parent.add_child(button)
+	if show_swatch:
+		var chip := PanelContainer.new()
+		chip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		chip.set_anchors_and_offsets_preset(Control.PRESET_CENTER_RIGHT)
+		chip.offset_left = -54.0
+		chip.offset_right = -14.0
+		chip.offset_top = -20.0
+		chip.offset_bottom = 20.0
+		button.add_child(chip)
+		_banner_property_swatches[key] = chip
+
+
+func _open_color_picker(title: String, target: String) -> void:
+	var content := VBoxContainer.new()
+	var initial := _flag_color(target)
+	var picker := ColorPicker.new()
 	picker.color = initial
-	picker.color_changed.connect(on_pick)
-	row.add_child(picker)
-	return picker
+	picker.edit_alpha = false
+	picker.picker_shape = ColorPicker.SHAPE_HSV_RECTANGLE
+	picker.color_modes_visible = false
+	picker.sliders_visible = false
+	picker.hex_visible = false
+	picker.presets_visible = false
+	picker.sampler_visible = false
+	picker.custom_minimum_size.y = 360.0
+	picker.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	content.add_child(picker)
+
+	picker.color_changed.connect(func(color: Color) -> void:
+		_set_flag_color(target, color))
+	_open_picker_modal(title, content, 420.0)
 
 
-func _flag_cycle_row(label_text: String, on_step: Callable) -> Control:
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 8)
-	var l := _field_label(label_text)
-	l.custom_minimum_size = Vector2(FLAG_LABEL_WIDTH, 0)
-	l.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	row.add_child(l)
-	row.add_child(_stepper("<", func() -> void: on_step.call(-1)))
-	row.add_child(_stepper(">", func() -> void: on_step.call(1)))
-	return row
+func _open_shape_picker(title: String, kind: String, count: int) -> void:
+	var content := VBoxContainer.new()
+	content.add_theme_constant_override("separation", 12)
+	var selected := _flag_value.texture if kind == "pattern" else _flag_value.emblem
+	_flag_thumbnail_grid(content, kind, count, selected, func(id: String) -> void:
+		if kind == "pattern":
+			_flag_value.texture = id
+		else:
+			_flag_value.emblem = id
+		_refresh_banner_properties()
+		_flag_view.set_value(_flag_value))
+	_open_picker_modal(title, content, 360.0)
+
+
+func _open_picker_modal(title: String, content: Control, preferred_height: float) -> void:
+	if _active_picker != null:
+		_active_picker.queue_free()
+	_active_picker = PickerModal.create(title, content, preferred_height)
+	var modal := _active_picker
+	modal.closed.connect(func() -> void:
+		if _active_picker == modal:
+			_active_picker = null
+		modal.queue_free())
+	add_child(modal)
+	modal.open()
+
+
+func _flag_thumbnail_grid(parent: Node, kind: String, count: int,
+		selected_id: String, on_pick: Callable) -> Array[FlagThumbnail]:
+	var flow := HFlowContainer.new()
+	flow.add_theme_constant_override("h_separation", FLAG_GRID_GAP)
+	flow.add_theme_constant_override("v_separation", FLAG_GRID_GAP)
+	parent.add_child(flow)
+	var group := ButtonGroup.new()
+	var choices: Array[FlagThumbnail] = []
+	for i in count + 1:
+		var id := FlagValue.NONE if i == 0 else "%s%02d" % [kind, i]
+		var choice := FlagThumbnail.new()
+		var foreground := _flag_value.texture_color
+		if kind == "emblem":
+			foreground = _flag_value.emblem_color
+		choice.setup(kind, id, _flag_value.shape_color, foreground, group, id == selected_id)
+		choice.toggled.connect(func(on: bool) -> void:
+			if on:
+				on_pick.call(id))
+		choices.append(choice)
+		flow.add_child(choice)
+	return choices
 
 
 func _randomize_outpost_name() -> void:
 	_outpost_name_field.text = OUTPOST_NAMES[randi() % OUTPOST_NAMES.size()]
-
-
-func _cycle_flag_pattern(step: int) -> void:
-	var n := int(_flag_value.texture.substr(7)) if _flag_value.has_pattern() else 0
-	n = wrapi(n + step, 0, FLAG_PATTERN_COUNT + 1)
-	_flag_value.texture = FlagValue.NONE if n == 0 else "pattern%02d" % n
-	_flag_view.set_value(_flag_value)
-
-
-func _cycle_flag_emblem(step: int) -> void:
-	var n := int(_flag_value.emblem.substr(6)) if _flag_value.has_emblem() else 0
-	n = wrapi(n + step, 0, FLAG_EMBLEM_COUNT + 1)
-	_flag_value.emblem = FlagValue.NONE if n == 0 else "emblem%02d" % n
-	_flag_view.set_value(_flag_value)
 
 
 func _randomize_flag() -> void:
@@ -798,18 +853,90 @@ func _randomize_flag() -> void:
 	_flag_value.emblem_color = Color.html(FLAG_PALETTE[randi() % FLAG_PALETTE.size()])
 	_flag_value.texture = "pattern%02d" % (1 + randi() % FLAG_PATTERN_COUNT)
 	_flag_value.emblem = "emblem%02d" % (1 + randi() % FLAG_EMBLEM_COUNT)
-	_flag_shape_picker.color = _flag_value.shape_color
-	_flag_pattern_picker.color = _flag_value.texture_color
-	_flag_emblem_picker.color = _flag_value.emblem_color
+	_refresh_banner_properties()
 	_flag_view.set_value(_flag_value)
 
 
-# --- Step 4: Settings ----------------------------------------------------------------------
+func _flag_palette_colors() -> Array[Color]:
+	var colors: Array[Color] = []
+	for hex: String in FLAG_PALETTE:
+		colors.append(Color.html(hex))
+	return colors
+
+
+func _flag_color(target: String) -> Color:
+	match target:
+		"shape_color":
+			return _flag_value.shape_color
+		"texture_color":
+			return _flag_value.texture_color
+		"emblem_color":
+			return _flag_value.emblem_color
+	return Color.WHITE
+
+
+func _set_flag_color(target: String, color: Color) -> void:
+	var opaque := color
+	opaque.a = 1.0
+	match target:
+		"shape_color":
+			_flag_value.shape_color = opaque
+		"texture_color":
+			_flag_value.texture_color = opaque
+		"emblem_color":
+			_flag_value.emblem_color = opaque
+	_refresh_banner_properties()
+	_flag_view.set_value(_flag_value)
+
+
+func _refresh_banner_properties() -> void:
+	_set_banner_property("shape_color", "")
+	_set_banner_property("texture", _flag_option_name("pattern", _flag_value.texture))
+	_set_banner_property("texture_color", "")
+	_set_banner_property("emblem", _flag_option_name("emblem", _flag_value.emblem))
+	_set_banner_property("emblem_color", "")
+	for key: String in _banner_property_swatches:
+		(_banner_property_buttons[key] as Button).tooltip_text = (
+			"#" + _flag_color(key).to_html(false).to_upper())
+		(_banner_property_swatches[key] as PanelContainer).add_theme_stylebox_override(
+			"panel", UiSkin.swatch_style(_flag_color(key), false))
+
+
+func _set_banner_property(key: String, value: String) -> void:
+	if not _banner_property_buttons.has(key):
+		return
+	var button := _banner_property_buttons[key] as Button
+	var label_text := String(button.get_meta("property_label"))
+	button.text = label_text if value.is_empty() else "%s  —  %s" % [label_text, value]
+
+
+func _size_banner_preview(available_width: float) -> void:
+	var desktop_floor := BANNER_CONTROLS_WIDTH + FLAG_PREVIEW_DESKTOP_WIDTH + 16.0
+	var width := FLAG_PREVIEW_DESKTOP_WIDTH if available_width >= desktop_floor \
+		else FLAG_PREVIEW_MOBILE_WIDTH
+	_flag_view.custom_minimum_size = Vector2(width, width * FlagView.aspect())
+
+
+func _flag_option_name(kind: String, id: String) -> String:
+	if id == FlagValue.NONE:
+		return "None"
+	var prefix_length := 7 if kind == "pattern" else 6
+	return str(int(id.substr(prefix_length)))
+
+
+# --- Step 5: Settings ----------------------------------------------------------------------
 
 func _build_settings_step() -> Control:
 	_selected_verbosity = Kernel.settings.narration_level()
+	_selected_language = Kernel.settings.language()
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", 10)
+	col.add_child(_field_label("Language"))
+	_language_picker = LanguagePicker.create(_selected_language)
+	_language_picker.language_selected.connect(func(code: String) -> void:
+		_selected_language = code)
+	col.add_child(_language_picker)
+
 	col.add_child(_field_label("How should the game master narrate?"))
 	var group := ButtonGroup.new()
 	for item: Dictionary in VERBOSITIES:

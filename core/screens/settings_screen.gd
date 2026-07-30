@@ -9,10 +9,9 @@ extends Control
 ## disabled and tagged, so no one can mistake a placeholder for a preference: a slider that moves and
 ## changes nothing is worse than an empty section, because it looks finished.
 ##
-## What is real: the audio levels, and the narration length. Both persist — audio in [AppSettings],
-## narration as the app-level default for new games *and*, when a game is open, in that game's own
-## profile so it takes effect immediately (the two-layer arrangement `AppSettings.narration_level`
-## explains).
+## What is real: audio levels, narration length, the preferred language code, video settings, and
+## key bindings. The language preference persists and pre-selects new games, but does not translate
+## interface strings or narrator output yet.
 ##
 ## Reached from the main menu; `on_enter({"back": <screen id>})` says where Back returns to, so the
 ## same screen can later be opened from inside a game without knowing who called it.
@@ -146,6 +145,7 @@ var _volume_readouts: Dictionary = {}  # category -> Label
 var _binding_buttons: Dictionary = {}  # action id -> Button
 ## The one binding button waiting for a keypress, if any.
 var _listening_button: Button = null
+var _language_picker: LanguagePicker = null
 
 
 func on_enter(params: Dictionary) -> void:
@@ -155,6 +155,8 @@ func on_enter(params: Dictionary) -> void:
 ## Hardware/gesture back goes wherever the on-screen Back button goes (Android UX pass) — the
 ## caller-supplied destination, same as a tap.
 func on_hardware_back() -> bool:
+	if _language_picker != null and _language_picker.close_picker():
+		return true
 	Kernel.router.goto(_back)
 	return true
 
@@ -172,6 +174,7 @@ func _build_ui() -> void:
 	_volume_readouts.clear()
 	_binding_buttons.clear()
 	_listening_button = null
+	_language_picker = null
 	ShellPalette.paint_shell(self)
 
 	var margin := MarginContainer.new()
@@ -667,16 +670,18 @@ func _build_controls_tab() -> Control:
 # --- Language ------------------------------------------------------------------------------
 
 func _add_language_sections(col: VBoxContainer) -> void:
-	_note(col, "Interface strings are still English literals in code, and the narrator is told which "
-		+ "language to write in per beat. Internals stay English on purpose (D35) — a switch here "
-		+ "would change what the player reads, never what is stored.")
-
 	_section(col, "Language")
-	_planned_row(col, "Interface", _options_mock(["English", "Português", "Español"], 0), "")
-	_planned_row(col, "Narration", _options_mock(["Same as interface", "English", "Português",
-		"Español"], 0), "Classification stability across these three is measured and holds (D17).")
+	_language_picker = LanguagePicker.create(Kernel.settings.language())
+	_language_picker.language_selected.connect(_on_language_changed)
+	_row(col, "Language", _language_picker,
+		"Saved as your default for new games. Translation will be connected later.")
 	_planned_row(col, "Translate what I type", _check_mock(true),
 		"Non-English input is translated at the boundary before anything is stored (D35).")
+
+
+func _on_language_changed(code: String) -> void:
+	Kernel.settings.set_language(code)
+	Kernel.settings.save()
 
 
 # --- Accessibility -------------------------------------------------------------------------
@@ -818,7 +823,12 @@ func _options(entries: Array, selected_id: String, on_change: Callable) -> Optio
 	UiSkin.apply_input(options)
 	for i in entries.size():
 		var entry: Dictionary = entries[i]
-		options.add_item(String(entry["label"]))
+		var icon_path := String(entry.get("icon", ""))
+		var icon := load(icon_path) as Texture2D if not icon_path.is_empty() else null
+		if icon != null:
+			options.add_icon_item(icon, String(entry["label"]))
+		else:
+			options.add_item(String(entry["label"]))
 		options.set_item_metadata(i, String(entry["id"]))
 		if String(entry["id"]) == selected_id:
 			options.select(i)

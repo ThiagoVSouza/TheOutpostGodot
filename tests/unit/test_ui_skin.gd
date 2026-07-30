@@ -17,3 +17,13 @@ func test_the_end_plates_of_a_skinned_scrollbar_move_it() -> void:
 		var moves_by: float = bar.custom_step if bar.custom_step >= 0.0 else bar.step
 		assert_gt(moves_by, 0.0,
 			"a press of a %s end plate has to move the view" % bar.get_class())
+
+
+func test_a_selected_colour_chip_gets_a_ring_without_changing_its_colour() -> void:
+	var color := Color.html("#2fa354")
+	var plain := UiSkin.swatch_style(color, false)
+	var selected := UiSkin.swatch_style(color, true)
+	assert_eq(plain.bg_color, color)
+	assert_eq(selected.bg_color, color, "selection must not tint the colour being compared")
+	assert_gt(selected.border_width_left, plain.border_width_left,
+		"the chosen swatch has a visibly heavier ring")
