@@ -1,7 +1,7 @@
 class_name CardPager
 extends VBoxContainer
 
-## A row of choice cards with an arrow at each end and a dot per card underneath — the legacy
+## A row of choice cards, with an arrow either side of a dot-per-card beneath them — the legacy
 ## wizard's `centered_pager`, which is how both of its pick-one steps were presented.
 ##
 ## **It exists because a card cannot be made narrow enough.** A choice card here carries a painting,
@@ -50,41 +50,55 @@ static func create(cards: Array[Control], selected: int) -> CardPager:
 	var pager := CardPager.new()
 	pager.add_theme_constant_override("separation", 10)
 
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 10)
-	# The row takes whatever height is going, and the cards in it stretch to match — see the note on
-	# [member Control.SIZE_EXPAND_FILL] below.
-	row.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	pager.add_child(row)
-
-	pager._left = UiSkin.arrow_button(true)
-	pager._left.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	pager._left.pressed.connect(func() -> void: pager._step(-1))
-	row.add_child(pager._left)
+	# **The cards get the full width; the arrows sit underneath.** Flanking the strip cost a phone
+	# about 130 units of the ~500 it has, which is a quarter of the card gone to two controls that are
+	# only reachable at the ends of the list — and the card is the thing being read. Below the strip
+	# they cost height, which a phone has far more of, and they group naturally with the dots: one row
+	# that is entirely "where am I in this list".
+	# **The cards scroll; the controls do not.** A card is as tall as its content, and on a short
+	# desktop window three of them are taller than the step — so something has to scroll. If that is
+	# the whole pager, the arrows and dots go below the fold and the player has to scroll in order to
+	# find the control that would have moved the list for them. Keeping the strip in its own scroll
+	# and the controls outside it means the way through the list is always on screen. On a phone,
+	# where one card fits whole, none of this shows.
+	var scroll := ScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	UiSkin.apply_scroll_container(scroll)
+	pager.add_child(scroll)
 
 	pager._strip = HBoxContainer.new()
 	pager._strip.add_theme_constant_override("separation", 10)
+	# A ScrollContainer hands its child the full width only if the child asks to expand.
 	pager._strip.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.add_child(pager._strip)
+	scroll.add_child(pager._strip)
 
-	pager._right = UiSkin.arrow_button(false)
-	pager._right.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	pager._right.pressed.connect(func() -> void: pager._step(1))
-	row.add_child(pager._right)
+	var controls := HBoxContainer.new()
+	controls.add_theme_constant_override("separation", 16)
+	controls.alignment = BoxContainer.ALIGNMENT_CENTER
+	pager.add_child(controls)
+
+	pager._left = UiSkin.arrow_button(true)
+	pager._left.pressed.connect(func() -> void: pager._step(-1))
+	controls.add_child(pager._left)
 
 	pager._dots = HBoxContainer.new()
 	pager._dots.add_theme_constant_override("separation", DOT_SPACING)
 	pager._dots.alignment = BoxContainer.ALIGNMENT_CENTER
-	pager.add_child(pager._dots)
+	controls.add_child(pager._dots)
+
+	pager._right = UiSkin.arrow_button(false)
+	pager._right.pressed.connect(func() -> void: pager._step(1))
+	controls.add_child(pager._right)
 
 	for card in cards:
 		card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		# **Every card is as tall as the tallest**, and together they are as tall as the room the step
-		# gives them. Left to their own heights the cards in a row ended at different points — the
-		# Merchant has a longer list than the Scholar — and the shorter plates read as unfinished
-		# rather than as shorter text. Filling also stops a single card on a phone from floating in
-		# the middle of an otherwise empty page.
-		card.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		# **Not `EXPAND`.** A row of cards is levelled by the [HBoxContainer] itself: the row is as tall
+		# as its tallest child's minimum, and children fill the cross axis, so every card is drawn to
+		# the tallest card's *content*. Expanding instead stretched them to the whole step, which on a
+		# desktop looked the same and on a phone — one card, nothing to be level with — left two thirds
+		# of a card as empty parchment below the text.
+		card.size_flags_vertical = Control.SIZE_FILL
 		pager._cards.append(card)
 		pager._strip.add_child(card)
 		pager._dots.add_child(pager._dot())
@@ -108,15 +122,15 @@ func _refresh() -> void:
 	if _cards.is_empty():
 		return
 	# `size.x` is zero until the first layout pass, and a zero width would compute a window of one
-	# card and then never revisit it — `resized` is what brings us back with a real number.
-	var usable := size.x - 2.0 * (UiSkin.ARROW_LEFT_TEXTURE.get_width() + 10.0)
-	_visible = clampi(int(usable / CARD_WIDTH), 1, mini(MAX_VISIBLE, _cards.size()))
+	# card and then never revisit it — `resized` is what brings us back with a real number. The whole
+	# width counts now that the arrows are below rather than beside the strip.
+	_visible = clampi(int(size.x / CARD_WIDTH), 1, mini(MAX_VISIBLE, _cards.size()))
 	_first = clampi(_first, 0, maxi(0, _cards.size() - _visible))
 	for i in _cards.size():
 		_cards[i].visible = i >= _first and i < _first + _visible
-	# Faded rather than removed at the ends: an arrow that vanishes shifts the whole strip sideways,
-	# and the cards would jump every time the player reached either end of the list. `set_disabled`
-	# does the fading, and drops the shadow with it.
+	# Faded rather than removed at the ends: an arrow that vanishes would shuffle the row of controls
+	# sideways every time the player reached either end. `set_disabled` does the fading, and drops the
+	# shadow with it.
 	_left.set_disabled(_first <= 0)
 	_right.set_disabled(_first + _visible >= _cards.size())
 	# One dot per card, and the ones on screen are filled. With three cards visible that is three
