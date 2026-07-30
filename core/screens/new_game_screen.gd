@@ -28,6 +28,11 @@ const CARD_PADDING := UiSkin.INPUT_PADDING_H
 ## the moulding, any more and it reads as a picture hung in a mount.
 const CARD_BORDER_INSET := 5.0
 
+## The least room a card's prose is ever given, under the painting. The card takes its height from the
+## step, so this only decides what a card looks like in a window too short to give it one — and a
+## painting with a single clipped line under it reads as a broken card rather than a short one.
+const CARD_TEXT_MIN_HEIGHT := 90.0
+
 ## Wide enough that "Female" is not a tighter plate than "Male" — a pick-one pair whose halves are
 ## different sizes reads as one of them mattering more.
 const SEX_BUTTON_WIDTH := 150.0
@@ -428,8 +433,11 @@ func _card_select_column(items: Array, default_id: String, on_select: Callable) 
 ## both, each filling it, and its minimum size is the taller of the two — the [Button] keeps the press
 ## behaviour, the [ButtonGroup] and the painted plate, while the content decides how big the card is.
 ##
-## Everything in the content ignores the mouse, or it would swallow the click meant for the plate
-## behind it.
+## **Everything in the content ignores the mouse, or it would swallow the click meant for the plate
+## behind it** — with one deliberate exception, the [CardScroll] over the prose, which cannot ignore
+## the mouse and hands back what it takes. That class is where the rule and its exception are
+## explained; nothing else on a card may be anything but
+## [constant Control.MOUSE_FILTER_IGNORE].
 func _card(item: Dictionary, group: ButtonGroup, selected: bool, on_select: Callable) -> Control:
 	var host := PanelContainer.new()
 	host.custom_minimum_size.x = CARD_MIN_WIDTH
@@ -444,12 +452,16 @@ func _card(item: Dictionary, group: ButtonGroup, selected: bool, on_select: Call
 	button.button_group = group
 	button.button_pressed = selected
 	UiSkin.apply_card(button)
-	button.pressed.connect(func() -> void: on_select.call(String(item["id"])))
-	# `toggled`, not `pressed`: a [ButtonGroup] tells the card being *deselected* too, which is what
-	# takes the glow back off it. `pressed` only ever fires on the one being chosen.
+	# **`toggled` carries the choice, not `pressed`.** Two things pick this card — the plate itself,
+	# where the painting is, and a tap forwarded from the scroll region over the prose, which arrives
+	# as `button_pressed = true` and never fires `pressed` at all. `toggled` is the one signal both
+	# routes go through, so the selection is made in one place. It is also the only one that tells the
+	# card being *deselected*, which is what takes the glow back off it.
 	button.toggled.connect(func(on: bool) -> void:
 		host.add_theme_stylebox_override("panel",
-			UiSkin.card_glow_style() if on else UiSkin.card_shadow_style()))
+			UiSkin.card_glow_style() if on else UiSkin.card_shadow_style())
+		if on:
+			on_select.call(String(item["id"])))
 	host.add_child(button)
 
 	# Two insets, not one. The painting runs out to the plate's drawn rail, so only the rail's own
@@ -489,23 +501,44 @@ func _card(item: Dictionary, group: ButtonGroup, selected: bool, on_select: Call
 
 	# **The prose scrolls inside the card, not the card inside the step.** The painting stays put at the
 	# top and everything under it moves, down to the card's own bottom edge. Scrolling the whole step
-	# instead — which is what this did — meant the picture slid away the moment you read past it, and on
-	# the widest card the bottom of one card's badges sat level with the middle of another's prose. Each
-	# card is now a fixed frame with its own contents, so a row of them stays aligned however much text
-	# any one of them has.
-	# **No scroll region inside the card.** There was one, and it only made sense while the card was
-	# stretched to the whole step: something had to give when the text outran a fixed frame. A card is
-	# as tall as its own content now, so there is never anything to scroll past — and the step's own
-	# scroll takes over when the row as a whole does not fit, which is the case the phone actually
-	# hits. It also gives the card its whole face back as a click target, with no tap-versus-drag rule
-	# to get wrong.
+	# instead put the bar down the side of the page and slid the picture away the moment you read past
+	# it; and on a phone it stacked a scroll region inside a scroll region under the same finger. Each
+	# card is a fixed frame with its own contents now, so a row of them stays aligned however much text
+	# any one of them has, and there is exactly one thing on the step that scrolls: the card you are
+	# reading.
+	#
+	# **The scroll region takes the whole face under the painting, and the padding goes inside it.** The
+	# bar is then on the card's own rail, level with the edges of the picture above it and running the
+	# full height of everything below it — a fitting of the card rather than a control floating on it.
+	# Padding the region from the outside instead inset the bar on all four sides, which left it
+	# hanging in the parchment with a strip of card either side of it.
+	#
+	# [CardScroll] rather than a [ScrollContainer]: a scroll region is the one thing that can be on a
+	# card's face without being [constant Control.MOUSE_FILTER_IGNORE], so it is also the one thing that
+	# would swallow the card's click. It hands the tap back; the class says why nothing simpler works.
+	# Hover has to be handed back the same way — the plate cannot see a pointer that never reaches it.
+	var scroll := CardScroll.new()
+	scroll.custom_minimum_size.y = CARD_TEXT_MIN_HEIGHT
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	UiSkin.apply_scroll_container(scroll)
+	scroll.tapped.connect(func() -> void: button.button_pressed = true)
+	scroll.mouse_entered.connect(func() -> void: UiSkin.set_card_hover(button, true))
+	scroll.mouse_exited.connect(func() -> void: UiSkin.set_card_hover(button, false))
+	content.add_child(scroll)
+
+	# The prose keeps the field padding, but as part of what scrolls — so the first line starts clear of
+	# the painting and the last one clears the card's bottom rail, and both edges of the paragraph stay
+	# off the moulding. A [ScrollContainer] hands its child the view's width only if the child asks to
+	# expand into it; without that flag the prose wraps to its own minimum width and the card becomes a
+	# column of text down its left-hand side.
 	var text := MarginContainer.new()
 	text.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	for side in ["margin_left", "margin_right"]:
 		text.add_theme_constant_override(side, int(CARD_PADDING - CARD_BORDER_INSET))
 	text.add_theme_constant_override("margin_top", int(CARD_PADDING - CARD_BORDER_INSET))
 	text.add_theme_constant_override("margin_bottom", int(CARD_PADDING - CARD_BORDER_INSET))
-	content.add_child(text)
+	scroll.add_child(text)
 
 	var column := VBoxContainer.new()
 	column.mouse_filter = Control.MOUSE_FILTER_IGNORE

@@ -84,6 +84,57 @@ func test_defaults_are_used_when_the_player_changes_nothing() -> void:
 	assert_eq(String(Entities.get_entity(Kernel.state, "outpost").get("name", "")), "Ravenwatch")
 
 
+## The card's prose sits under a [CardScroll], which is a control the *card's own button* cannot see
+## past — and twice now that has quietly cost the card two thirds of its click. Nothing about it is
+## visible in a screenshot: the card still looks like a card, and the half of it carrying the writing
+## simply stops choosing anything. Both of these drive the scroll's handler directly rather than the
+## viewport's, because the handler is where the whole tap-versus-drag rule lives.
+func test_a_tap_on_a_cards_prose_picks_the_card() -> void:
+	var screen := _screen()
+	var scrolls := _card_scrolls(screen)
+	assert_gt(scrolls.size(), 1, "the background step builds a scroll region per card")
+	if scrolls.size() < 2:
+		return
+	_tap(scrolls[1], Vector2(20, 20), Vector2(20, 20))
+	assert_eq(String(screen.get("_selected_background")), String(WizardScreen.BACKGROUNDS[1]["id"]),
+		"the second card's prose chooses the second card")
+
+
+func test_dragging_a_cards_prose_scrolls_it_without_choosing_it() -> void:
+	var screen := _screen()
+	var scrolls := _card_scrolls(screen)
+	if scrolls.size() < 2:
+		return
+	var before := String(screen.get("_selected_background"))
+	_tap(scrolls[1], Vector2(20, 120), Vector2(20, 20))
+	assert_eq(String(screen.get("_selected_background")), before,
+		"a drag reads the card, it does not pick it")
+
+
+## Every [CardScroll] under [param node], in the order the cards were built — so index *i* is the
+## scroll on the card for item *i* of the step's list, hidden ones included.
+func _card_scrolls(node: Node) -> Array[CardScroll]:
+	var found: Array[CardScroll] = []
+	if node is CardScroll:
+		found.append(node as CardScroll)
+	for child in node.get_children():
+		found.append_array(_card_scrolls(child))
+	return found
+
+
+func _tap(scroll: CardScroll, from: Vector2, to: Vector2) -> void:
+	var press := InputEventMouseButton.new()
+	press.button_index = MOUSE_BUTTON_LEFT
+	press.pressed = true
+	press.position = from
+	scroll._gui_input(press)
+	var release := InputEventMouseButton.new()
+	release.button_index = MOUSE_BUTTON_LEFT
+	release.pressed = false
+	release.position = to
+	scroll._gui_input(release)
+
+
 func test_every_step_fits_the_width_it_is_designed_for() -> void:
 	# Same guard as the settings page, and it caught the same thing here: a Godot container does not
 	# clip, so a step whose *minimum* width exceeds the viewport runs off the right edge with no
