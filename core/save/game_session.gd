@@ -42,6 +42,7 @@ const REFUSALS: Array[String] = ["save_from_newer_version", "module_from_newer_v
 ## matching string literals in files that never reference each other.
 const PROFILE_STATE_KEY := "profile"
 const PROFILE_VERBOSITY := "verbosity"
+const PROFILE_LANGUAGE := "language"
 
 ## The wizard's flag, a [FlagValue] dictionary, under its own key rather than inside the profile:
 ## it is the outpost's identity, shown in-game wherever the outpost appears, not a setup answer.

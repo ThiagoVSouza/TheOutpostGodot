@@ -13,6 +13,7 @@ const SettingsScreen := preload("res://core/screens/settings_screen.gd")
 
 var _restore_volumes: Dictionary = {}
 var _restore_narration := ""
+var _restore_language := ""
 var _restore_window_mode := ""
 var _restore_vsync := ""
 
@@ -27,6 +28,7 @@ func before_each() -> void:
 	for category in AudioManager.MIXER_LEVELS:
 		_restore_volumes[category] = Kernel.settings.audio_volume(category)
 	_restore_narration = Kernel.settings.narration_level()
+	_restore_language = Kernel.settings.language()
 	_restore_window_mode = Kernel.settings.window_mode()
 	_restore_vsync = Kernel.settings.vsync_mode()
 
@@ -35,6 +37,7 @@ func after_each() -> void:
 	for category in _restore_volumes:
 		Kernel.settings.set_audio_volume(String(category), float(_restore_volumes[category]))
 	Kernel.settings.set_narration_level(_restore_narration)
+	Kernel.settings.set_language(_restore_language)
 	Kernel.settings.set_window_mode(_restore_window_mode)
 	Kernel.settings.set_vsync_mode(_restore_vsync)
 	Kernel.settings.apply_audio(Kernel.audio)
@@ -110,6 +113,40 @@ func test_choosing_a_narration_length_sets_the_default_for_new_games() -> void:
 	narration.item_selected.emit(target)
 
 	assert_eq(Kernel.settings.narration_level(), String(narration.get_item_metadata(target)))
+
+
+func test_the_language_picker_contains_every_language_and_saves_the_default() -> void:
+	var screen := _screen()
+	var language := screen.find_child("LanguagePicker", true, false) as LanguagePicker
+	assert_not_null(language)
+	if language == null:
+		return
+	assert_eq(language.option_count(), AppSettings.LANGUAGES.size())
+	assert_not_null(language.icon)
+	assert_eq(language.custom_minimum_size.y, LanguagePicker.FIELD_HEIGHT)
+	language.open_picker()
+	var modal := language.active_modal()
+	assert_not_null(modal)
+	assert_eq(float(modal.get("_preferred_content_height")),
+		LanguagePicker.PICKER_CONTENT_HEIGHT)
+	var scroll := modal.get("_scroll") as ScrollContainer
+	assert_not_null(scroll)
+	if scroll != null:
+		assert_eq(scroll.scroll_deadzone, PickerModal.TOUCH_SCROLL_DEADZONE)
+	var japanese: Button = null
+	for node in modal.find_children("*", "Button", true, false):
+		if String(node.get_meta("language_code", "")) == "ja":
+			japanese = node as Button
+			break
+	assert_not_null(japanese)
+	if japanese != null:
+		assert_eq(japanese.custom_minimum_size.y, LanguagePicker.OPTION_HEIGHT)
+		assert_eq(japanese.mouse_filter, Control.MOUSE_FILTER_PASS)
+		var display_font := japanese.get_theme_font("font")
+		assert_true(display_font.has_char("日".unicode_at(0)))
+		japanese.pressed.emit()
+	assert_eq(Kernel.settings.language(), "ja")
+	screen.call("on_hardware_back")
 
 
 ## An enabled `OptionButton` whose first entry reads [param first_item_text] — how the window-mode

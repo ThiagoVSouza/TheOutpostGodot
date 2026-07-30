@@ -328,12 +328,17 @@ func seed_new_game(kernel: GameKernel, params: Dictionary) -> void:
 	# The wizard's answers, kept under the keys core reads them back out of ([GameSession]).
 	# `verbosity` drives the narrator's reading length — the kernel re-derives `narration` from this
 	# on every new game and load.
+	var language := String(params.get(GameSession.PROFILE_LANGUAGE,
+		AppSettings.DEFAULT_LANGUAGE))
+	if not AppSettings.is_language(language):
+		language = AppSettings.DEFAULT_LANGUAGE
 	kernel.state.set_value(GameSession.PROFILE_STATE_KEY, {
 		"background": background,
 		"outpost_location": location,
 		"sex": String(params.get("sex", "male")),
 		GameSession.PROFILE_VERBOSITY: String(params.get(GameSession.PROFILE_VERBOSITY,
 			NarrationSettings.LEVEL_NORMAL)),
+		GameSession.PROFILE_LANGUAGE: language,
 	})
 	if params.has(GameSession.OUTPOST_FLAG_STATE_KEY):
 		kernel.state.set_value(GameSession.OUTPOST_FLAG_STATE_KEY,
