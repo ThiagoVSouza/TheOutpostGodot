@@ -295,6 +295,14 @@ func _build_ui() -> void:
 		page.size_flags_vertical = Control.SIZE_EXPAND_FILL
 		pages_host.add_child(page)
 
+	# A rule between the step and the two plates that leave it. Everything above it belongs to the
+	# choice being made — including the pager's own arrows, which sit just above the line — and
+	# everything below it moves you off the step entirely. Without it the pager's arrows and the
+	# wizard's Back read as one row of navigation, which is two quite different jobs.
+	var divider := HSeparator.new()
+	divider.add_theme_stylebox_override("separator", UiSkin.separator_style())
+	col.add_child(divider)
+
 	# Cancel/Back on the left and Next/Start on the right, the same hands as the settings footer and
 	# the exit modal: leaving is always the left plate.
 	var nav := HBoxContainer.new()

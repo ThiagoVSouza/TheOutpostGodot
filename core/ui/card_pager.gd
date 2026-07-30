@@ -33,6 +33,9 @@ const MAX_VISIBLE := 3
 const DOT_SIZE := 12.0
 const DOT_SPACING := 8
 
+## How far the arrows and dots sit above whatever the screen puts below them.
+const CONTROLS_LIFT := 14.0
+
 var _cards: Array[Control] = []
 ## Index of the leftmost card on screen.
 var _first := 0
@@ -55,12 +58,12 @@ static func create(cards: Array[Control], selected: int) -> CardPager:
 	# only reachable at the ends of the list — and the card is the thing being read. Below the strip
 	# they cost height, which a phone has far more of, and they group naturally with the dots: one row
 	# that is entirely "where am I in this list".
-	# **The cards scroll; the controls do not.** A card is as tall as its content, and on a short
-	# desktop window three of them are taller than the step — so something has to scroll. If that is
-	# the whole pager, the arrows and dots go below the fold and the player has to scroll in order to
-	# find the control that would have moved the list for them. Keeping the strip in its own scroll
-	# and the controls outside it means the way through the list is always on screen. On a phone,
-	# where one card fits whole, none of this shows.
+	#
+	# **The cards scroll; the controls do not.** On a short window the cards are taller than the step,
+	# so something has to scroll. If that were the whole pager, the arrows and dots would go below the
+	# fold and the player would have to scroll in order to reach the control that would have moved the
+	# list for them. Keeping the strip in its own scroll and the controls outside it means the way
+	# through the list is always on screen.
 	var scroll := ScrollContainer.new()
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -69,8 +72,13 @@ static func create(cards: Array[Control], selected: int) -> CardPager:
 
 	pager._strip = HBoxContainer.new()
 	pager._strip.add_theme_constant_override("separation", 10)
-	# A ScrollContainer hands its child the full width only if the child asks to expand.
+	# A ScrollContainer hands its child the container's size — on either axis — only if the child asks
+	# to expand on that axis. Horizontally that gives the cards the full width; vertically it is what
+	# makes them reach the bottom of the step instead of stopping at the end of their text. When the
+	# content is *taller* than the view the flag costs nothing: the strip keeps its own height and the
+	# scroll does its job.
 	pager._strip.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	pager._strip.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.add_child(pager._strip)
 
 	var controls := HBoxContainer.new()
@@ -91,13 +99,20 @@ static func create(cards: Array[Control], selected: int) -> CardPager:
 	pager._right.pressed.connect(func() -> void: pager._step(1))
 	controls.add_child(pager._right)
 
+	# Air under the arrows, so they sit clear of the rule the screen draws beneath them rather than
+	# resting on it. They belong to the cards above, and a control touching a divider reads as
+	# belonging to whatever is on the other side of it.
+	var lift := Control.new()
+	lift.custom_minimum_size.y = CONTROLS_LIFT
+	lift.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	pager.add_child(lift)
+
 	for card in cards:
 		card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		# **Not `EXPAND`.** A row of cards is levelled by the [HBoxContainer] itself: the row is as tall
-		# as its tallest child's minimum, and children fill the cross axis, so every card is drawn to
-		# the tallest card's *content*. Expanding instead stretched them to the whole step, which on a
-		# desktop looked the same and on a phone — one card, nothing to be level with — left two thirds
-		# of a card as empty parchment below the text.
+		# `FILL`, not `EXPAND`: the height comes from the strip, which is the one thing here that
+		# negotiates with the scroll above it. An [HBoxContainer] gives every child its own height, so
+		# whatever the strip settles on, the cards are level with each other — at the tallest card's
+		# content when the room is tight, and at the room itself when there is more of it.
 		card.size_flags_vertical = Control.SIZE_FILL
 		pager._cards.append(card)
 		pager._strip.add_child(card)
