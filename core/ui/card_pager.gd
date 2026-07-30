@@ -59,27 +59,18 @@ static func create(cards: Array[Control], selected: int) -> CardPager:
 	# they cost height, which a phone has far more of, and they group naturally with the dots: one row
 	# that is entirely "where am I in this list".
 	#
-	# **The cards scroll; the controls do not.** On a short window the cards are taller than the step,
-	# so something has to scroll. If that were the whole pager, the arrows and dots would go below the
-	# fold and the player would have to scroll in order to reach the control that would have moved the
-	# list for them. Keeping the strip in its own scroll and the controls outside it means the way
-	# through the list is always on screen.
-	var scroll := ScrollContainer.new()
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	UiSkin.apply_scroll_container(scroll)
-	pager.add_child(scroll)
-
+	# **The strip does not scroll — the cards do, inside themselves.** It did scroll, and that put the
+	# bar down the side of the page for a card whose own prose was the thing that did not fit. Worse on
+	# a phone: a scroll region holding scroll regions means the finger's first drag has two plausible
+	# readings. A card is a fixed frame with its own scrolling contents now, so the strip is exactly as
+	# tall as the room it is given and never has anywhere to go.
 	pager._strip = HBoxContainer.new()
 	pager._strip.add_theme_constant_override("separation", 10)
-	# A ScrollContainer hands its child the container's size — on either axis — only if the child asks
-	# to expand on that axis. Horizontally that gives the cards the full width; vertically it is what
-	# makes them reach the bottom of the step instead of stopping at the end of their text. When the
-	# content is *taller* than the view the flag costs nothing: the strip keeps its own height and the
-	# scroll does its job.
 	pager._strip.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	# Vertical too: it is what makes the cards reach down to the controls instead of stopping at the
+	# end of their text, which is what keeps a row of them level with each other.
 	pager._strip.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroll.add_child(pager._strip)
+	pager.add_child(pager._strip)
 
 	var controls := HBoxContainer.new()
 	controls.add_theme_constant_override("separation", 16)

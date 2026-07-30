@@ -609,6 +609,22 @@ static func apply_card(button: Button) -> void:
 	button.add_theme_font_size_override("font_size", CONTROL_FONT_SIZE)
 
 
+## Light a card as though the pointer were on it, for the part of its face that is not the button.
+##
+## A card with a scroll region over its prose ([CardScroll]) has a control between the pointer and the
+## plate, and a [Button] can only see a pointer that reaches it — so half the card would stop lighting
+## up while staying perfectly clickable. Hover is not decoration on a card: it is the only thing that
+## says the whole face is one target rather than a picture with a paragraph under it.
+##
+## Both resting boxes are set, not just [code]normal[/code]. A chosen card is a pressed toggle, so it
+## draws [code]pressed[/code] instead, and overriding one of the two would light every card except the
+## one already picked.
+static func set_card_hover(button: Button, hovered: bool) -> void:
+	var style := input_style(HOVER_TINT) if hovered else input_style()
+	button.add_theme_stylebox_override("normal", style)
+	button.add_theme_stylebox_override("pressed", style)
+
+
 ## The chevron, and the flip that follows the list.
 ##
 ## [signal Window.visibility_changed] rather than a pair of open/close signals: Godot 4's [Window] has
@@ -867,12 +883,26 @@ static func scroll_grabber_style(vertical: bool, tint: Color = Color.WHITE) -> S
 	return style
 
 
+## How far one press of an end plate moves the view: a line and a half of body text, which is enough
+## that a click plainly did something and little enough to nudge a paragraph into view.
+##
+## **Without this the plates are painted buttons that do nothing.** A [ScrollContainer] leaves its
+## bars' [member Range.step] at 0 — it scrolls by whole pixels, which is what makes dragging the
+## grabber and the wheel smooth — and [ScrollBar] moves the view by exactly that step when an end
+## plate is pressed. Zero. The grabber works, the wheel works, and the one control that looks most
+## like a button is inert, which reads as a broken widget rather than a deliberate one.
+## [member ScrollBar.custom_step] is the override that exists for this, and -1 (its default) means
+## "use the step", so it has to be set to a real number rather than left alone.
+const SCROLL_STEP := FONT_BODY * 1.5
+
+
 ## Dress one [ScrollBar] — channel, bar, and the two end plates.
 ##
 ## The end plates are theme **icons**, and a theme icon has no modulate, so the hover and press
 ## lighting the plates elsewhere get for free has to be baked into copies of the image; see
 ## [method tinted_texture]. The bar is a stylebox and takes its tint directly.
 static func apply_scroll_bar(bar: ScrollBar) -> void:
+	bar.custom_step = SCROLL_STEP
 	var vertical := bar is VScrollBar
 	bar.add_theme_stylebox_override("scroll", scroll_track_style(vertical))
 	bar.add_theme_stylebox_override("scroll_focus", scroll_track_style(vertical))
