@@ -25,7 +25,16 @@ extends Control
 ## line between the two layouts.
 const MOBILE_BREAKPOINT_WIDTH := 900.0
 
-const RAIL_WIDTH := 72.0
+## Wide enough for the longest destination name ("Diplomacy") on a painted plate at
+## [constant UiSkin.FONT_SMALL]. The wireframe draws a narrow column of round icons and this is the
+## same column carrying words instead, because no icon art exists yet — when it does, this narrows
+## back to the icon's own plate and nothing else about the rail changes.
+const RAIL_WIDTH := 190.0
+
+## The rail's plates, and the mobile menu list's. Smaller than a page's buttons: this is a list of
+## destinations, not a row of decisions, and at [constant UiSkin.CONTROL_FONT_SIZE] "Diplomacy" alone
+## would set the rail nearly 100 units wider than the map can spare.
+const RAIL_BUTTON_FONT_SIZE := UiSkin.FONT_SMALL
 
 ## How far the floating mobile menu button sits in from the stage's bottom-right corner.
 const MENU_BUTTON_MARGIN := 16
@@ -51,11 +60,12 @@ var dock: VBoxContainer
 var chat_slot: Control
 
 var _rail: VBoxContainer
-var _menu_button: Button
-var _map_layers_button: Button
+var _rail_plate: PanelContainer
+var _menu_button: SkinnedButton
+var _map_layers_button: SkinnedButton
 var _menu_list: HudPanel
 var _menu_list_box: VBoxContainer
-var _return_button: Button
+var _return_button: SkinnedButton
 var _mobile_menu_open := false
 
 var _dock_margin: MarginContainer
@@ -121,23 +131,33 @@ func _build() -> void:
 	root.add_theme_constant_override("separation", 0)
 	add_child(root)
 
+	# **The chrome is painted parchment, like every screen outside the game.** The same material a
+	# page is cut from, held closer to its moulding ([method UiSkin.chrome_style]) so a bar across the
+	# whole window costs the map as little height as it can. Anything less than the real parchment —
+	# the border-only thin frame was tried first — leaves the dark background showing through and the
+	# strip reads as a dark panel with a gold edge, which is the look this replaces.
+	var top_plate := PanelContainer.new()
+	top_plate.add_theme_stylebox_override("panel", UiSkin.chrome_style())
+	root.add_child(top_plate)
 	top_bar = HBoxContainer.new()
 	top_bar.add_theme_constant_override("separation", 16)
-	var top_margin := MarginContainer.new()
-	for side in ["left", "top", "right", "bottom"]:
-		top_margin.add_theme_constant_override("margin_" + side, 12)
-	top_margin.add_child(top_bar)
-	root.add_child(top_margin)
+	top_plate.add_child(top_bar)
 
 	var body := HBoxContainer.new()
 	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	body.add_theme_constant_override("separation", 0)
 	root.add_child(body)
 
+	_rail_plate = PanelContainer.new()
+	_rail_plate.add_theme_stylebox_override("panel", UiSkin.chrome_style())
+	# The rail ends under its last destination, as the wireframe draws it. Filling the height instead
+	# left a tall empty parchment column down the side of the map that read as a panel still loading.
+	_rail_plate.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	body.add_child(_rail_plate)
 	_rail = VBoxContainer.new()
 	_rail.custom_minimum_size = Vector2(RAIL_WIDTH, 0)
 	_rail.add_theme_constant_override("separation", 8)
-	body.add_child(_rail)
+	_rail_plate.add_child(_rail)
 
 	_stage = Control.new()
 	_stage.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -177,16 +197,16 @@ func _build() -> void:
 	# window's bottom-right corner, which is the *dock's* row — on a real phone it landed squarely
 	# on top of the Send button and hid it. The stage stops above the dock, so this floats over the
 	# map exactly as drawn. Anchors rather than a computed position so it needs no resize handling.
-	_menu_button = Button.new()
-	_menu_button.text = "Menu"
+	_menu_button = SkinnedButton.create("Menu", UiSkin.BROWN, UiSkin.CONTROL_HEIGHT,
+		RAIL_BUTTON_FONT_SIZE)
 	_menu_button.visible = false
 	_menu_button.pressed.connect(_toggle_mobile_menu)
 	_stage.add_child(_menu_button)
 	_menu_button.set_anchors_and_offsets_preset(
 		Control.PRESET_BOTTOM_RIGHT, Control.PRESET_MODE_MINSIZE, MENU_BUTTON_MARGIN)
 
-	_map_layers_button = Button.new()
-	_map_layers_button.text = "Map Layers"
+	_map_layers_button = SkinnedButton.create("Map Layers", UiSkin.BROWN, UiSkin.CONTROL_HEIGHT,
+		RAIL_BUTTON_FONT_SIZE)
 	_stage.add_child(_map_layers_button)
 	_map_layers_button.set_anchors_and_offsets_preset(
 		Control.PRESET_BOTTOM_RIGHT, Control.PRESET_MODE_MINSIZE, MENU_BUTTON_MARGIN)
@@ -203,10 +223,10 @@ func _build() -> void:
 	_menu_list.set_title("Menu")
 	_menu_list.dismissed.connect(_close_mobile_menu)
 	_menu_list_box = VBoxContainer.new()
-	_menu_list_box.add_theme_constant_override("separation", 4)
+	_menu_list_box.add_theme_constant_override("separation", 8)
 	_menu_list.body.add_child(_menu_list_box)
-	_return_button = Button.new()
-	_return_button.text = "Return"
+	_return_button = SkinnedButton.create("Return", UiSkin.BROWN, UiSkin.CONTROL_HEIGHT,
+		RAIL_BUTTON_FONT_SIZE)
 	_return_button.pressed.connect(_close_mobile_menu)
 	_menu_list_box.add_child(_return_button)
 
@@ -217,10 +237,9 @@ func _build() -> void:
 ## can be added to one and forgotten on the other. Only "Main Menu" is wired in Phase 1 — the other
 ## six wireframed destinations are Phase 5's panel registry (ux_plan.md §Phase 5).
 func add_rail_action(label: String, on_pressed: Callable) -> void:
-	var rail_button := Button.new()
-	rail_button.text = label
+	var rail_button := SkinnedButton.create(label, UiSkin.BROWN, UiSkin.CONTROL_HEIGHT,
+		RAIL_BUTTON_FONT_SIZE)
 	rail_button.tooltip_text = label
-	rail_button.custom_minimum_size = Vector2(0, 48)
 	rail_button.pressed.connect(on_pressed)
 	_rail.add_child(rail_button)
 
@@ -228,15 +247,14 @@ func add_rail_action(label: String, on_pressed: Callable) -> void:
 
 
 func add_map_layers_action(label: String, on_pressed: Callable) -> void:
-	_map_layers_button.text = label
+	_map_layers_button.label.text = label
 	_map_layers_button.pressed.connect(on_pressed)
 	_add_mobile_menu_action(label, on_pressed)
 
 
 func _add_mobile_menu_action(label: String, on_pressed: Callable) -> void:
-	var menu_button := Button.new()
-	menu_button.text = label
-	menu_button.custom_minimum_size = Vector2(0, 40)
+	var menu_button := SkinnedButton.create(label, UiSkin.BROWN, UiSkin.CONTROL_HEIGHT,
+		RAIL_BUTTON_FONT_SIZE)
 	menu_button.pressed.connect(func() -> void:
 		_close_mobile_menu()
 		on_pressed.call())
@@ -381,7 +399,9 @@ func _on_resized() -> void:
 	var mobile := size.x < MOBILE_BREAKPOINT_WIDTH
 	if mobile != _is_mobile:
 		_is_mobile = mobile
-		_rail.visible = not mobile
+		# The plate, not the column inside it: hiding only the column would leave an empty painted
+		# strip down the side of a phone screen.
+		_rail_plate.visible = not mobile
 		_menu_button.visible = mobile
 		_map_layers_button.visible = not mobile
 		if not mobile:

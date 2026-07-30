@@ -221,6 +221,10 @@ const BUTTON_PADDING_H := 24.0
 const BUTTON_PADDING_V := 12.0
 const FRAME_PADDING := 34.0
 
+## How far inside its moulding a strip of chrome holds its contents. Enough that a plate does not
+## touch the rail, and no more — see [method chrome_style].
+const CHROME_PADDING := 10.0
+
 ## The type scale. Four sizes, and screens pick from them rather than inventing numbers — a page whose
 ## labels, hints and headings were each chosen separately is how a 26pt button ends up sitting next to
 ## a 16pt label looking like it wandered in from another screen.
@@ -439,6 +443,20 @@ static func apply_button(button: Button, variant: Variant) -> void:
 	for state in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color"]:
 		button.add_theme_color_override(state, LABEL)
 	button.add_theme_color_override("font_disabled_color", LABEL_DISABLED)
+
+
+## The parchment the game's own chrome is cut from — the top bar, the rail, the dock over the map.
+##
+## [method frame_style] with its padding turned down, and deliberately not [method thin_frame_style]:
+## the thin frame draws a border and *nothing behind it*, so a bar built from it showed the dark
+## letterbox background through its middle and read as a dark panel with a gold edge — the exact look
+## the painted skin was replacing. This is the same material a page is made of, so a strip of chrome
+## beside a page cannot look borrowed from somewhere else. The page's own [constant FRAME_PADDING] is
+## right for a page and would cost a bar across the whole window a band of map for nothing.
+static func chrome_style(padding: float = CHROME_PADDING) -> StyleBoxTexture:
+	var style := frame_style()
+	style.set_content_margin_all(padding)
+	return style
 
 
 ## The border-only frame for a working area inside a page. Stretched, not tiled, for the same reason
