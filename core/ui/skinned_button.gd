@@ -25,6 +25,9 @@ var label: Label = null
 
 var _font_size := UiSkin.BUTTON_FONT_SIZE
 var _tween: Tween = null
+## The shadow to put back when this is re-enabled. Plates carrying art need their own — an arrow's
+## has to be inset past its transparent corners — so it cannot be re-derived from a constant.
+var _shadow: StyleBoxFlat = null
 
 
 static func create(text: String, variant: UiSkin.Variant, height: float,
@@ -62,20 +65,49 @@ static func create(text: String, variant: UiSkin.Variant, height: float,
 	skinned.label = caption
 	padding.add_child(caption)
 
-	inner.pressed.connect(func() -> void: skinned.pressed.emit())
-	inner.mouse_entered.connect(func() -> void: skinned._to(UiSkin.HOVER_SCALE, UiSkin.HOVER_TIME))
-	inner.mouse_exited.connect(func() -> void: skinned._to(1.0, UiSkin.HOVER_TIME))
-	inner.button_down.connect(func() -> void:
-		skinned._to(UiSkin.PRESSED_SCALE, UiSkin.PRESSED_TIME))
+	skinned._wire()
+	return skinned
+
+
+## A plate with no caption on it, where the art *is* the whole button: the pager's arrows. It gets the
+## same three answers to the pointer as a captioned plate — the shadow, the change in light, the
+## change in size — because it is a button, and one that behaved differently from every other button
+## on the screen is what this replaced. A [TextureButton] can do the light and nothing else.
+static func create_bare(normal_style: StyleBox, hover_style: StyleBox, pressed_style: StyleBox,
+		size: Vector2, shadow: StyleBoxFlat) -> SkinnedButton:
+	var skinned := SkinnedButton.new()
+	skinned._shadow = shadow
+	skinned.add_theme_stylebox_override("panel", shadow)
+
+	var inner := Button.new()
+	inner.custom_minimum_size = size
+	inner.add_theme_stylebox_override("normal", normal_style)
+	inner.add_theme_stylebox_override("hover", hover_style)
+	inner.add_theme_stylebox_override("pressed", pressed_style)
+	inner.add_theme_stylebox_override("focus", hover_style)
+	inner.add_theme_stylebox_override("disabled", normal_style)
+	UiSkin.apply_cursor(inner)
+	skinned.button = inner
+	skinned.add_child(inner)
+
+	skinned._wire()
+	return skinned
+
+
+## The pointer's three answers, shared by both factories.
+func _wire() -> void:
+	var inner := button
+	inner.pressed.connect(func() -> void: pressed.emit())
+	inner.mouse_entered.connect(func() -> void: _to(UiSkin.HOVER_SCALE, UiSkin.HOVER_TIME))
+	inner.mouse_exited.connect(func() -> void: _to(1.0, UiSkin.HOVER_TIME))
+	inner.button_down.connect(func() -> void: _to(UiSkin.PRESSED_SCALE, UiSkin.PRESSED_TIME))
 	inner.button_up.connect(func() -> void:
 		# Back to hovered if the pointer is still on it (mouse), to rest if it never was (touch).
-		var settled := UiSkin.HOVER_SCALE if inner.is_hovered() else 1.0
-		skinned._to(settled, UiSkin.PRESSED_TIME))
+		_to(UiSkin.HOVER_SCALE if inner.is_hovered() else 1.0, UiSkin.PRESSED_TIME))
 	# Keyboard and gamepad focus gets the same treatment as hover, so arrowing down the menu is as
 	# legible as pointing at it. Focus is deliberately left enabled — the plate is still a Button.
-	inner.focus_entered.connect(func() -> void: skinned._to(UiSkin.HOVER_SCALE, UiSkin.HOVER_TIME))
-	inner.focus_exited.connect(func() -> void: skinned._to(1.0, UiSkin.HOVER_TIME))
-	return skinned
+	inner.focus_entered.connect(func() -> void: _to(UiSkin.HOVER_SCALE, UiSkin.HOVER_TIME))
+	inner.focus_exited.connect(func() -> void: _to(1.0, UiSkin.HOVER_TIME))
 
 
 func _ready() -> void:
@@ -107,8 +139,8 @@ func set_disabled(value: bool) -> void:
 	# because the plate covers it, so a translucent plate lets that near-black show through and the
 	# button reads *darker* instead of receded. A control this faded should not be casting a shadow
 	# onto the frame anyway.
-	add_theme_stylebox_override("panel",
-		StyleBoxEmpty.new() if value else UiSkin.button_shadow_style())
+	add_theme_stylebox_override("panel", StyleBoxEmpty.new() if value
+		else (_shadow if _shadow != null else UiSkin.button_shadow_style()))
 	if value:
 		_to(1.0, UiSkin.PRESSED_TIME)
 

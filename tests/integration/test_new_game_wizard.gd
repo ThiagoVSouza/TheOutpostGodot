@@ -129,3 +129,4 @@ func test_every_step_fits_the_width_it_is_designed_for() -> void:
 		if step < steps.size() - 1:
 			screen.call("_on_next")
 			await wait_process_frames(1)
+
