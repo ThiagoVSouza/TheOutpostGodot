@@ -176,25 +176,11 @@ func _build() -> void:
 	top_bar.add_theme_constant_override("separation", 16)
 	top_plate.add_child(top_bar)
 
-	var body := HBoxContainer.new()
+	var body := Control.new()
 	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	body.add_theme_constant_override("separation", 0)
 	root.add_child(body)
-
-	_rail_plate = PanelContainer.new()
-	_rail_plate.add_theme_stylebox_override("panel", UiSkin.chrome_style())
-	# The rail ends under its last destination, as the wireframe draws it. Filling the height instead
-	# left a tall empty parchment column down the side of the map that read as a panel still loading.
-	_rail_plate.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
-	body.add_child(_rail_plate)
-	_rail = VBoxContainer.new()
-	_rail.custom_minimum_size = Vector2(RAIL_WIDTH, 0)
-	_rail.add_theme_constant_override("separation", 8)
-	_rail_plate.add_child(_rail)
-
 	_stage = Control.new()
-	_stage.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_stage.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_stage.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_stage.clip_contents = true
 	body.add_child(_stage)
 
@@ -202,6 +188,21 @@ func _build() -> void:
 	base_layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	base_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_stage.add_child(base_layer)
+
+	# **The rail floats over the map; it is not a column beside it.** As a child of an HBox it took
+	# its full width out of the stage for the stage's whole height — and since the plate itself stops
+	# under its last destination, everything below that was a dead strip of background the map was
+	# not allowed to draw in. It is parented into the stage now, over the base layer, and only the
+	# things that are *not* the map are held clear of it (see `_content_left`).
+	_rail_plate = PanelContainer.new()
+	_rail_plate.add_theme_stylebox_override("panel", UiSkin.chrome_style())
+	_stage.add_child(_rail_plate)
+	_rail_plate.set_anchors_and_offsets_preset(
+		Control.PRESET_TOP_LEFT, Control.PRESET_MODE_MINSIZE, int(CHAT_SIDE_INSET))
+	_rail = VBoxContainer.new()
+	_rail.custom_minimum_size = Vector2(RAIL_WIDTH, 0)
+	_rail.add_theme_constant_override("separation", 8)
+	_rail_plate.add_child(_rail)
 
 	_page_slot = Control.new()
 	_stage.add_child(_page_slot)
@@ -494,14 +495,15 @@ func _relayout_stage() -> void:
 ## and wherever the tween currently has it in between. Both ends are expressed the same way, against
 ## the same edge, which is what makes one `lerp` enough to animate the whole thing.
 func _layout_chat(page_open: bool) -> void:
-	var side := 0.0 if _is_mobile else CHAT_SIDE_INSET
 	var bottom := CHAT_BOTTOM_INSET + _keyboard_inset
 	chat_slot.anchor_left = 0.0
 	chat_slot.anchor_right = 1.0
 	chat_slot.anchor_top = 1.0
 	chat_slot.anchor_bottom = 1.0
-	chat_slot.offset_left = side
-	chat_slot.offset_right = -side
+	# **The same gap either side.** On the left that is measured from the rail, on the right from the
+	# window — the board sits between them with equal air, which is what the sketch's two arrows mark.
+	chat_slot.offset_left = _content_left()
+	chat_slot.offset_right = 0.0 if _is_mobile else -CHAT_SIDE_INSET
 	chat_slot.offset_bottom = -bottom
 
 	var collapsed := _collapsed_chat_height() + bottom
@@ -535,7 +537,7 @@ func _layout_page_above_split(bottom_frac: float) -> void:
 	_page_slot.anchor_right = 1.0
 	_page_slot.anchor_top = 0.0
 	_page_slot.anchor_bottom = bottom_frac
-	_page_slot.offset_left = 0.0
+	_page_slot.offset_left = _content_left()
 	_page_slot.offset_right = 0.0
 	_page_slot.offset_top = 0.0
 	_page_slot.offset_bottom = 0.0 if is_equal_approx(bottom_frac, 1.0) else -SPLIT_GUTTER_SIZE * 0.5
@@ -544,7 +546,7 @@ func _layout_page_above_split(bottom_frac: float) -> void:
 	_gutter.anchor_right = 1.0
 	_gutter.anchor_top = bottom_frac
 	_gutter.anchor_bottom = bottom_frac
-	_gutter.offset_left = 0.0
+	_gutter.offset_left = _content_left()
 	_gutter.offset_right = 0.0
 	_gutter.offset_top = -SPLIT_GUTTER_SIZE * 0.5
 	_gutter.offset_bottom = SPLIT_GUTTER_SIZE * 0.5
@@ -554,12 +556,22 @@ func _collapsed_chat_height() -> float:
 	return _chat_dock.collapsed_height if _chat_dock != null else UiSkin.CONTROL_HEIGHT
 
 
+## How far in from the stage's left edge anything that is **not** the map begins: past the floating
+## rail on desktop, flush on a phone where there is no rail. The map itself ignores this and runs the
+## full width, which is the point of the rail floating.
+func _content_left() -> float:
+	if _is_mobile:
+		return 0.0
+	return CHAT_SIDE_INSET + _rail_plate.get_combined_minimum_size().x + CHAT_SIDE_INSET
+
+
+## A page fills the stage, minus whatever the floating rail is standing in front of.
 func _fill(control: Control) -> void:
 	control.anchor_left = 0.0
 	control.anchor_right = 1.0
 	control.anchor_top = 0.0
 	control.anchor_bottom = 1.0
-	control.offset_left = 0.0
+	control.offset_left = _content_left()
 	control.offset_right = 0.0
 	control.offset_top = 0.0
 	control.offset_bottom = 0.0
