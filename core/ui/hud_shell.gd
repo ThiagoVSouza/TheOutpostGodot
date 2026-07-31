@@ -88,6 +88,12 @@ var base_layer: Control
 var top_bar: HBoxContainer
 var chat_slot: Control
 
+## Anything a caller wants drawn over the whole shell, laid out by hand. The outpost's banner hangs
+## here: it is twice the height of the bar it flies from, and a control that size *inside* the bar
+## would simply make the bar that tall. Added after everything else, so it clears the stage as well
+## as the chrome; a plain [Control], so nothing here moves what a caller puts in it.
+var overlay: Control
+
 var _rail: VBoxContainer
 var _rail_host: Control
 var _rail_plate: PanelContainer
@@ -192,6 +198,13 @@ func _build() -> void:
 	top_bar = HBoxContainer.new()
 	top_bar.add_theme_constant_override("separation", 16)
 	top_plate.add_child(top_bar)
+
+	# The banner's home. Last child of the shell, so it draws over the bar *and* over the stage the
+	# bar sits above — parented inside the bar it would have been covered by the map the moment it
+	# hung past the bar's bottom edge.
+	overlay = Control.new()
+	overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 	var body := Control.new()
 	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -303,6 +316,8 @@ func _build() -> void:
 		RAIL_BUTTON_FONT_SIZE)
 	_return_button.pressed.connect(_close_mobile_menu)
 	_menu_list_box.add_child(_return_button)
+
+	add_child(overlay)
 
 
 # --- rail / mobile menu ------------------------------------------------------------------------

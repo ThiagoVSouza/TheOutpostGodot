@@ -21,9 +21,13 @@ extends Control
 ## palest thing on the page. The player's own lines and the game master's keep their old tags: those
 ## two go only to the hidden semantic log `_append` filters by that exact text.
 
-## The banner in the top bar. Sized to the identity block beside it rather than to the old dark
-## bar's 16px caption — a 26-unit flag next to [constant UiSkin.FONT_BODY] lettering read as a smudge.
-const HEADER_FLAG_WIDTH := 44.0
+## The banner in the top bar — the one thing on this screen that is not held inside its own strip.
+## It is taller than the bar at this width, and hanging past it is the point: a banner flies from a
+## rail, it does not sit in a box.
+const HEADER_FLAG_WIDTH := 88.0
+
+## How far below the top of the shell the banner's finial starts.
+const BANNER_TOP_INSET := 2.0
 
 ## Wide enough for ">>>" with room around it, and identical across all four so the row reads as one
 ## switch rather than four buttons of increasing importance.
@@ -233,15 +237,27 @@ func _refresh_map_marker() -> void:
 ## button here — it only retires once Phase 4's `TimeDriver` replaces it with the four speeds.
 func _build_top_bar() -> void:
 	var bar := _shell.top_bar
-	# The poleless cut here: the bar is a shallow strip, and at the tall aspect nearly all of what fits
-	# in it is pole. The map pin keeps the full banner — a flag on a pole is what a pin should look
-	# like — so the two cuts are used for what each is for rather than one being a fallback.
+	# The poleless cut here: at the tall aspect nearly all of what fits in a strip of chrome is pole.
+	# The map pin keeps the full banner — a flag on a pole is what a pin should look like — so the two
+	# cuts are used for what each is for rather than one being a fallback.
+	#
+	# **It hangs out of the bar.** At this size it is taller than the bar it flies from, so it cannot
+	# live in the bar: a control that tall inside the row would simply make the row that tall. What
+	# stands in the row is an empty slot of the right width, and the banner itself is parented to the
+	# shell's overlay and placed against that slot — over the bar, over the map below it.
+	var banner_slot := Control.new()
+	banner_slot.custom_minimum_size.x = HEADER_FLAG_WIDTH
+	banner_slot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bar.add_child(banner_slot)
 	_flag_view = FlagView.new()
 	_flag_view.short = true
+	_flag_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_flag_view.custom_minimum_size = Vector2(
 		HEADER_FLAG_WIDTH, HEADER_FLAG_WIDTH * FlagView.aspect(true))
+	_shell.overlay.add_child(_flag_view)
+	banner_slot.resized.connect(_place_banner.bind(banner_slot))
+	_place_banner.call_deferred(banner_slot)
 	_flag_view.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	bar.add_child(_flag_view)
 
 	var identity := VBoxContainer.new()
 	identity.add_theme_constant_override("separation", 0)
@@ -292,6 +308,15 @@ func _build_top_bar() -> void:
 		bar.add_child(button)
 		_speed_buttons[speed] = button
 	_refresh_time_buttons()
+
+
+## Hang the banner from the bar, against the empty slot standing in for it in the row. Measured from
+## that slot rather than from a constant, so the bar's own padding stays the one place it is decided.
+func _place_banner(slot: Control) -> void:
+	var origin := _shell.overlay.get_global_rect().position
+	_flag_view.size = _flag_view.custom_minimum_size
+	_flag_view.position = Vector2(
+		slot.get_global_rect().position.x - origin.x, BANNER_TOP_INSET)
 
 
 ## One of the top bar's icon slots — the coin, the head. A [TextureRect] rather than a [Label] with a
