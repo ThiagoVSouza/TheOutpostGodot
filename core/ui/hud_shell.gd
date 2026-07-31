@@ -89,6 +89,7 @@ var top_bar: HBoxContainer
 var chat_slot: Control
 
 var _rail: VBoxContainer
+var _rail_host: Control
 var _rail_plate: PanelContainer
 var _rail_label_clip: Control
 var _rail_label: PanelContainer
@@ -212,11 +213,12 @@ func _build() -> void:
 	# things that are *not* the map are held clear of it (see `_content_left`).
 	# **It has to draw between the column and the buttons**: over the rail's parchment and its
 	# right-hand moulding, and under the plate it belongs to, so the end that meets the button is
-	# genuinely hidden rather than trimmed to look hidden. That means being a child of the rail plate
-	# ahead of the buttons — and a [PanelContainer] would lay a child like that out to fill it, which
-	# is what [member Control.top_level] is for: a container skips a top-level child when it sorts,
-	# while the draw order stays where the child sits in the list. The cost is that its position is
-	# then in canvas coordinates, which is what `_show_rail_label` measures in anyway.
+	# genuinely hidden rather than trimmed to look hidden.
+	#
+	# That needs a plain [Control] in between, because a container lays every child out to fill it.
+	# [member Control.top_level] looks like the way out — a container does skip a top-level child when
+	# it sorts — but it is not: it reparents the canvas item to the viewport's own canvas, so the
+	# label drew above the entire tree and sat on the button instead of under it.
 	# **The reveal is a window, not a slide.** The plate keeps its own size and a clipping wrapper
 	# widens over it, so the name unrolls out from under the column instead of arriving beside it.
 	# It has to be done this way round: a [PanelContainer] cannot be tweened narrower than the text
@@ -225,7 +227,6 @@ func _build() -> void:
 	_rail_label_clip.clip_contents = true
 	_rail_label_clip.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_rail_label_clip.visible = false
-	_rail_label_clip.top_level = true
 	_rail_label = PanelContainer.new()
 	_rail_label.add_theme_stylebox_override("panel", UiSkin.sidemenu_label_style())
 	_rail_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -245,8 +246,13 @@ func _build() -> void:
 	_rail.custom_minimum_size = Vector2(RAIL_WIDTH, 0)
 	_rail.alignment = BoxContainer.ALIGNMENT_CENTER
 	_rail.add_theme_constant_override("separation", RAIL_SEPARATION)
-	_rail_plate.add_child(_rail_label_clip)
-	_rail_plate.add_child(_rail)
+	# The host is what the plate sizes itself to, so it has to carry the column's own minimum — a
+	# plain Control has none of its own. `add_rail_action` keeps it in step as plates arrive.
+	_rail_host = Control.new()
+	_rail_plate.add_child(_rail_host)
+	_rail_host.add_child(_rail_label_clip)
+	_rail_host.add_child(_rail)
+	_rail.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
 	_page_slot = Control.new()
 	_stage.add_child(_page_slot)
@@ -325,6 +331,8 @@ func add_rail_action(label: String, on_pressed: Callable, icon: Texture2D = null
 		rail_button = lettered
 	rail_button.tooltip_text = label
 	_rail.add_child(rail_button)
+	# Deferred: the column's minimum only counts the new plate once it has been laid out.
+	_rail_host.call_deferred("set", "custom_minimum_size", _rail.get_combined_minimum_size())
 
 	_add_mobile_menu_action(label, on_pressed)
 
@@ -633,12 +641,12 @@ func _show_rail_label(text: String, plate: Control) -> void:
 	_rail_label.size = wanted
 	# The window opens [constant RAIL_LABEL_OVERLAP] *inside* the button, so the plate's left-hand cap
 	# — and every seam with it — stays under the button for as long as the label exists, rather than
-	# being trimmed at the join and still showing a sliver of its own moulding. Canvas coordinates,
-	# because the window is top-level.
+	# being trimmed at the join and still showing a sliver of its own moulding.
 	_rail_label.position = Vector2.ZERO
 	_rail_label_width = wanted.x + RAIL_LABEL_OVERLAP
-	_rail_label_clip.position = Vector2(rect.end.x - RAIL_LABEL_OVERLAP,
-		rect.position.y + (rect.size.y - wanted.y) * 0.5)
+	var origin := _rail_host.get_global_rect().position
+	_rail_label_clip.position = Vector2(rect.end.x - origin.x - RAIL_LABEL_OVERLAP,
+		rect.position.y - origin.y + (rect.size.y - wanted.y) * 0.5)
 	_rail_label_clip.size.y = wanted.y
 	if not _rail_label_clip.visible:
 		_rail_label_clip.size.x = 0.0
