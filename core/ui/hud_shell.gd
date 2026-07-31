@@ -38,10 +38,10 @@ const RAIL_BUTTON_FONT_SIZE := UiSkin.FONT_SMALL
 ## are square and framed, and too much air between them stops reading as one column.
 const RAIL_SEPARATION := 10
 
-## The hover label: how far off the plate it comes to rest, and how long it takes to get there. It
-## travels out from behind the rail rather than the legacy's fixed twelve units, so how far it goes
-## is whatever the name's own width turns out to be; the timing is the legacy's (`0.16s ease`).
-const RAIL_LABEL_GAP := 14.0
+## The hover label. It starts this far *under* the rail's edge, so the first thing revealed is
+## already hidden by the column — the legacy did the same, sitting its panel's left edge twelve
+## pixels inside a fifty-eight pixel icon. The timing is the legacy's own (`0.16s ease`).
+const RAIL_LABEL_OVERLAP := 14.0
 const RAIL_LABEL_TIME := 0.16
 
 ## How far the floating mobile menu button sits in from the stage's bottom-right corner.
@@ -90,10 +90,10 @@ var chat_slot: Control
 
 var _rail: VBoxContainer
 var _rail_plate: PanelContainer
+var _rail_label_clip: Control
 var _rail_label: PanelContainer
 var _rail_label_text: Label
-var _rail_label_home := Vector2.ZERO
-var _rail_label_tucked := Vector2.ZERO
+var _rail_label_width := 0.0
 var _rail_label_tween: Tween = null
 var _menu_button: SkinnedButton
 var _map_layers_button: SkinnedButton
@@ -212,16 +212,24 @@ func _build() -> void:
 	# things that are *not* the map are held clear of it (see `_content_left`).
 	# **Built and parented before the rail, so the rail draws over it.** The label comes out from
 	# *behind* the column: at rest it is tucked entirely underneath, which is why it needs no fade.
+	# **The reveal is a window, not a slide.** The plate keeps its own size and a clipping wrapper
+	# widens over it, so the name unrolls out from under the column instead of arriving beside it.
+	# It has to be done this way round: a [PanelContainer] cannot be tweened narrower than the text
+	# inside it — [method Control.get_combined_minimum_size] clamps it straight back.
+	_rail_label_clip = Control.new()
+	_rail_label_clip.clip_contents = true
+	_rail_label_clip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_rail_label_clip.visible = false
 	_rail_label = PanelContainer.new()
 	_rail_label.add_theme_stylebox_override("panel", UiSkin.sidemenu_label_style())
 	_rail_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_rail_label.visible = false
 	_rail_label_text = Label.new()
 	_rail_label_text.add_theme_font_size_override("font_size", UiSkin.FONT_SMALL)
 	_rail_label_text.add_theme_color_override("font_color", UiSkin.SIDEMENU_LABEL_INK)
 	_rail_label_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_rail_label.add_child(_rail_label_text)
-	_stage.add_child(_rail_label)
+	_rail_label_clip.add_child(_rail_label)
+	_stage.add_child(_rail_label_clip)
 
 	_rail_plate = PanelContainer.new()
 	_rail_plate.add_theme_stylebox_override("panel", UiSkin.sidemenu_style())
@@ -618,34 +626,37 @@ func _show_rail_label(text: String, plate: Control) -> void:
 	_rail_label.reset_size()
 	var wanted := _rail_label.get_combined_minimum_size()
 	_rail_label.size = wanted
-	_rail_label_home = Vector2(rect.end.x - origin.x + RAIL_LABEL_GAP,
+	# The window starts under the column, [constant RAIL_LABEL_OVERLAP] behind its edge, and the plate
+	# sits at that offset inside it. So the first units revealed are the ones the rail is covering:
+	# the name grows out from under the plate rather than appearing to one side of it.
+	_rail_label.position = Vector2(RAIL_LABEL_OVERLAP, 0.0)
+	_rail_label_width = wanted.x + RAIL_LABEL_OVERLAP
+	_rail_label_clip.position = Vector2(
+		_rail_plate.get_global_rect().end.x - origin.x - RAIL_LABEL_OVERLAP,
 		rect.position.y - origin.y + (rect.size.y - wanted.y) * 0.5)
-	# Tucked is far enough left that the whole plate is behind the column — its right edge level with
-	# the rail's — so what slides out has been out of sight rather than faded up over the parchment.
-	# Measured off the rail rather than a fixed distance: a longer name has further to travel.
-	_rail_label_tucked = Vector2(
-		_rail_plate.get_global_rect().end.x - origin.x - wanted.x, _rail_label_home.y)
-	if not _rail_label.visible:
-		_rail_label.position = _rail_label_tucked
-		_rail_label.visible = true
-	_tween_rail_label(_rail_label_home, false)
+	_rail_label_clip.size.y = wanted.y
+	if not _rail_label_clip.visible:
+		_rail_label_clip.size.x = 0.0
+		_rail_label_clip.visible = true
+	_tween_rail_label(_rail_label_width, false)
 
 
 func _hide_rail_label() -> void:
-	_tween_rail_label(_rail_label_tucked, true)
+	_tween_rail_label(0.0, true)
 
 
-## No fade either way: the label is hidden by the rail itself, so it has nothing to fade out of.
-func _tween_rail_label(to: Vector2, hide_after: bool) -> void:
+## No fade either way: the window is what hides the plate, and the rail is what hides the window's
+## first few units.
+func _tween_rail_label(to_width: float, hide_after: bool) -> void:
 	if _rail_label_tween != null and _rail_label_tween.is_valid():
 		_rail_label_tween.kill()
 	if not is_inside_tree():
 		return
 	_rail_label_tween = create_tween()
 	_rail_label_tween.set_ease(Motion.EASE).set_trans(Motion.TRANS)
-	_rail_label_tween.tween_property(_rail_label, "position", to, RAIL_LABEL_TIME)
+	_rail_label_tween.tween_property(_rail_label_clip, "size:x", to_width, RAIL_LABEL_TIME)
 	if hide_after:
-		_rail_label_tween.tween_callback(func() -> void: _rail_label.visible = false)
+		_rail_label_tween.tween_callback(func() -> void: _rail_label_clip.visible = false)
 
 
 func _collapsed_chat_height() -> float:

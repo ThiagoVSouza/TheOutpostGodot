@@ -89,6 +89,10 @@ const DESTINATION_ICON_SIZE := 84.0
 
 ## The plate's art fades out over its last few pixels, so its shadow is pulled in that far and grown
 ## by the same amount — the arrangement [constant ARROW_SHADOW_INSET] documents, for the same reason.
+## How much colour a destination keeps while nothing is pointing at it. Enough to still read as a
+## tower or a sword; not enough to shout.
+const DESTINATION_REST_SATURATION := 0.45
+
 const DESTINATION_SHADOW_INSET := 5.0
 const DESTINATION_SHADOW_SIZE := BUTTON_SHADOW_SIZE + int(DESTINATION_SHADOW_INSET)
 
@@ -605,13 +609,27 @@ static func destination_style(texture: Texture2D, tint: Color = Color.WHITE) -> 
 ## A rail destination as a real button: the shadow behind it, the change in light under the pointer,
 ## and the change in size — the three answers every other plate in this skin gives, which a bare
 ## [Button] with a texture on it gives none of.
+##
+## **It also holds its colour back until it is pointed at.** Seven painted plates at full strength
+## down the side of the map is seven things competing with the world for attention; resting them
+## muted lets the column sit quietly and lets the one under the pointer come forward. That cannot be
+## a tint — [member StyleBoxTexture.modulate_color] multiplies, and no multiplier drains colour — so
+## the resting plate is a desaturated copy of the art and the lit ones are the art itself.
 static func destination_button(texture: Texture2D) -> SkinnedButton:
 	return SkinnedButton.create_bare(
-		destination_style(texture),
+		destination_style(desaturated_texture(texture, DESTINATION_REST_SATURATION)),
 		destination_style(texture, HOVER_TINT),
 		destination_style(texture, PRESSED_TINT),
 		Vector2(DESTINATION_ICON_SIZE, DESTINATION_ICON_SIZE),
 		destination_shadow_style())
+
+
+## A copy of [param texture] with its colour drained towards grey — 0 is fully grey, 1 is untouched.
+## The other axes are left alone, so the art keeps its own brightness and contrast and only loses its
+## colour. Derived once and cached, like every other copy here.
+static func desaturated_texture(texture: Texture2D, saturation: float) -> Texture2D:
+	return _derive(texture, "sat@%.3f" % saturation,
+		func(image: Image) -> void: image.adjust_bcs(1.0, 1.0, saturation))
 
 
 ## The shadow under a destination plate. Inset, because the art's corners are soft — four pixels of
