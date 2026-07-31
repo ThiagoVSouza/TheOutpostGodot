@@ -500,10 +500,12 @@ func _layout_chat(page_open: bool) -> void:
 	chat_slot.anchor_right = 1.0
 	chat_slot.anchor_top = 1.0
 	chat_slot.anchor_bottom = 1.0
-	# **The same gap either side.** On the left that is measured from the rail, on the right from the
-	# window — the board sits between them with equal air, which is what the sketch's two arrows mark.
+	# **The same gap either side, measured from the window.** Not from the rail: the rail floats
+	# inside the left-hand gap, so matching the *rail's* edge on the right left about 24 units there
+	# against ten times that on the left, and the board read as shoved up against the window. The
+	# board is centred on the stage and the rail is a thing standing in the space beside it.
 	chat_slot.offset_left = _content_left()
-	chat_slot.offset_right = 0.0 if _is_mobile else -CHAT_SIDE_INSET
+	chat_slot.offset_right = -_content_left()
 	chat_slot.offset_bottom = -bottom
 
 	var collapsed := _collapsed_chat_height() + bottom
