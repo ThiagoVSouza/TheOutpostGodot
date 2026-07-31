@@ -38,10 +38,7 @@ const RAIL_BUTTON_FONT_SIZE := UiSkin.FONT_SMALL
 ## are square and framed, and too much air between them stops reading as one column.
 const RAIL_SEPARATION := 10
 
-## The hover label. It starts this far *under* the rail's edge, so the first thing revealed is
-## already hidden by the column — the legacy did the same, sitting its panel's left edge twelve
-## pixels inside a fifty-eight pixel icon. The timing is the legacy's own (`0.16s ease`).
-const RAIL_LABEL_OVERLAP := 14.0
+## How long the hover label takes to unroll — the legacy's own (`0.16s ease`).
 const RAIL_LABEL_TIME := 0.16
 
 ## How far the floating mobile menu button sits in from the stage's bottom-right corner.
@@ -210,8 +207,9 @@ func _build() -> void:
 	# under its last destination, everything below that was a dead strip of background the map was
 	# not allowed to draw in. It is parented into the stage now, over the base layer, and only the
 	# things that are *not* the map are held clear of it (see `_content_left`).
-	# **Built and parented before the rail, so the rail draws over it.** The label comes out from
-	# *behind* the column: at rest it is tucked entirely underneath, which is why it needs no fade.
+	# **Drawn over the column, not under it.** It emerges from the button's own edge and runs across
+	# the rail's parchment and its right-hand moulding — the column is the thing it comes out over,
+	# and the button is the thing it comes out from. Parented after the rail plate for that reason.
 	# **The reveal is a window, not a slide.** The plate keeps its own size and a clipping wrapper
 	# widens over it, so the name unrolls out from under the column instead of arriving beside it.
 	# It has to be done this way round: a [PanelContainer] cannot be tweened narrower than the text
@@ -229,7 +227,6 @@ func _build() -> void:
 	_rail_label_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_rail_label.add_child(_rail_label_text)
 	_rail_label_clip.add_child(_rail_label)
-	_stage.add_child(_rail_label_clip)
 
 	_rail_plate = PanelContainer.new()
 	_rail_plate.add_theme_stylebox_override("panel", UiSkin.sidemenu_style())
@@ -241,6 +238,7 @@ func _build() -> void:
 	_rail.alignment = BoxContainer.ALIGNMENT_CENTER
 	_rail.add_theme_constant_override("separation", RAIL_SEPARATION)
 	_rail_plate.add_child(_rail)
+	_stage.add_child(_rail_label_clip)
 
 	_page_slot = Control.new()
 	_stage.add_child(_page_slot)
@@ -626,13 +624,13 @@ func _show_rail_label(text: String, plate: Control) -> void:
 	_rail_label.reset_size()
 	var wanted := _rail_label.get_combined_minimum_size()
 	_rail_label.size = wanted
-	# The window starts under the column, [constant RAIL_LABEL_OVERLAP] behind its edge, and the plate
-	# sits at that offset inside it. So the first units revealed are the ones the rail is covering:
-	# the name grows out from under the plate rather than appearing to one side of it.
-	_rail_label.position = Vector2(RAIL_LABEL_OVERLAP, 0.0)
-	_rail_label_width = wanted.x + RAIL_LABEL_OVERLAP
-	_rail_label_clip.position = Vector2(
-		_rail_plate.get_global_rect().end.x - origin.x - RAIL_LABEL_OVERLAP,
+	# **The window opens at the button's own right edge**, and the plate inside it starts a border's
+	# width to the left — so its left-hand frame is outside the window and never drawn. What unrolls
+	# has no cap on the end that meets the button: the parchment runs straight into it, as though the
+	# rest of the plate were behind it. The column's own moulding is simply covered.
+	_rail_label.position = Vector2(-UiSkin.SIDEMENU_LABEL_BORDER, 0.0)
+	_rail_label_width = wanted.x - UiSkin.SIDEMENU_LABEL_BORDER
+	_rail_label_clip.position = Vector2(rect.end.x - origin.x,
 		rect.position.y - origin.y + (rect.size.y - wanted.y) * 0.5)
 	_rail_label_clip.size.y = wanted.y
 	if not _rail_label_clip.visible:
