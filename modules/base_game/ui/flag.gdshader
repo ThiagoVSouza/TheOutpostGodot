@@ -50,5 +50,8 @@ void fragment() {
 	// Composite the cloth over the base (base shows only where the cloth silhouette is absent).
 	vec3 rgb = mix(base_c.rgb, cloth, cloth_a);
 	float a = max(base_c.a, cloth_a);
-	COLOR = vec4(rgb, a) * COLOR.a;
+	// Modulate in full, not just its alpha. A canvas item is meant to multiply by the whole of
+	// COLOR, and taking only `.a` meant a black-tinted copy of the flag came out in full colour —
+	// which is exactly what a drop shadow behind the banner needs to be able to do.
+	COLOR = vec4(rgb * COLOR.rgb, a * COLOR.a);
 }

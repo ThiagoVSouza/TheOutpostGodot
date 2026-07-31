@@ -32,6 +32,11 @@ const HEADER_FLAG_WIDTH := 88.0
 ## and the hardware off the screen, which is what a banner hung from a rail looks like.
 const BANNER_TOP_INSET := -34.0
 
+## The banner's shadow: how far it falls, and how dark. Black at a third, because it lands on
+## parchment for its top half and on the map for the rest — anything heavier reads as a second flag.
+const BANNER_SHADOW_OFFSET := Vector2(4.0, 5.0)
+const BANNER_SHADOW_COLOR := Color(0.0, 0.0, 0.0, 0.34)
+
 ## Wide enough for ">>>" with room around it, and identical across all four so the row reads as one
 ## switch rather than four buttons of increasing importance.
 const SPEED_BUTTON_WIDTH := 64.0
@@ -52,6 +57,7 @@ var _map_view: OverworldMapView
 var _source: AiInputSource
 var _outpost_label: Label
 var _flag_view: FlagView
+var _flag_shadow: FlagView
 var _gold_label: Label
 var _population_label: Label
 var _date_label: Label
@@ -252,14 +258,7 @@ func _build_top_bar() -> void:
 	banner_slot.custom_minimum_size.x = HEADER_FLAG_WIDTH
 	banner_slot.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bar.add_child(banner_slot)
-	_flag_view = FlagView.new()
-	_flag_view.short = true
-	_flag_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_flag_view.custom_minimum_size = Vector2(
-		HEADER_FLAG_WIDTH, HEADER_FLAG_WIDTH * FlagView.aspect(true))
-	_shell.overlay.add_child(_flag_view)
-	banner_slot.resized.connect(_place_banner.bind(banner_slot))
-	_place_banner.call_deferred(banner_slot)
+	_shell.set_banner(_build_banner(), BANNER_TOP_INSET)
 	_flag_view.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 
 	var identity := VBoxContainer.new()
@@ -313,13 +312,38 @@ func _build_top_bar() -> void:
 	_refresh_time_buttons()
 
 
-## Hang the banner from the bar, against the empty slot standing in for it in the row. Measured from
-## that slot rather than from a constant, so the bar's own padding stays the one place it is decided.
-func _place_banner(slot: Control) -> void:
-	var origin := _shell.overlay.get_global_rect().position
-	_flag_view.size = _flag_view.custom_minimum_size
-	_flag_view.position = Vector2(
-		slot.get_global_rect().position.x - origin.x, BANNER_TOP_INSET)
+## The banner: the cloth, and a second copy of it behind as a shadow.
+##
+## **The shadow has to be a sibling drawn first, not a child.** A [Control]'s children draw after it,
+## so a shadow parented to the flag would fall in front of it — and the flag is a shader on a
+## [ColorRect] with no stylebox to hang [method UiSkin.shadow_style] on. A black copy of the same
+## banner, nudged down and across, is the shadow a shape this irregular actually wants.
+func _build_banner() -> Control:
+	var size := Vector2(HEADER_FLAG_WIDTH, HEADER_FLAG_WIDTH * FlagView.aspect(true))
+	var banner := Control.new()
+	banner.custom_minimum_size = size
+	banner.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_flag_shadow = _banner_cloth(banner, size)
+	_flag_shadow.modulate = BANNER_SHADOW_COLOR
+	_flag_shadow.offset_left += BANNER_SHADOW_OFFSET.x
+	_flag_shadow.offset_right += BANNER_SHADOW_OFFSET.x
+	_flag_shadow.offset_top += BANNER_SHADOW_OFFSET.y
+	_flag_shadow.offset_bottom += BANNER_SHADOW_OFFSET.y
+	_flag_view = _banner_cloth(banner, size)
+	return banner
+
+
+## **The cloth is given its size explicitly.** [FlagView] fills in a default minimum of its own when
+## it enters the tree with none set, and that default is wider than this banner — so the wrapper took
+## *its* minimum instead and the banner flew half again too big, down over the first destination.
+func _banner_cloth(parent: Control, size: Vector2) -> FlagView:
+	var cloth := FlagView.new()
+	cloth.short = true
+	cloth.custom_minimum_size = size
+	cloth.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	parent.add_child(cloth)
+	cloth.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	return cloth
 
 
 ## One of the top bar's icon slots — the coin, the head. A [TextureRect] rather than a [Label] with a
@@ -836,7 +860,9 @@ func _refresh_outpost() -> void:
 	var stored: Dictionary = Kernel.state.get_value(GameSession.OUTPOST_FLAG_STATE_KEY, {})
 	# A game seeded before the wizard existed has no flag; the default is a real flag, not a hole,
 	# so there is nothing to hide here.
-	_flag_view.set_value(FlagValue.from_dict(stored))
+	var flag := FlagValue.from_dict(stored)
+	_flag_view.set_value(flag)
+	_flag_shadow.set_value(flag)
 	var outpost: Dictionary = Entities.get_entity(Kernel.state, "outpost")
 	_outpost_label.text = String(outpost.get("name", "The Outpost"))
 

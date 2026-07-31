@@ -105,6 +105,10 @@ var chat_slot: Control
 ## as the chrome; a plain [Control], so nothing here moves what a caller puts in it.
 var overlay: Control
 
+## The banner, once a caller has handed one over — see [method set_banner].
+var _banner: Control = null
+var _banner_top := 0.0
+
 var _rail: VBoxContainer
 var _rail_host: Control
 var _rail_plate: PanelContainer
@@ -482,6 +486,32 @@ func _set_chat_reveal(value: float) -> void:
 	_relayout_stage()
 
 
+## Hang a caller's banner over the chrome. The caller owns what it is; the shell owns where it goes,
+## which is **centred on the rail's column** — the banner and the destinations below it are one strip
+## of chrome down the left, and lining the banner up with the bar's own padding instead left the two
+## a few units apart and looking like an accident.
+##
+## [param top] is how far down the banner starts, and is normally negative: the art carries a finial
+## and a crossbar the caller wants lifted off the screen.
+func set_banner(banner: Control, top: float) -> void:
+	_banner = banner
+	_banner.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_banner_top = top
+	overlay.add_child(_banner)
+	_place_banner()
+
+
+func _place_banner() -> void:
+	if _banner == null:
+		return
+	var wanted := _banner.get_combined_minimum_size()
+	_banner.size = wanted
+	var rail := _rail_plate.get_global_rect()
+	var origin := overlay.get_global_rect().position
+	_banner.position = Vector2(
+		rail.position.x - origin.x + (rail.size.x - wanted.x) * 0.5, _banner_top)
+
+
 ## Parent the conversation into the stage. It stays there for the shell's whole life — collapsed and
 ## expanded are the same board at two heights, so there is nothing to swap in or out.
 func set_chat_dock(dock: ChatDock) -> void:
@@ -569,6 +599,7 @@ func _on_resized() -> void:
 			else:
 				set_chat_expanded(false)
 		breakpoint_changed.emit(mobile)
+	_place_banner()
 	_relayout_stage()
 
 
