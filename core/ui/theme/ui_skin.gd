@@ -76,8 +76,11 @@ const CHAT_SEND_TEXTURE := preload("res://core/assets/ui/chat_send_button.png")
 
 ## The metal edge on `chat_frame.png`, measured off the art (23px on a 1226px square).
 const CHAT_FRAME_SLICE := 26.0
-## Room inside that edge for the sheet and the field.
-const CHAT_FRAME_PADDING := 12.0
+## Room inside that edge for the sheet and the field. **It has to clear the edge itself.** A
+## nine-patch draws its border at the art's own size whatever the box is stretched to, so a content
+## margin under [constant CHAT_FRAME_SLICE] puts the sheet and the field *on top of* the metal rather
+## than inside it — which is exactly what "things should be inside the frame" was describing.
+const CHAT_FRAME_PADDING := CHAT_FRAME_SLICE + 10.0
 
 ## `chat_text_area.png` carries a flourish in each corner. The slice has to clear the whole flourish
 ## or the nine-patch cuts through it and stretches half an ornament down the side of the sheet.

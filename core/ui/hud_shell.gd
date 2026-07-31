@@ -46,8 +46,13 @@ const MIN_PANEL_FRACTION := 0.15
 ## rather than a bar bolted across the bottom of the window. On a phone there is no rail and no room
 ## to spare, so it runs the full width.
 const CHAT_SIDE_INSET := 24.0
-const CHAT_BOTTOM_INSET := 16.0
 const CHAT_TOP_INSET := 16.0
+
+## **Nothing under the board.** It sits on the bottom edge of the stage, not floating above it: a gap
+## there left a strip of dark background below the conversation and made it read as a panel hovering
+## over the screen rather than the bottom of the frame. The safe area and the on-screen keyboard
+## still push it up — that is clearance, not decoration.
+const CHAT_BOTTOM_INSET := 0.0
 
 ## How long the board takes to grow or shrink. Short on purpose — this happens every time the player
 ## says anything, so it has to feel like the board answering rather than an animation being played

@@ -174,6 +174,7 @@ func _play_opening() -> void:
 		# The narrator produced nothing (an outage, or the base stub): a fresh game still opens.
 		prose = "The King has granted you the outpost. Make it endure."
 	_append(prose)
+	_say("King", prose)
 	Kernel.state.set_value("opening", {})  # played once; do not replay on remount
 	_set_busy(false)
 
@@ -518,7 +519,7 @@ func _on_submit(text: String) -> void:
 	if message.is_empty() or Kernel.ai_orchestrator.is_busy():
 		return
 	_append("[color=aqua]You:[/color] %s" % message)
-	_message_list.add_message("You", message)
+	_say("You", message)
 	_input.clear()
 	_set_busy(true)
 	_source.submit(message)
@@ -532,6 +533,7 @@ func _on_turn_completed(payload: Dictionary) -> void:
 	# did, so echo it here — a reply with no record of what was said is unreadable.
 	if String(payload.get("source_id", "")) != _source.id():
 		_append("[color=aqua]You:[/color] %s" % String(payload.get("text", "")))
+		_say("You", String(payload.get("text", "")))
 	_render_turn(payload.get("result", {}))
 	_set_busy(false)
 
@@ -539,6 +541,8 @@ func _on_turn_completed(payload: Dictionary) -> void:
 ## Render whatever a turn produced — a completed one, or one that stopped to ask.
 func _render_turn(result: Dictionary) -> void:
 	_append("[color=wheat]Game master:[/color] %s" % result.get("narrative", ""))
+	# The applied commands go to the log only: `(applied: grant_resource)` sat in the conversation
+	# reading like something the game master had said.
 	var applied: Array = result.get("applied_commands", [])
 	if not applied.is_empty():
 		_append("[i](applied: %s)[/i]" % ", ".join(PackedStringArray(applied)))
@@ -546,7 +550,7 @@ func _render_turn(result: Dictionary) -> void:
 	var trace: AiTrace = result.get("trace")
 	if trace != null:
 		_trace_label.text = trace.to_text()
-	_message_list.add_message("King", String(result.get("narrative", "")), trace)
+	_say("King", String(result.get("narrative", "")), trace)
 	_refresh_resources()
 
 	# A turn that suspended hands back the handle to answer it with (B1). Ask right away,
@@ -600,6 +604,7 @@ func _show_question(instance_id: String, wake: Dictionary) -> void:
 	_shell.set_event_active(true)
 	_event_image.visible = true
 	_append("[color=#95560d]Game master asks:[/color] %s" % _pending_label.text)
+	_say("King", _pending_label.text)
 	_set_busy(false)  # re-evaluates the lock now that a question is pending
 
 
@@ -611,6 +616,7 @@ func _answer(confirmed: bool) -> void:
 	# question, and that answer must not be overwritten by this one finishing.
 	_clear_question()
 	_append("[color=aqua]You:[/color] %s" % ("Yes" if confirmed else "No"))
+	_say("You", "Yes" if confirmed else "No")
 	_set_busy(true)
 	var result: Dictionary = await Kernel.ai_orchestrator.resume(instance_id, {"confirmed": confirmed})
 	_render_turn(result)
@@ -807,7 +813,17 @@ func _refresh_resources() -> void:
 
 func _append(bbcode: String) -> void:
 	_log_label.append_text(bbcode + "\n")
-	# Player and game-master turns are added with their trace by their callers. Everything else
-	# (opening copy, chronicles, questions, connection status) still deserves a visible row.
-	if _message_list != null and not bbcode.contains("You:[/color]") and not bbcode.contains("Game master:[/color]"):
-		_message_list.add_message("Chronicle", bbcode)
+
+
+## Say something *in* the conversation — the narrow door, which a caller has to mean to walk through.
+##
+## **[method _append] no longer opens it.** It used to add a "Chronicle" row for anything that was
+## not a player or game-master turn, so the conversation filled with the day ticker, save
+## confirmations and connection notices — bookkeeping, in the middle of the fiction. The conversation
+## is for what is said and what happens to the player: their own lines, the game master's, and
+## events. Everything else still reaches the hidden log, so nothing is lost and the integration tests
+## still read it; anything that deserves to be *seen* wants a place of its own rather than a seat
+## here.
+func _say(speaker: String, text: String, trace: AiTrace = null) -> void:
+	if _message_list != null:
+		_message_list.add_message(speaker, text, trace)
