@@ -76,11 +76,19 @@ const CHAT_SEND_TEXTURE := preload("res://core/assets/ui/chat_send_button.png")
 
 ## The metal edge on `chat_frame.png`, measured off the art (23px on a 1226px square).
 const CHAT_FRAME_SLICE := 26.0
-## Room inside that edge for the sheet and the field. **It has to clear the edge itself.** A
-## nine-patch draws its border at the art's own size whatever the box is stretched to, so a content
-## margin under [constant CHAT_FRAME_SLICE] puts the sheet and the field *on top of* the metal rather
-## than inside it — which is exactly what "things should be inside the frame" was describing.
-const CHAT_FRAME_PADDING := CHAT_FRAME_SLICE + 10.0
+
+## **How thick that edge is actually drawn.** A [StyleBoxTexture] draws its nine-patch border at the
+## source art's own pixel size however far the box is stretched, so the only way to make the moulding
+## thinner is to hand it smaller art — see [method chat_frame_style], which resamples the board once
+## and slices the copy. Turning this down is the whole knob: the slice, the padding and the corners
+## all follow it, so the frame stays in proportion at any thickness.
+const CHAT_FRAME_BORDER := 13.0
+
+## Room inside that edge for the sheet and the field. **It has to clear the edge itself.** A content
+## margin under the border puts the sheet and the field *on top of* the metal rather than inside it,
+## which is what "things should be inside the frame" was describing.
+const CHAT_FRAME_AIR := 10.0
+const CHAT_FRAME_PADDING := CHAT_FRAME_BORDER + CHAT_FRAME_AIR
 
 ## `chat_text_area.png` carries a flourish in each corner. The slice has to clear the whole flourish
 ## or the nine-patch cuts through it and stretches half an ornament down the side of the sheet.
@@ -492,12 +500,24 @@ static func chrome_style(padding: float = CHROME_PADDING) -> StyleBoxTexture:
 
 
 ## The board the whole conversation sits on — the outer piece, holding the sheet and the field.
+##
+## **The art is resampled before it is sliced.** A nine-patch border is drawn at the source's own
+## pixel size, so `chat_frame.png`'s 23px edge on a 1226px square comes out as a heavy 26-unit
+## moulding around a board that is most of the screen. Shrinking the whole image shrinks the edge
+## with it, and the slice comes down in the same proportion — which is the one way to thin the
+## moulding without cutting into it. Slicing the full-size art thinner instead would leave the inner
+## half of the metal inside the *middle* region, and the middle is the part that gets stretched: a
+## band of smeared edge across the whole board.
+##
+## The copy is derived once and cached ([method scaled_texture]).
 static func chat_frame_style() -> StyleBoxTexture:
 	var style := StyleBoxTexture.new()
-	style.texture = CHAT_FRAME_TEXTURE
+	var scale := CHAT_FRAME_BORDER / CHAT_FRAME_SLICE
+	style.texture = scaled_texture(CHAT_FRAME_TEXTURE,
+		Vector2i((CHAT_FRAME_TEXTURE.get_size() * scale).round()))
 	# Stretched: the board's middle is a broadly even dark grain and this is the largest thing on the
 	# screen after the map, so a tile would repeat it many times over and show as banding.
-	_slice(style, CHAT_FRAME_SLICE, StyleBoxTexture.AXIS_STRETCH_MODE_STRETCH)
+	_slice(style, CHAT_FRAME_BORDER, StyleBoxTexture.AXIS_STRETCH_MODE_STRETCH)
 	style.set_content_margin_all(CHAT_FRAME_PADDING)
 	return style
 
