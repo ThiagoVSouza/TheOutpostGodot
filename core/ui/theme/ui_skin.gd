@@ -82,7 +82,7 @@ const CHAT_FRAME_SLICE := 26.0
 ## thinner is to hand it smaller art — see [method chat_frame_style], which resamples the board once
 ## and slices the copy. Turning this down is the whole knob: the slice, the padding and the corners
 ## all follow it, so the frame stays in proportion at any thickness.
-const CHAT_FRAME_BORDER := 13.0
+const CHAT_FRAME_BORDER := 9.0
 
 ## Room inside that edge for the sheet and the field. **It has to clear the edge itself.** A content
 ## margin under the border puts the sheet and the field *on top of* the metal rather than inside it,
