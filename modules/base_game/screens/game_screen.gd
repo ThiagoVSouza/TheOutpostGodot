@@ -505,7 +505,8 @@ func _build_destination_actions() -> void:
 		if id == MAP_LAYERS_PAGE_ID:
 			_shell.add_map_layers_action(label, _open_destination.bind(id))
 		else:
-			_shell.add_rail_action(label, _open_destination.bind(id))
+			_shell.add_rail_action(label, _open_destination.bind(id),
+				definition.get("icon") as Texture2D)
 
 
 func _open_destination(id: String) -> void:

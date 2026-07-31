@@ -80,9 +80,16 @@ const SCREEN_FRAME_PADDING := 30.0
 ## The rail's column. Resampled to the width it is actually drawn at, so the flourish in each corner
 ## keeps its proportion — at the art's own 404px the same flourish would be a quarter of a 220-unit
 ## rail. The slice has to clear the whole flourish or the nine-patch cuts one in half.
-const SIDEMENU_WIDTH := 220.0
 const SIDEMENU_SLICE := 54.0
 const SIDEMENU_PADDING := 16.0
+
+## A destination's plate on the rail. The art is a complete button — its own stone border around its
+## own picture — so it is the stylebox rather than an icon laid on one, and it carries no caption.
+const DESTINATION_ICON_SIZE := 84.0
+
+## The rail is exactly as wide as one of those plates and its own moulding. Derived rather than
+## chosen, so changing the plate size cannot leave the column the wrong width around it.
+const SIDEMENU_WIDTH := DESTINATION_ICON_SIZE + SIDEMENU_PADDING * 2.0
 
 ## The in-game top bar, carried over from the legacy build along with the icons that stand in its
 ## slots. Parchment in a dark metal channel with a notched right end — the shape the wireframe draws,
@@ -561,6 +568,29 @@ static func screen_frame_style() -> StyleBoxTexture:
 	_slice(style, SCREEN_FRAME_SLICE, StyleBoxTexture.AXIS_STRETCH_MODE_STRETCH)
 	style.set_content_margin_all(SCREEN_FRAME_PADDING)
 	return style
+
+
+## One destination's plate. **No nine-slice**: the art is a square button drawn whole, so a border
+## region held at its own pixel size would fatten the stone the smaller the plate got. The whole
+## image scales instead.
+static func destination_style(texture: Texture2D, tint: Color = Color.WHITE) -> StyleBoxTexture:
+	var style := StyleBoxTexture.new()
+	style.texture = texture
+	style.axis_stretch_horizontal = StyleBoxTexture.AXIS_STRETCH_MODE_STRETCH
+	style.axis_stretch_vertical = StyleBoxTexture.AXIS_STRETCH_MODE_STRETCH
+	style.modulate_color = tint
+	return style
+
+
+## Dress a rail destination: the plate, its lighting, and the square it is drawn in.
+static func apply_destination(button: Button, texture: Texture2D) -> void:
+	button.add_theme_stylebox_override("normal", destination_style(texture))
+	button.add_theme_stylebox_override("hover", destination_style(texture, HOVER_TINT))
+	button.add_theme_stylebox_override("pressed", destination_style(texture, PRESSED_TINT))
+	button.add_theme_stylebox_override("focus", destination_style(texture, HOVER_TINT))
+	button.add_theme_stylebox_override("disabled",
+		destination_style(texture, Color(1, 1, 1, DISABLED_ALPHA)))
+	button.custom_minimum_size = Vector2(DESTINATION_ICON_SIZE, DESTINATION_ICON_SIZE)
 
 
 ## The rail's column, resampled to the width it is drawn at — see [constant SIDEMENU_WIDTH].

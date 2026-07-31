@@ -21,6 +21,19 @@ const AUDIO_MANIFEST := "res://modules/base_game/assets/audio/audio.json"
 ## naming what kind of thing the line beside it is.
 const AVAILABLE_COLOR := Color(0.58, 0.34, 0.05)
 
+## The rail's plates. Each is a whole painted button — border, ground and picture — so the rail draws
+## them as they are and carries no lettering of its own.
+const MENU_ICONS := {
+	"domain": preload("res://modules/base_game/assets/ui/menu_domain.png"),
+	"population": preload("res://modules/base_game/assets/ui/menu_population.png"),
+	"economy": preload("res://modules/base_game/assets/ui/menu_economy.png"),
+	"military": preload("res://modules/base_game/assets/ui/menu_military.png"),
+	"diplomacy": preload("res://modules/base_game/assets/ui/menu_diplomacy.png"),
+	"knowledge": preload("res://modules/base_game/assets/ui/menu_knowledge.png"),
+	"main_menu": preload("res://modules/base_game/assets/ui/menu_main.png"),
+}
+
+
 
 func register(kernel: GameKernel) -> void:
 	# AI tool the game master may call.
@@ -118,14 +131,20 @@ func register(kernel: GameKernel) -> void:
 ## still composed by GameScreen because its buttons own screen-local save/load/map-refresh callbacks;
 ## it remains registered here so the destination list is complete and modules share one seam.
 func _register_hud_panels(kernel: GameKernel) -> void:
-	kernel.hud_panels.register("domain", "Domain", "Domain", _build_domain_panel, _refresh_domain_panel)
+	kernel.hud_panels.register("domain", "Domain", "Domain", _build_domain_panel,
+		_refresh_domain_panel, MENU_ICONS["domain"])
 	kernel.hud_panels.register("population", "Population", "Population", _build_population_panel,
-		_refresh_population_panel)
-	kernel.hud_panels.register("economy", "Economy", "Economy", _build_placeholder_panel)
-	kernel.hud_panels.register("military", "Military", "Military", _build_placeholder_panel)
-	kernel.hud_panels.register("diplomacy", "Diplomacy", "Diplomacy", _build_placeholder_panel)
-	kernel.hud_panels.register("knowledge", "Knowledge", "Knowledge", _build_placeholder_panel)
-	kernel.hud_panels.register("main_menu", "Main Menu", "Main Menu")
+		_refresh_population_panel, MENU_ICONS["population"])
+	kernel.hud_panels.register("economy", "Economy", "Economy", _build_placeholder_panel,
+		Callable(), MENU_ICONS["economy"])
+	kernel.hud_panels.register("military", "Military", "Military", _build_placeholder_panel,
+		Callable(), MENU_ICONS["military"])
+	kernel.hud_panels.register("diplomacy", "Diplomacy", "Diplomacy", _build_placeholder_panel,
+		Callable(), MENU_ICONS["diplomacy"])
+	kernel.hud_panels.register("knowledge", "Knowledge", "Knowledge", _build_placeholder_panel,
+		Callable(), MENU_ICONS["knowledge"])
+	kernel.hud_panels.register("main_menu", "Main Menu", "Main Menu", Callable(), Callable(),
+		MENU_ICONS["main_menu"])
 	kernel.hud_panels.register("map_layers", "Map Layers", "Map Layers", _build_map_layers_panel)
 
 

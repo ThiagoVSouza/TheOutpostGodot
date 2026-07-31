@@ -36,6 +36,10 @@ const RAIL_WIDTH := UiSkin.SIDEMENU_WIDTH - UiSkin.SIDEMENU_PADDING * 2.0
 ## would set the rail nearly 100 units wider than the map can spare.
 const RAIL_BUTTON_FONT_SIZE := UiSkin.FONT_SMALL
 
+## Between one destination plate and the next. Tighter than the old lettered buttons wanted: these
+## are square and framed, and too much air between them stops reading as one column.
+const RAIL_SEPARATION := 10
+
 ## How far the floating mobile menu button sits in from the stage's bottom-right corner.
 const MENU_BUTTON_MARGIN := 16
 const SPLIT_GUTTER_SIZE := 10.0
@@ -204,7 +208,8 @@ func _build() -> void:
 		Control.PRESET_TOP_LEFT, Control.PRESET_MODE_MINSIZE, int(CHAT_SIDE_INSET))
 	_rail = VBoxContainer.new()
 	_rail.custom_minimum_size = Vector2(RAIL_WIDTH, 0)
-	_rail.add_theme_constant_override("separation", 8)
+	_rail.alignment = BoxContainer.ALIGNMENT_CENTER
+	_rail.add_theme_constant_override("separation", RAIL_SEPARATION)
 	_rail_plate.add_child(_rail)
 
 	_page_slot = Control.new()
@@ -263,11 +268,23 @@ func _build() -> void:
 ## Register a destination reachable from both the desktop rail and the mobile menu list, so nothing
 ## can be added to one and forgotten on the other. Only "Main Menu" is wired in Phase 1 — the other
 ## six wireframed destinations are Phase 5's panel registry (ux_plan.md §Phase 5).
-func add_rail_action(label: String, on_pressed: Callable) -> void:
-	var rail_button := SkinnedButton.create(label, UiSkin.BROWN, UiSkin.CONTROL_HEIGHT,
-		RAIL_BUTTON_FONT_SIZE)
+func add_rail_action(label: String, on_pressed: Callable, icon: Texture2D = null) -> void:
+	# **A destination with art is the art.** The plate carries its own border and its own picture, so
+	# there is nothing for a caption to sit on and none is drawn — the name is the tooltip and, on a
+	# phone, the mobile list's own row. A destination that has not been given art yet falls back to a
+	# lettered plate rather than to a blank square.
+	var rail_button: Control
+	if icon != null:
+		var plate := Button.new()
+		UiSkin.apply_destination(plate, icon)
+		plate.pressed.connect(on_pressed)
+		rail_button = plate
+	else:
+		var lettered := SkinnedButton.create(label, UiSkin.BROWN, UiSkin.CONTROL_HEIGHT,
+			RAIL_BUTTON_FONT_SIZE)
+		lettered.pressed.connect(on_pressed)
+		rail_button = lettered
 	rail_button.tooltip_text = label
-	rail_button.pressed.connect(on_pressed)
 	_rail.add_child(rail_button)
 
 	_add_mobile_menu_action(label, on_pressed)
