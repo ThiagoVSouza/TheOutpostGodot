@@ -87,9 +87,29 @@ const SIDEMENU_PADDING := 16.0
 ## own picture — so it is the stylebox rather than an icon laid on one, and it carries no caption.
 const DESTINATION_ICON_SIZE := 84.0
 
+## The plate's art fades out over its last few pixels, so its shadow is pulled in that far and grown
+## by the same amount — the arrangement [constant ARROW_SHADOW_INSET] documents, for the same reason.
+const DESTINATION_SHADOW_INSET := 5.0
+const DESTINATION_SHADOW_SIZE := BUTTON_SHADOW_SIZE + int(DESTINATION_SHADOW_INSET)
+
 ## The rail is exactly as wide as one of those plates and its own moulding. Derived rather than
 ## chosen, so changing the plate size cannot leave the column the wrong width around it.
 const SIDEMENU_WIDTH := DESTINATION_ICON_SIZE + SIDEMENU_PADDING * 2.0
+
+## The plate that slides out beside a rail destination on hover, naming it. The legacy build's own
+## art and its own behaviour — see [code]HudShell._show_rail_label[/code].
+const SIDEMENU_LABEL_TEXTURE := preload("res://core/assets/ui/sidemenu_label.png")
+## Measured off the art, and then the thickness it is actually drawn at. The legacy did the same
+## thing in CSS — `border-image: ... 20 fill / 5px stretch`, a source slice drawn at a quarter of its
+## size — because the ornament is painted for a plate several times bigger than this one. Left at
+## source size, 80 of the plate's ~150 units would be border and the name would be written across it.
+const SIDEMENU_LABEL_SLICE := 40.0
+const SIDEMENU_LABEL_BORDER := 12.0
+const SIDEMENU_LABEL_PADDING_H := SIDEMENU_LABEL_BORDER + 10.0
+const SIDEMENU_LABEL_PADDING_V := SIDEMENU_LABEL_BORDER + 2.0
+## The legacy's own `#2f1b0a`: darker than [constant INK], because this plate is a deeper parchment
+## than a page.
+const SIDEMENU_LABEL_INK := Color(0.184, 0.106, 0.039)
 
 ## The in-game top bar, carried over from the legacy build along with the icons that stand in its
 ## slots. Parchment in a dark metal channel with a notched right end — the shape the wireframe draws,
@@ -582,15 +602,38 @@ static func destination_style(texture: Texture2D, tint: Color = Color.WHITE) -> 
 	return style
 
 
-## Dress a rail destination: the plate, its lighting, and the square it is drawn in.
-static func apply_destination(button: Button, texture: Texture2D) -> void:
-	button.add_theme_stylebox_override("normal", destination_style(texture))
-	button.add_theme_stylebox_override("hover", destination_style(texture, HOVER_TINT))
-	button.add_theme_stylebox_override("pressed", destination_style(texture, PRESSED_TINT))
-	button.add_theme_stylebox_override("focus", destination_style(texture, HOVER_TINT))
-	button.add_theme_stylebox_override("disabled",
-		destination_style(texture, Color(1, 1, 1, DISABLED_ALPHA)))
-	button.custom_minimum_size = Vector2(DESTINATION_ICON_SIZE, DESTINATION_ICON_SIZE)
+## A rail destination as a real button: the shadow behind it, the change in light under the pointer,
+## and the change in size — the three answers every other plate in this skin gives, which a bare
+## [Button] with a texture on it gives none of.
+static func destination_button(texture: Texture2D) -> SkinnedButton:
+	return SkinnedButton.create_bare(
+		destination_style(texture),
+		destination_style(texture, HOVER_TINT),
+		destination_style(texture, PRESSED_TINT),
+		Vector2(DESTINATION_ICON_SIZE, DESTINATION_ICON_SIZE),
+		destination_shadow_style())
+
+
+## The shadow under a destination plate. Inset, because the art's corners are soft — four pixels of
+## it are transparent — and [method shadow_style]'s fill is opaque: drawn to the plate's own edge it
+## would show as dark nicks at the corners rather than as a shadow beneath them.
+static func destination_shadow_style() -> StyleBoxFlat:
+	return shadow_style(DESTINATION_SHADOW_SIZE, BUTTON_SHADOW_OFFSET, BUTTON_CORNER_RADIUS,
+		DESTINATION_SHADOW_INSET)
+
+
+## The hover label's plate.
+static func sidemenu_label_style() -> StyleBoxTexture:
+	var style := StyleBoxTexture.new()
+	var scale := SIDEMENU_LABEL_BORDER / SIDEMENU_LABEL_SLICE
+	style.texture = scaled_texture(SIDEMENU_LABEL_TEXTURE,
+		Vector2i((SIDEMENU_LABEL_TEXTURE.get_size() * scale).round()))
+	_slice(style, SIDEMENU_LABEL_BORDER, StyleBoxTexture.AXIS_STRETCH_MODE_STRETCH)
+	style.content_margin_left = SIDEMENU_LABEL_PADDING_H
+	style.content_margin_right = SIDEMENU_LABEL_PADDING_H
+	style.content_margin_top = SIDEMENU_LABEL_PADDING_V
+	style.content_margin_bottom = SIDEMENU_LABEL_PADDING_V
+	return style
 
 
 ## The rail's column, resampled to the width it is drawn at — see [constant SIDEMENU_WIDTH].

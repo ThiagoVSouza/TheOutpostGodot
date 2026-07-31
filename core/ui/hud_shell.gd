@@ -40,6 +40,12 @@ const RAIL_BUTTON_FONT_SIZE := UiSkin.FONT_SMALL
 ## are square and framed, and too much air between them stops reading as one column.
 const RAIL_SEPARATION := 10
 
+## The hover label: how far off the plate it sits, how far it travels on its way in, and how long it
+## takes. The distance and the timing are the legacy build's own (`translateX(-12px)`, `0.16s ease`).
+const RAIL_LABEL_GAP := 14.0
+const RAIL_LABEL_SLIDE := 12.0
+const RAIL_LABEL_TIME := 0.16
+
 ## How far the floating mobile menu button sits in from the stage's bottom-right corner.
 const MENU_BUTTON_MARGIN := 16
 const SPLIT_GUTTER_SIZE := 10.0
@@ -86,6 +92,10 @@ var chat_slot: Control
 
 var _rail: VBoxContainer
 var _rail_plate: PanelContainer
+var _rail_label: PanelContainer
+var _rail_label_text: Label
+var _rail_label_home := Vector2.ZERO
+var _rail_label_tween: Tween = null
 var _menu_button: SkinnedButton
 var _map_layers_button: SkinnedButton
 var _menu_list: HudPanel
@@ -206,11 +216,26 @@ func _build() -> void:
 	_stage.add_child(_rail_plate)
 	_rail_plate.set_anchors_and_offsets_preset(
 		Control.PRESET_TOP_LEFT, Control.PRESET_MODE_MINSIZE, int(CHAT_SIDE_INSET))
+	# Built once and parented to the stage, above the rail, so it can stand off the column's edge
+	# without widening it. Hidden until a plate is pointed at.
+	_rail_label = PanelContainer.new()
+	_rail_label.add_theme_stylebox_override("panel", UiSkin.sidemenu_label_style())
+	_rail_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_rail_label.visible = false
+	_rail_label.modulate.a = 0.0
+	_rail_label_text = Label.new()
+	_rail_label_text.add_theme_font_size_override("font_size", UiSkin.FONT_SMALL)
+	_rail_label_text.add_theme_color_override("font_color", UiSkin.SIDEMENU_LABEL_INK)
+	_rail_label_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_rail_label.add_child(_rail_label_text)
+
 	_rail = VBoxContainer.new()
 	_rail.custom_minimum_size = Vector2(RAIL_WIDTH, 0)
 	_rail.alignment = BoxContainer.ALIGNMENT_CENTER
 	_rail.add_theme_constant_override("separation", RAIL_SEPARATION)
 	_rail_plate.add_child(_rail)
+	# After the rail plate, so the label draws over the column rather than under it.
+	_stage.add_child(_rail_label)
 
 	_page_slot = Control.new()
 	_stage.add_child(_page_slot)
@@ -275,9 +300,12 @@ func add_rail_action(label: String, on_pressed: Callable, icon: Texture2D = null
 	# lettered plate rather than to a blank square.
 	var rail_button: Control
 	if icon != null:
-		var plate := Button.new()
-		UiSkin.apply_destination(plate, icon)
+		var plate := UiSkin.destination_button(icon)
 		plate.pressed.connect(on_pressed)
+		plate.button.mouse_entered.connect(func() -> void: _show_rail_label(label, plate))
+		plate.button.mouse_exited.connect(_hide_rail_label)
+		plate.button.focus_entered.connect(func() -> void: _show_rail_label(label, plate))
+		plate.button.focus_exited.connect(_hide_rail_label)
 		rail_button = plate
 	else:
 		var lettered := SkinnedButton.create(label, UiSkin.BROWN, UiSkin.CONTROL_HEIGHT,
@@ -572,6 +600,49 @@ func _layout_page_above_split(bottom_frac: float) -> void:
 	_gutter.offset_right = 0.0
 	_gutter.offset_top = -SPLIT_GUTTER_SIZE * 0.5
 	_gutter.offset_bottom = SPLIT_GUTTER_SIZE * 0.5
+
+
+## Name the destination under the pointer, on a plate that slides out beside it — the legacy build's
+## own behaviour, and the reason the rail can carry no captions and still be readable.
+##
+## **One plate, not seven.** Only one destination can be under the pointer at a time, so the label is
+## built once and moved; a panel per button would be seven controls the layout has to keep in step
+## with plates it does not own. It is parented to the stage rather than to the button, because a
+## button here is a [PanelContainer] and a container lays its children out to fill it — a label
+## positioned by hand inside one would be dragged back over the plate every frame.
+func _show_rail_label(text: String, plate: Control) -> void:
+	_rail_label_text.text = text.to_upper()
+	# Placed from the plate's live rect at the moment it is shown, so nothing has to watch the rail
+	# for movement: it is only ever wrong while it is invisible.
+	var rect := plate.get_global_rect()
+	var origin := _stage.get_global_rect().position
+	# Sized from the font rather than from the panel's cached minimum: the text was set a moment ago
+	# and the container has not laid out since, so asking it now answers for the *previous* name.
+	_rail_label.reset_size()
+	var wanted := _rail_label.get_combined_minimum_size()
+	_rail_label.size = wanted
+	_rail_label_home = Vector2(rect.end.x - origin.x + RAIL_LABEL_GAP,
+		rect.position.y - origin.y + (rect.size.y - wanted.y) * 0.5)
+	_rail_label.position = _rail_label_home - Vector2(RAIL_LABEL_SLIDE, 0.0)
+	_rail_label.visible = true
+	_tween_rail_label(1.0, _rail_label_home)
+
+
+func _hide_rail_label() -> void:
+	_tween_rail_label(0.0, _rail_label_home - Vector2(RAIL_LABEL_SLIDE, 0.0))
+
+
+func _tween_rail_label(alpha: float, to: Vector2) -> void:
+	if _rail_label_tween != null and _rail_label_tween.is_valid():
+		_rail_label_tween.kill()
+	if not is_inside_tree():
+		return
+	_rail_label_tween = create_tween().set_parallel(true)
+	_rail_label_tween.set_ease(Motion.EASE).set_trans(Motion.TRANS)
+	_rail_label_tween.tween_property(_rail_label, "modulate:a", alpha, RAIL_LABEL_TIME)
+	_rail_label_tween.tween_property(_rail_label, "position", to, RAIL_LABEL_TIME)
+	if is_zero_approx(alpha):
+		_rail_label_tween.chain().tween_callback(func() -> void: _rail_label.visible = false)
 
 
 func _collapsed_chat_height() -> float:
