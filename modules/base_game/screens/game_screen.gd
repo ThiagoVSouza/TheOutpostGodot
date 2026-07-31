@@ -26,8 +26,11 @@ extends Control
 ## rail, it does not sit in a box.
 const HEADER_FLAG_WIDTH := 88.0
 
-## How far below the top of the shell the banner's finial starts.
-const BANNER_TOP_INSET := 2.0
+## Where the banner hangs from. **Negative on purpose**: the art carries a finial and a crossbar
+## above the cloth — a quarter of its height — and at this size that is a long brown spike standing
+## over the bar. Lifting it by most of that leaves the cloth starting just under the bar's top rule
+## and the hardware off the screen, which is what a banner hung from a rail looks like.
+const BANNER_TOP_INSET := -34.0
 
 ## Wide enough for ">>>" with room around it, and identical across all four so the row reads as one
 ## switch rather than four buttons of increasing importance.

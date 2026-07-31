@@ -118,7 +118,7 @@ const SIDEMENU_LABEL_INK := Color(0.184, 0.106, 0.039)
 ## The in-game top bar, carried over from the legacy build along with the icons that stand in its
 ## slots. Parchment in a dark metal channel with a notched right end — the shape the wireframe draws,
 ## already painted, rather than a plain strip of the page's own frame standing in for it.
-const TOP_BAR_TEXTURE := preload("res://core/assets/ui/game_top_bar.png")
+const TOP_BAR_TEXTURE := preload("res://core/assets/ui/top_header_background.png")
 const COIN_ICON := preload("res://core/assets/ui/icon_coins.png")
 const POPULATION_ICON := preload("res://core/assets/ui/icon_population.png")
 ## Indexed by [code]TimeDriver.Speed[/code]: paused, 1x, 2x, 3x.
@@ -134,17 +134,16 @@ const SPEED_ICONS := [
 ## pixel size, and a 29px rail off a 188px-tall bar would be a third of the height of ours.
 const TOP_BAR_HEIGHT := 96.0
 
-## Measured off `game_top_bar.png` at its own size: the thin rail along the top, the deeper one along
-## the bottom, and enough of either end to carry the moulding and the notched right corner.
-const TOP_BAR_SLICE_TOP := 10.0
-const TOP_BAR_SLICE_BOTTOM := 34.0
-const TOP_BAR_SLICE_SIDE := 30.0
+## Measured off the art at its own size. One number, not one per edge: this bar is a plain strip with
+## a flourish in each corner, and the slice has to clear the whole flourish or the nine-patch cuts one
+## in half and smears it along the edge.
+const TOP_BAR_SLICE := 48.0
 
-## Room for the lettering inside the channel: clear of the bottom rail, and clear of the notch at the
-## right-hand end.
-const TOP_BAR_PADDING_TOP := 6.0
-const TOP_BAR_PADDING_BOTTOM := 20.0
-const TOP_BAR_PADDING_SIDE := 24.0
+## Room for the lettering inside the strip — clear of its rule, and clear of the corner flourishes at
+## either end.
+const TOP_BAR_PADDING_TOP := 10.0
+const TOP_BAR_PADDING_BOTTOM := 12.0
+const TOP_BAR_PADDING_SIDE := 28.0
 
 ## The coin and the head beside their numbers, and the glyph on a speed plate.
 const TOP_BAR_ICON_SIZE := 34
@@ -668,21 +667,16 @@ static func sidemenu_style() -> StyleBoxTexture:
 ## The in-game top bar's channel.
 ##
 ## Resampled to [constant TOP_BAR_HEIGHT] before it is sliced, for the reason
-## [method chat_frame_style] spells out: a nine-patch draws its border at the source's own pixel
-## size, so the art's 29px bottom rail would land as a 29-unit slab under a 96-unit bar. Scaling the
-## whole image keeps the channel in the proportion it was painted at, and the slices come down with
-## it. The sides are sliced wide enough to carry the notch on the right-hand end intact.
+## [method chat_frame_style] spells out: a nine-patch draws its border at the source's own pixel size,
+## so a 48px slice off a 144px-tall strip would take the whole height of a 96-unit bar and leave no
+## middle to stretch. Scaling the image first keeps the strip in the proportion it was painted at, and
+## brings the slice down with it.
 static func top_bar_style() -> StyleBoxTexture:
 	var style := StyleBoxTexture.new()
 	var scale := TOP_BAR_HEIGHT / TOP_BAR_TEXTURE.get_size().y
 	style.texture = scaled_texture(TOP_BAR_TEXTURE,
 		Vector2i((TOP_BAR_TEXTURE.get_size() * scale).round()))
-	style.texture_margin_top = TOP_BAR_SLICE_TOP * scale
-	style.texture_margin_bottom = TOP_BAR_SLICE_BOTTOM * scale
-	style.texture_margin_left = TOP_BAR_SLICE_SIDE * scale
-	style.texture_margin_right = TOP_BAR_SLICE_SIDE * scale
-	style.axis_stretch_horizontal = StyleBoxTexture.AXIS_STRETCH_MODE_STRETCH
-	style.axis_stretch_vertical = StyleBoxTexture.AXIS_STRETCH_MODE_STRETCH
+	_slice(style, TOP_BAR_SLICE * scale, StyleBoxTexture.AXIS_STRETCH_MODE_STRETCH)
 	style.content_margin_top = TOP_BAR_PADDING_TOP
 	style.content_margin_bottom = TOP_BAR_PADDING_BOTTOM
 	style.content_margin_left = TOP_BAR_PADDING_SIDE
