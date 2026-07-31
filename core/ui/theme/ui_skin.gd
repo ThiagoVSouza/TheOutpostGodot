@@ -64,6 +64,131 @@ const TAB_FONT_SIZE := FONT_SMALL
 ## A sunken parchment field: dropdowns, and anything else that should read as somewhere a value goes
 ## rather than something you press. Its border is ~5px, so 10 carries the corner.
 const INPUT_TEXTURE := preload("res://core/assets/ui/input_background.png")
+
+## The backgrounds the legacy build painted for the game itself, in place of the wizard's parchment
+## frame standing in for them. **Both carry their own soft edge**, which is why neither gets a
+## [method frame_shadow_style] plate behind it: that shadow is an opaque near-black fill, and these
+## have transparent corners for it to show through.
+const SCREEN_FRAME_TEXTURE := preload("res://core/assets/ui/screen_frame.png")
+const SIDEMENU_TEXTURE := preload("res://core/assets/ui/sidemenu_background.png")
+
+## The in-game page's cream ground in its thin dark frame. Drawn at the art's own size: the border is
+## slight, and a page is far bigger than the art, so it thins out with scale rather than thickening.
+const SCREEN_FRAME_SLICE := 26.0
+const SCREEN_FRAME_PADDING := 30.0
+
+## The rail's column. Resampled to the width it is actually drawn at, so the flourish in each corner
+## keeps its proportion — at the art's own 404px the same flourish would be a quarter of a 220-unit
+## rail. The slice has to clear the whole flourish or the nine-patch cuts one in half.
+const SIDEMENU_SLICE := 54.0
+const SIDEMENU_PADDING := 16.0
+
+## A destination's plate on the rail. The art is a complete button — its own stone border around its
+## own picture — so it is the stylebox rather than an icon laid on one, and it carries no caption.
+const DESTINATION_ICON_SIZE := 84.0
+
+## The plate's art fades out over its last few pixels, so its shadow is pulled in that far and grown
+## by the same amount — the arrangement [constant ARROW_SHADOW_INSET] documents, for the same reason.
+## How much colour a destination keeps while nothing is pointing at it. Enough to still read as a
+## tower or a sword; not enough to shout.
+const DESTINATION_REST_SATURATION := 0.45
+
+const DESTINATION_SHADOW_INSET := 5.0
+const DESTINATION_SHADOW_SIZE := BUTTON_SHADOW_SIZE + int(DESTINATION_SHADOW_INSET)
+
+## The rail is exactly as wide as one of those plates and its own moulding. Derived rather than
+## chosen, so changing the plate size cannot leave the column the wrong width around it.
+const SIDEMENU_WIDTH := DESTINATION_ICON_SIZE + SIDEMENU_PADDING * 2.0
+
+## The plate that slides out beside a rail destination on hover, naming it. The legacy build's own
+## art and its own behaviour — see [code]HudShell._show_rail_label[/code].
+const SIDEMENU_LABEL_TEXTURE := preload("res://core/assets/ui/sidemenu_label.png")
+## Measured off the art, and then the thickness it is actually drawn at. The legacy did the same
+## thing in CSS — `border-image: ... 20 fill / 5px stretch`, a source slice drawn at a quarter of its
+## size — because the ornament is painted for a plate several times bigger than this one. Left at
+## source size, 80 of the plate's ~150 units would be border and the name would be written across it.
+const SIDEMENU_LABEL_SLICE := 40.0
+const SIDEMENU_LABEL_BORDER := 12.0
+const SIDEMENU_LABEL_PADDING_H := SIDEMENU_LABEL_BORDER + 10.0
+const SIDEMENU_LABEL_PADDING_V := SIDEMENU_LABEL_BORDER + 2.0
+## The legacy's own `#2f1b0a`: darker than [constant INK], because this plate is a deeper parchment
+## than a page.
+const SIDEMENU_LABEL_INK := Color(0.184, 0.106, 0.039)
+
+## The in-game top bar, carried over from the legacy build along with the icons that stand in its
+## slots. Parchment in a dark metal channel with a notched right end — the shape the wireframe draws,
+## already painted, rather than a plain strip of the page's own frame standing in for it.
+const TOP_BAR_TEXTURE := preload("res://core/assets/ui/game_top_bar.png")
+const COIN_ICON := preload("res://core/assets/ui/icon_coins.png")
+const POPULATION_ICON := preload("res://core/assets/ui/icon_population.png")
+## Indexed by [code]TimeDriver.Speed[/code]: paused, 1x, 2x, 3x.
+const SPEED_ICONS := [
+	preload("res://core/assets/ui/icon_speed_pause.png"),
+	preload("res://core/assets/ui/icon_speed_slow.png"),
+	preload("res://core/assets/ui/icon_speed_medium.png"),
+	preload("res://core/assets/ui/icon_speed_fast.png"),
+]
+
+## How tall the bar is drawn. The art is resampled to exactly this ([method top_bar_style]) so its
+## channel keeps the proportion it was painted at — a nine-patch draws its border at the source's own
+## pixel size, and a 29px rail off a 188px-tall bar would be a third of the height of ours.
+const TOP_BAR_HEIGHT := 96.0
+
+## Measured off `game_top_bar.png` at its own size: the thin rail along the top, the deeper one along
+## the bottom, and enough of either end to carry the moulding and the notched right corner.
+const TOP_BAR_SLICE_TOP := 10.0
+const TOP_BAR_SLICE_BOTTOM := 34.0
+const TOP_BAR_SLICE_SIDE := 30.0
+
+## Room for the lettering inside the channel: clear of the bottom rail, and clear of the notch at the
+## right-hand end.
+const TOP_BAR_PADDING_TOP := 6.0
+const TOP_BAR_PADDING_BOTTOM := 20.0
+const TOP_BAR_PADDING_SIDE := 24.0
+
+## The coin and the head beside their numbers, and the glyph on a speed plate.
+const TOP_BAR_ICON_SIZE := 34
+const SPEED_ICON_SIZE := 30
+
+## The conversation's own art. **The one thing in the game that is not parchment**: a dark board with
+## a metal edge, carrying a parchment sheet and a parchment field on it. That is deliberate — the
+## chrome frames the window, and this is an object lying on the map, so it reads as one piece whether
+## it is showing a single line or the whole chronicle.
+const CHAT_FRAME_TEXTURE := preload("res://core/assets/ui/chat_frame.png")
+const CHAT_TEXT_AREA_TEXTURE := preload("res://core/assets/ui/chat_text_area.png")
+const CHAT_INPUT_TEXTURE := preload("res://core/assets/ui/chat_input.png")
+const CHAT_SEND_TEXTURE := preload("res://core/assets/ui/chat_send_button.png")
+
+## The metal edge on `chat_frame.png`, measured off the art (23px on a 1226px square).
+const CHAT_FRAME_SLICE := 26.0
+
+## **How thick that edge is actually drawn.** A [StyleBoxTexture] draws its nine-patch border at the
+## source art's own pixel size however far the box is stretched, so the only way to make the moulding
+## thinner is to hand it smaller art — see [method chat_frame_style], which resamples the board once
+## and slices the copy. Turning this down is the whole knob: the slice, the padding and the corners
+## all follow it, so the frame stays in proportion at any thickness.
+const CHAT_FRAME_BORDER := 9.0
+
+## Room inside that edge for the sheet and the field. **It has to clear the edge itself.** A content
+## margin under the border puts the sheet and the field *on top of* the metal rather than inside it,
+## which is what "things should be inside the frame" was describing.
+const CHAT_FRAME_AIR := 10.0
+const CHAT_FRAME_PADDING := CHAT_FRAME_BORDER + CHAT_FRAME_AIR
+
+## `chat_text_area.png` carries a flourish in each corner. The slice has to clear the whole flourish
+## or the nine-patch cuts through it and stretches half an ornament down the side of the sheet.
+const CHAT_TEXT_AREA_SLICE := 46.0
+const CHAT_TEXT_AREA_PADDING := 18.0
+
+## The field's rounded caps are wider than its top and bottom rails, so this is the one style here
+## whose slice cannot be square: a single margin big enough for the cap exceeds half the art's height
+## and Godot collapses the middle.
+const CHAT_INPUT_SLICE_H := 36.0
+const CHAT_INPUT_SLICE_V := 24.0
+
+## The send plate is drawn at its own size and never stretched far, so its corners are all it needs.
+const CHAT_SEND_SLICE := 20.0
+const CHAT_SEND_SIZE := 60.0
 const INPUT_SLICE := 10.0
 const INPUT_PADDING_H := 16.0
 const INPUT_PADDING_V := 10.0
@@ -457,6 +582,198 @@ static func chrome_style(padding: float = CHROME_PADDING) -> StyleBoxTexture:
 	var style := frame_style()
 	style.set_content_margin_all(padding)
 	return style
+
+
+## The ground an in-game page is written on — the legacy build's own, in place of the wizard's
+## parchment frame doing double duty.
+static func screen_frame_style() -> StyleBoxTexture:
+	var style := StyleBoxTexture.new()
+	style.texture = SCREEN_FRAME_TEXTURE
+	_slice(style, SCREEN_FRAME_SLICE, StyleBoxTexture.AXIS_STRETCH_MODE_STRETCH)
+	style.set_content_margin_all(SCREEN_FRAME_PADDING)
+	return style
+
+
+## One destination's plate. **No nine-slice**: the art is a square button drawn whole, so a border
+## region held at its own pixel size would fatten the stone the smaller the plate got. The whole
+## image scales instead.
+static func destination_style(texture: Texture2D, tint: Color = Color.WHITE) -> StyleBoxTexture:
+	var style := StyleBoxTexture.new()
+	style.texture = texture
+	style.axis_stretch_horizontal = StyleBoxTexture.AXIS_STRETCH_MODE_STRETCH
+	style.axis_stretch_vertical = StyleBoxTexture.AXIS_STRETCH_MODE_STRETCH
+	style.modulate_color = tint
+	return style
+
+
+## A rail destination as a real button: the shadow behind it, the change in light under the pointer,
+## and the change in size — the three answers every other plate in this skin gives, which a bare
+## [Button] with a texture on it gives none of.
+##
+## **It also holds its colour back until it is pointed at.** Seven painted plates at full strength
+## down the side of the map is seven things competing with the world for attention; resting them
+## muted lets the column sit quietly and lets the one under the pointer come forward. That cannot be
+## a tint — [member StyleBoxTexture.modulate_color] multiplies, and no multiplier drains colour — so
+## the resting plate is a desaturated copy of the art and the lit ones are the art itself.
+static func destination_button(texture: Texture2D) -> SkinnedButton:
+	return SkinnedButton.create_bare(
+		destination_style(desaturated_texture(texture, DESTINATION_REST_SATURATION)),
+		destination_style(texture, HOVER_TINT),
+		destination_style(texture, PRESSED_TINT),
+		Vector2(DESTINATION_ICON_SIZE, DESTINATION_ICON_SIZE),
+		destination_shadow_style())
+
+
+## A copy of [param texture] with its colour drained towards grey — 0 is fully grey, 1 is untouched.
+## The other axes are left alone, so the art keeps its own brightness and contrast and only loses its
+## colour. Derived once and cached, like every other copy here.
+static func desaturated_texture(texture: Texture2D, saturation: float) -> Texture2D:
+	return _derive(texture, "sat@%.3f" % saturation,
+		func(image: Image) -> void: image.adjust_bcs(1.0, 1.0, saturation))
+
+
+## The shadow under a destination plate. Inset, because the art's corners are soft — four pixels of
+## it are transparent — and [method shadow_style]'s fill is opaque: drawn to the plate's own edge it
+## would show as dark nicks at the corners rather than as a shadow beneath them.
+static func destination_shadow_style() -> StyleBoxFlat:
+	return shadow_style(DESTINATION_SHADOW_SIZE, BUTTON_SHADOW_OFFSET, BUTTON_CORNER_RADIUS,
+		DESTINATION_SHADOW_INSET)
+
+
+## The hover label's plate.
+static func sidemenu_label_style() -> StyleBoxTexture:
+	var style := StyleBoxTexture.new()
+	var scale := SIDEMENU_LABEL_BORDER / SIDEMENU_LABEL_SLICE
+	style.texture = scaled_texture(SIDEMENU_LABEL_TEXTURE,
+		Vector2i((SIDEMENU_LABEL_TEXTURE.get_size() * scale).round()))
+	_slice(style, SIDEMENU_LABEL_BORDER, StyleBoxTexture.AXIS_STRETCH_MODE_STRETCH)
+	style.content_margin_left = SIDEMENU_LABEL_PADDING_H
+	style.content_margin_right = SIDEMENU_LABEL_PADDING_H
+	style.content_margin_top = SIDEMENU_LABEL_PADDING_V
+	style.content_margin_bottom = SIDEMENU_LABEL_PADDING_V
+	return style
+
+
+## The rail's column, resampled to the width it is drawn at — see [constant SIDEMENU_WIDTH].
+static func sidemenu_style() -> StyleBoxTexture:
+	var style := StyleBoxTexture.new()
+	var scale := SIDEMENU_WIDTH / SIDEMENU_TEXTURE.get_size().x
+	style.texture = scaled_texture(SIDEMENU_TEXTURE,
+		Vector2i((SIDEMENU_TEXTURE.get_size() * scale).round()))
+	_slice(style, SIDEMENU_SLICE * scale, StyleBoxTexture.AXIS_STRETCH_MODE_STRETCH)
+	style.set_content_margin_all(SIDEMENU_PADDING)
+	return style
+
+
+## The in-game top bar's channel.
+##
+## Resampled to [constant TOP_BAR_HEIGHT] before it is sliced, for the reason
+## [method chat_frame_style] spells out: a nine-patch draws its border at the source's own pixel
+## size, so the art's 29px bottom rail would land as a 29-unit slab under a 96-unit bar. Scaling the
+## whole image keeps the channel in the proportion it was painted at, and the slices come down with
+## it. The sides are sliced wide enough to carry the notch on the right-hand end intact.
+static func top_bar_style() -> StyleBoxTexture:
+	var style := StyleBoxTexture.new()
+	var scale := TOP_BAR_HEIGHT / TOP_BAR_TEXTURE.get_size().y
+	style.texture = scaled_texture(TOP_BAR_TEXTURE,
+		Vector2i((TOP_BAR_TEXTURE.get_size() * scale).round()))
+	style.texture_margin_top = TOP_BAR_SLICE_TOP * scale
+	style.texture_margin_bottom = TOP_BAR_SLICE_BOTTOM * scale
+	style.texture_margin_left = TOP_BAR_SLICE_SIDE * scale
+	style.texture_margin_right = TOP_BAR_SLICE_SIDE * scale
+	style.axis_stretch_horizontal = StyleBoxTexture.AXIS_STRETCH_MODE_STRETCH
+	style.axis_stretch_vertical = StyleBoxTexture.AXIS_STRETCH_MODE_STRETCH
+	style.content_margin_top = TOP_BAR_PADDING_TOP
+	style.content_margin_bottom = TOP_BAR_PADDING_BOTTOM
+	style.content_margin_left = TOP_BAR_PADDING_SIDE
+	style.content_margin_right = TOP_BAR_PADDING_SIDE
+	return style
+
+
+## One of the bar's icons at the size the bar wants it, rather than the size it was drawn at.
+static func top_bar_icon(texture: Texture2D, size: int = TOP_BAR_ICON_SIZE) -> Texture2D:
+	return scaled_texture(texture, Vector2i(size, size))
+
+
+## The board the whole conversation sits on — the outer piece, holding the sheet and the field.
+##
+## **The art is resampled before it is sliced.** A nine-patch border is drawn at the source's own
+## pixel size, so `chat_frame.png`'s 23px edge on a 1226px square comes out as a heavy 26-unit
+## moulding around a board that is most of the screen. Shrinking the whole image shrinks the edge
+## with it, and the slice comes down in the same proportion — which is the one way to thin the
+## moulding without cutting into it. Slicing the full-size art thinner instead would leave the inner
+## half of the metal inside the *middle* region, and the middle is the part that gets stretched: a
+## band of smeared edge across the whole board.
+##
+## The copy is derived once and cached ([method scaled_texture]).
+static func chat_frame_style() -> StyleBoxTexture:
+	var style := StyleBoxTexture.new()
+	var scale := CHAT_FRAME_BORDER / CHAT_FRAME_SLICE
+	style.texture = scaled_texture(CHAT_FRAME_TEXTURE,
+		Vector2i((CHAT_FRAME_TEXTURE.get_size() * scale).round()))
+	# Stretched: the board's middle is a broadly even dark grain and this is the largest thing on the
+	# screen after the map, so a tile would repeat it many times over and show as banding.
+	_slice(style, CHAT_FRAME_BORDER, StyleBoxTexture.AXIS_STRETCH_MODE_STRETCH)
+	style.set_content_margin_all(CHAT_FRAME_PADDING)
+	return style
+
+
+## The parchment sheet the chronicle is written on, inside the board.
+static func chat_text_area_style() -> StyleBoxTexture:
+	var style := StyleBoxTexture.new()
+	style.texture = CHAT_TEXT_AREA_TEXTURE
+	_slice(style, CHAT_TEXT_AREA_SLICE, StyleBoxTexture.AXIS_STRETCH_MODE_STRETCH)
+	style.set_content_margin_all(CHAT_TEXT_AREA_PADDING)
+	return style
+
+
+## The field the player writes in. See [constant CHAT_INPUT_SLICE_H] for why the margins differ.
+static func chat_input_style(tint: Color = Color.WHITE) -> StyleBoxTexture:
+	var style := StyleBoxTexture.new()
+	style.texture = CHAT_INPUT_TEXTURE
+	style.texture_margin_left = CHAT_INPUT_SLICE_H
+	style.texture_margin_right = CHAT_INPUT_SLICE_H
+	style.texture_margin_top = CHAT_INPUT_SLICE_V
+	style.texture_margin_bottom = CHAT_INPUT_SLICE_V
+	style.axis_stretch_horizontal = StyleBoxTexture.AXIS_STRETCH_MODE_STRETCH
+	style.axis_stretch_vertical = StyleBoxTexture.AXIS_STRETCH_MODE_STRETCH
+	style.content_margin_left = INPUT_PADDING_H
+	style.content_margin_right = INPUT_PADDING_H
+	style.content_margin_top = INPUT_PADDING_V
+	style.content_margin_bottom = INPUT_PADDING_V
+	style.modulate_color = tint
+	return style
+
+
+## Dress the conversation's own input line: the painted field, ink, and a caret that shows on it.
+static func apply_chat_input(field: LineEdit) -> void:
+	field.add_theme_stylebox_override("normal", chat_input_style())
+	field.add_theme_stylebox_override("focus", chat_input_style(HOVER_TINT))
+	field.add_theme_stylebox_override("read_only", chat_input_style(Color(1, 1, 1, DISABLED_ALPHA)))
+	field.add_theme_color_override("font_color", INK)
+	field.add_theme_color_override("font_uneditable_color", INK_MUTED)
+	field.add_theme_color_override("font_placeholder_color", INK_MUTED)
+	field.add_theme_color_override("caret_color", INK)
+	field.add_theme_color_override("selection_color", Color(INK, 0.4))
+	field.add_theme_font_size_override("font_size", CONTROL_FONT_SIZE)
+
+
+## The send plate: a square with the arrow drawn into it, so it carries no caption of its own.
+static func chat_send_style(tint: Color = Color.WHITE) -> StyleBoxTexture:
+	var style := StyleBoxTexture.new()
+	style.texture = CHAT_SEND_TEXTURE
+	_slice(style, CHAT_SEND_SLICE, StyleBoxTexture.AXIS_STRETCH_MODE_STRETCH)
+	style.modulate_color = tint
+	return style
+
+
+static func apply_chat_send(button: Button) -> void:
+	button.add_theme_stylebox_override("normal", chat_send_style())
+	button.add_theme_stylebox_override("hover", chat_send_style(HOVER_TINT))
+	button.add_theme_stylebox_override("pressed", chat_send_style(PRESSED_TINT))
+	button.add_theme_stylebox_override("focus", chat_send_style(HOVER_TINT))
+	button.add_theme_stylebox_override("disabled", chat_send_style(Color(1, 1, 1, DISABLED_ALPHA)))
+	button.custom_minimum_size = Vector2(CHAT_SEND_SIZE, CHAT_SEND_SIZE)
 
 
 ## The border-only frame for a working area inside a page. Stretched, not tiled, for the same reason

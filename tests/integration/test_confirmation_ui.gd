@@ -68,7 +68,9 @@ func test_a_pending_question_locks_input_until_it_is_answered() -> void:
 	# A confirm guards an action the rules have not applied yet; letting a new turn run
 	# alongside it would leave the world in a state neither answer describes.
 	assert_false((screen.get("_input") as LineEdit).editable, "typing is locked")
-	assert_true((screen.get("_send_button") as SkinnedButton).button.disabled, "and so is Send")
+	# The send plate carries its arrow in the art, so it is a plain [Button] again rather than a
+	# captioned [SkinnedButton].
+	assert_true((screen.get("_send_button") as Button).disabled, "and so is Send")
 
 	await screen.call("_answer", false)
 

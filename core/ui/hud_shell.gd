@@ -25,22 +25,47 @@ extends Control
 ## line between the two layouts.
 const MOBILE_BREAKPOINT_WIDTH := 900.0
 
-## Wide enough for the longest destination name ("Diplomacy") on a painted plate at
-## [constant UiSkin.FONT_SMALL]. The wireframe draws a narrow column of round icons and this is the
-## same column carrying words instead, because no icon art exists yet — when it does, this narrows
-## back to the icon's own plate and nothing else about the rail changes.
-const RAIL_WIDTH := 190.0
+## One destination plate wide — the narrow column of icons the wireframe draws. It carried the names
+## as lettering until there was art to carry them instead; those live on the hover label now.
+const RAIL_WIDTH := UiSkin.SIDEMENU_WIDTH - UiSkin.SIDEMENU_PADDING * 2.0
 
-## The rail's plates, and the mobile menu list's. Smaller than a page's buttons: this is a list of
-## destinations, not a row of decisions, and at [constant UiSkin.CONTROL_FONT_SIZE] "Diplomacy" alone
-## would set the rail nearly 100 units wider than the map can spare.
+## For a destination with no art yet, and for the mobile menu's list. Smaller than a page's buttons:
+## these are destinations, not decisions, and at [constant UiSkin.CONTROL_FONT_SIZE] "Diplomacy"
+## alone would set the column nearly 100 units wider than the map can spare.
 const RAIL_BUTTON_FONT_SIZE := UiSkin.FONT_SMALL
+
+## Between one destination plate and the next. Tighter than the old lettered buttons wanted: these
+## are square and framed, and too much air between them stops reading as one column.
+const RAIL_SEPARATION := 10
+
+## How far the hover label starts inside the button it belongs to, and how long it takes to unroll.
+## The overlap is what keeps its left-hand cap out of sight: the plate draws under the button, so
+## anything within this distance of the button's edge is covered by the button itself.
+const RAIL_LABEL_OVERLAP := 16.0
+const RAIL_LABEL_TIME := 0.16
 
 ## How far the floating mobile menu button sits in from the stage's bottom-right corner.
 const MENU_BUTTON_MARGIN := 16
 const SPLIT_GUTTER_SIZE := 10.0
 const MIN_PANEL_FRACTION := 0.15
-const DOCK_BASE_MARGIN := 16
+
+## How far the conversation is held off the stage's edges. **On desktop only**: the board sits in
+## from the rail on one side and the window on the other, so it reads as an object lying on the map
+## rather than a bar bolted across the bottom of the window. On a phone there is no rail and no room
+## to spare, so it runs the full width.
+const CHAT_SIDE_INSET := 24.0
+const CHAT_TOP_INSET := 16.0
+
+## **Nothing under the board.** It sits on the bottom edge of the stage, not floating above it: a gap
+## there left a strip of dark background below the conversation and made it read as a panel hovering
+## over the screen rather than the bottom of the frame. The safe area and the on-screen keyboard
+## still push it up — that is clearance, not decoration.
+const CHAT_BOTTOM_INSET := 0.0
+
+## How long the board takes to grow or shrink. Short on purpose — this happens every time the player
+## says anything, so it has to feel like the board answering rather than an animation being played
+## at them.
+const CHAT_REVEAL_TIME := Motion.DURATION_NORMAL
 
 ## A page or the chat dock has opened/closed. Lets a caller update its own UI (a chevron's glyph)
 ## without polling — used by `game_screen.gd` to flip the dock's expand button between ^ and v.
@@ -51,16 +76,26 @@ signal chat_expanded_changed(expanded: bool)
 signal breakpoint_changed(is_mobile: bool)
 
 ## Regions callers fill with content. [member base_layer] is always full-rect and always visible —
-## the map goes here and is never hidden by anything this class does. [member top_bar] and
-## [member dock] are plain containers a caller adds widgets to; [member chat_slot] is where a
-## caller permanently parents its one persistent expanded-chat [HudPanel] (see class doc above).
+## the map goes here and is never hidden by anything this class does. [member top_bar] is a plain
+## container a caller adds widgets to; [member chat_slot] holds the one [ChatDock], parented by
+## [method set_chat_dock] and never swapped or hidden.
+##
+## There is no separate `dock` region any more. The input line used to be a row below the stage,
+## spanning the whole window under the rail, while the conversation was a panel floating above it —
+## two frames that never lined up and read as two pieces of UI. Both are one board inside the stage
+## now; see [ChatDock].
 var base_layer: Control
 var top_bar: HBoxContainer
-var dock: VBoxContainer
 var chat_slot: Control
 
 var _rail: VBoxContainer
+var _rail_host: Control
 var _rail_plate: PanelContainer
+var _rail_label_clip: Control
+var _rail_label: PanelContainer
+var _rail_label_text: Label
+var _rail_label_width := 0.0
+var _rail_label_tween: Tween = null
 var _menu_button: SkinnedButton
 var _map_layers_button: SkinnedButton
 var _menu_list: HudPanel
@@ -68,8 +103,18 @@ var _menu_list_box: VBoxContainer
 var _return_button: SkinnedButton
 var _mobile_menu_open := false
 
-var _dock_margin: MarginContainer
 var _last_keyboard_height := 0
+## Clearance the on-screen keyboard (or the navigation bar) needs under the conversation.
+var _keyboard_inset := 0.0
+
+## The conversation itself, parented into [member chat_slot] by [method set_chat_dock]. The shell
+## reads only its collapsed height and tells it when to show its expanded parts.
+var _chat_dock: ChatDock = null
+
+## 0 collapsed, 1 expanded — the value the open/close animation drives. Every chat geometry decision
+## reads it, so one tween moves the board and nothing else has to know it is moving.
+var _chat_reveal := 0.0
+var _chat_tween: Tween = null
 
 var _stage: Control
 var _page_slot: Control
@@ -107,14 +152,16 @@ func _process(_delta: float) -> void:
 	if height == _last_keyboard_height:
 		return
 	_last_keyboard_height = height
+	# The conversation is inside the stage now rather than in a row below it, so the keyboard's
+	# clearance is part of its own geometry — see `_layout_chat`.
 	# The keyboard's height is in *physical* pixels; this margin is in the stretched logical units
 	# `display/window/stretch/mode` puts the UI in (project.godot). Adding the raw number reserves
 	# far too much room — measured on an S26 Ultra, ~1.5x — leaving a dead band above the keyboard.
 	var window_height := float(DisplayServer.window_get_size().y)
 	var scale := get_viewport().get_visible_rect().size.y / window_height if window_height > 0.0 else 1.0
 	# The keyboard covers the navigation bar while it is up, so the two insets never add.
-	var below := maxi(int(height * scale), SafeArea.bottom(get_viewport()))
-	_dock_margin.add_theme_constant_override("margin_bottom", DOCK_BASE_MARGIN + below)
+	_keyboard_inset = float(maxi(int(height * scale), SafeArea.bottom(get_viewport())))
+	_relayout_stage()
 
 
 # --- building --------------------------------------------------------------------------------
@@ -137,31 +184,20 @@ func _build() -> void:
 	# the border-only thin frame was tried first — leaves the dark background showing through and the
 	# strip reads as a dark panel with a gold edge, which is the look this replaces.
 	var top_plate := PanelContainer.new()
-	top_plate.add_theme_stylebox_override("panel", UiSkin.chrome_style())
+	# The legacy build's own painted bar rather than a strip cut from the page's frame: parchment in a
+	# dark metal channel with a notched end, which is the shape the wireframe draws.
+	top_plate.add_theme_stylebox_override("panel", UiSkin.top_bar_style())
+	top_plate.custom_minimum_size.y = UiSkin.TOP_BAR_HEIGHT
 	root.add_child(top_plate)
 	top_bar = HBoxContainer.new()
 	top_bar.add_theme_constant_override("separation", 16)
 	top_plate.add_child(top_bar)
 
-	var body := HBoxContainer.new()
+	var body := Control.new()
 	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	body.add_theme_constant_override("separation", 0)
 	root.add_child(body)
-
-	_rail_plate = PanelContainer.new()
-	_rail_plate.add_theme_stylebox_override("panel", UiSkin.chrome_style())
-	# The rail ends under its last destination, as the wireframe draws it. Filling the height instead
-	# left a tall empty parchment column down the side of the map that read as a panel still loading.
-	_rail_plate.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
-	body.add_child(_rail_plate)
-	_rail = VBoxContainer.new()
-	_rail.custom_minimum_size = Vector2(RAIL_WIDTH, 0)
-	_rail.add_theme_constant_override("separation", 8)
-	_rail_plate.add_child(_rail)
-
 	_stage = Control.new()
-	_stage.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_stage.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_stage.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_stage.clip_contents = true
 	body.add_child(_stage)
 
@@ -169,6 +205,54 @@ func _build() -> void:
 	base_layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	base_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_stage.add_child(base_layer)
+
+	# **The rail floats over the map; it is not a column beside it.** As a child of an HBox it took
+	# its full width out of the stage for the stage's whole height — and since the plate itself stops
+	# under its last destination, everything below that was a dead strip of background the map was
+	# not allowed to draw in. It is parented into the stage now, over the base layer, and only the
+	# things that are *not* the map are held clear of it (see `_content_left`).
+	# **It has to draw between the column and the buttons**: over the rail's parchment and its
+	# right-hand moulding, and under the plate it belongs to, so the end that meets the button is
+	# genuinely hidden rather than trimmed to look hidden.
+	#
+	# That needs a plain [Control] in between, because a container lays every child out to fill it.
+	# [member Control.top_level] looks like the way out — a container does skip a top-level child when
+	# it sorts — but it is not: it reparents the canvas item to the viewport's own canvas, so the
+	# label drew above the entire tree and sat on the button instead of under it.
+	# **The reveal is a window, not a slide.** The plate keeps its own size and a clipping wrapper
+	# widens over it, so the name unrolls out from under the column instead of arriving beside it.
+	# It has to be done this way round: a [PanelContainer] cannot be tweened narrower than the text
+	# inside it — [method Control.get_combined_minimum_size] clamps it straight back.
+	_rail_label_clip = Control.new()
+	_rail_label_clip.clip_contents = true
+	_rail_label_clip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_rail_label_clip.visible = false
+	_rail_label = PanelContainer.new()
+	_rail_label.add_theme_stylebox_override("panel", UiSkin.sidemenu_label_style())
+	_rail_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_rail_label_text = Label.new()
+	_rail_label_text.add_theme_font_size_override("font_size", UiSkin.FONT_SMALL)
+	_rail_label_text.add_theme_color_override("font_color", UiSkin.SIDEMENU_LABEL_INK)
+	_rail_label_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_rail_label.add_child(_rail_label_text)
+	_rail_label_clip.add_child(_rail_label)
+
+	_rail_plate = PanelContainer.new()
+	_rail_plate.add_theme_stylebox_override("panel", UiSkin.sidemenu_style())
+	_stage.add_child(_rail_plate)
+	_rail_plate.set_anchors_and_offsets_preset(
+		Control.PRESET_TOP_LEFT, Control.PRESET_MODE_MINSIZE, int(CHAT_SIDE_INSET))
+	_rail = VBoxContainer.new()
+	_rail.custom_minimum_size = Vector2(RAIL_WIDTH, 0)
+	_rail.alignment = BoxContainer.ALIGNMENT_CENTER
+	_rail.add_theme_constant_override("separation", RAIL_SEPARATION)
+	# The host is what the plate sizes itself to, so it has to carry the column's own minimum — a
+	# plain Control has none of its own. `add_rail_action` keeps it in step as plates arrive.
+	_rail_host = Control.new()
+	_rail_plate.add_child(_rail_host)
+	_rail_host.add_child(_rail_label_clip)
+	_rail_host.add_child(_rail)
+	_rail.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
 	_page_slot = Control.new()
 	_stage.add_child(_page_slot)
@@ -181,16 +265,6 @@ func _build() -> void:
 	_gutter.mouse_default_cursor_shape = Control.CURSOR_VSIZE
 	_gutter.gui_input.connect(_on_gutter_gui_input)
 	_stage.add_child(_gutter)
-
-	_dock_margin = MarginContainer.new()
-	for side in ["left", "top", "right"]:
-		_dock_margin.add_theme_constant_override("margin_" + side, DOCK_BASE_MARGIN)
-	_dock_margin.add_theme_constant_override("margin_bottom",
-		DOCK_BASE_MARGIN + SafeArea.bottom(get_viewport()))
-	root.add_child(_dock_margin)
-	dock = VBoxContainer.new()
-	dock.add_theme_constant_override("separation", 6)
-	_dock_margin.add_child(dock)
 
 	# The mobile menu button floats over the stage, bottom-right (ux_plan.md §1.1's mobile re-flow).
 	# Parented to `_stage` and anchored, NOT to the shell: anchored to the shell it sits at the
@@ -236,12 +310,29 @@ func _build() -> void:
 ## Register a destination reachable from both the desktop rail and the mobile menu list, so nothing
 ## can be added to one and forgotten on the other. Only "Main Menu" is wired in Phase 1 — the other
 ## six wireframed destinations are Phase 5's panel registry (ux_plan.md §Phase 5).
-func add_rail_action(label: String, on_pressed: Callable) -> void:
-	var rail_button := SkinnedButton.create(label, UiSkin.BROWN, UiSkin.CONTROL_HEIGHT,
-		RAIL_BUTTON_FONT_SIZE)
+func add_rail_action(label: String, on_pressed: Callable, icon: Texture2D = null) -> void:
+	# **A destination with art is the art.** The plate carries its own border and its own picture, so
+	# there is nothing for a caption to sit on and none is drawn — the name is the tooltip and, on a
+	# phone, the mobile list's own row. A destination that has not been given art yet falls back to a
+	# lettered plate rather than to a blank square.
+	var rail_button: Control
+	if icon != null:
+		var plate := UiSkin.destination_button(icon)
+		plate.pressed.connect(on_pressed)
+		plate.button.mouse_entered.connect(func() -> void: _show_rail_label(label, plate))
+		plate.button.mouse_exited.connect(_hide_rail_label)
+		plate.button.focus_entered.connect(func() -> void: _show_rail_label(label, plate))
+		plate.button.focus_exited.connect(_hide_rail_label)
+		rail_button = plate
+	else:
+		var lettered := SkinnedButton.create(label, UiSkin.BROWN, UiSkin.CONTROL_HEIGHT,
+			RAIL_BUTTON_FONT_SIZE)
+		lettered.pressed.connect(on_pressed)
+		rail_button = lettered
 	rail_button.tooltip_text = label
-	rail_button.pressed.connect(on_pressed)
 	_rail.add_child(rail_button)
+	# Deferred: the column's minimum only counts the new plate once it has been laid out.
+	_rail_host.call_deferred("set", "custom_minimum_size", _rail.get_combined_minimum_size())
 
 	_add_mobile_menu_action(label, on_pressed)
 
@@ -340,8 +431,40 @@ func set_chat_expanded(expanded: bool) -> void:
 			hide_page()
 	else:
 		_open_order.erase("chat")
+	if _chat_dock != null:
+		_chat_dock.set_expanded(expanded)
+	_reveal_chat(1.0 if expanded else 0.0)
 	_relayout_stage()
 	chat_expanded_changed.emit(_chat_open)
+
+
+## Grow or shrink the board. The tween drives [member _chat_reveal] and re-runs the layout on each
+## step, so the animation and the resting geometry are the same code — there is no second path that
+## could put the board somewhere the layout would not.
+func _reveal_chat(to: float) -> void:
+	if _chat_tween != null and _chat_tween.is_valid():
+		_chat_tween.kill()
+	if not is_inside_tree():
+		_chat_reveal = to
+		return
+	_chat_tween = create_tween().set_ease(Motion.EASE).set_trans(Motion.TRANS)
+	_chat_tween.tween_method(_set_chat_reveal, _chat_reveal, to, CHAT_REVEAL_TIME)
+
+
+func _set_chat_reveal(value: float) -> void:
+	_chat_reveal = value
+	_relayout_stage()
+
+
+## Parent the conversation into the stage. It stays there for the shell's whole life — collapsed and
+## expanded are the same board at two heights, so there is nothing to swap in or out.
+func set_chat_dock(dock: ChatDock) -> void:
+	_chat_dock = dock
+	chat_slot.add_child(dock)
+	dock.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	dock.engaged.connect(func() -> void: set_chat_expanded(true))
+	dock.dismissed.connect(func() -> void: set_chat_expanded(false))
+	_relayout_stage()
 
 
 func is_chat_expanded() -> bool:
@@ -423,66 +546,155 @@ func _relayout_stage() -> void:
 	# occupies the stage, leave its content clean; on mobile the same action is in Menu, and on
 	# desktop it returns as soon as the player closes the overlay.
 	_map_layers_button.visible = not _is_mobile and not page_open and not _chat_open
-	_gutter.visible = false
-	if _event_active:
-		_fill(chat_slot)
-	elif _is_mobile:
-		if page_open:
-			_fill(_page_slot)
-		if _chat_open:
-			_fill(chat_slot)
-	elif page_open and _chat_open:
-		_gutter.visible = true
-		_layout_split(_split_fraction)
-	elif page_open:
+	# **The conversation is never hidden any more.** Collapsed it is the same board showing only its
+	# bottom section, which is what makes opening it look like one piece growing rather than a second
+	# panel arriving. Only the page still comes and goes.
+	_gutter.visible = not _is_mobile and page_open and _chat_open and not _event_active
+	if page_open and not (_is_mobile or _event_active):
+		_layout_page_above_split(_split_fraction if _chat_open else 1.0)
+	else:
 		_fill(_page_slot)
-	elif _chat_open:
-		_fill(chat_slot)
+	_layout_chat(page_open)
 	_page_slot.visible = page_open
-	chat_slot.visible = _chat_open
 
 
+## Where the board's top edge sits, measured up from the stage's bottom, at each end of the reveal —
+## and wherever the tween currently has it in between. Both ends are expressed the same way, against
+## the same edge, which is what makes one `lerp` enough to animate the whole thing.
+func _layout_chat(page_open: bool) -> void:
+	var bottom := CHAT_BOTTOM_INSET + _keyboard_inset
+	chat_slot.anchor_left = 0.0
+	chat_slot.anchor_right = 1.0
+	chat_slot.anchor_top = 1.0
+	chat_slot.anchor_bottom = 1.0
+	# **The same gap either side, measured from the window.** Not from the rail: the rail floats
+	# inside the left-hand gap, so matching the *rail's* edge on the right left about 24 units there
+	# against ten times that on the left, and the board read as shoved up against the window. The
+	# board is centred on the stage and the rail is a thing standing in the space beside it.
+	chat_slot.offset_left = _content_left()
+	chat_slot.offset_right = -_content_left()
+	chat_slot.offset_bottom = -bottom
+
+	var collapsed := _collapsed_chat_height() + bottom
+	var stage_height := _stage.size.y
+	var expanded := stage_height - CHAT_TOP_INSET
+	# Sharing the stage with a page (desktop rule 1): the board's ceiling is the split instead of the
+	# top of the stage. Event mode ignores the split — an unresolved decision owns the screen.
+	if page_open and not _is_mobile and not _event_active:
+		expanded = stage_height * (1.0 - _split_fraction) - SPLIT_GUTTER_SIZE * 0.5
+	chat_slot.offset_top = -maxf(collapsed, lerpf(collapsed, expanded, _chat_reveal))
+
+	# **The two floating plates ride on top of the board.** They are anchored to the stage's
+	# bottom-right corner, which used to be free map and is now where the conversation lives — the
+	# mobile Menu plate landed squarely on the send button, which is the same collision ux_plan.md
+	# already recorded once when the dock was a row of its own. Riding the board's edge also means
+	# they move with the reveal instead of being covered halfway through it.
+	_float_above_chat(_menu_button)
+	_float_above_chat(_map_layers_button)
+
+
+func _float_above_chat(button: Control) -> void:
+	var height := button.get_combined_minimum_size().y
+	button.offset_bottom = chat_slot.offset_top - MENU_BUTTON_MARGIN
+	button.offset_top = button.offset_bottom - height
+
+
+## The page's half of a split. [param bottom_frac] of 1.0 is "the page has the stage to itself",
+## which is what it gets while the conversation is only a strip along the bottom.
+func _layout_page_above_split(bottom_frac: float) -> void:
+	_page_slot.anchor_left = 0.0
+	_page_slot.anchor_right = 1.0
+	_page_slot.anchor_top = 0.0
+	_page_slot.anchor_bottom = bottom_frac
+	_page_slot.offset_left = _content_left()
+	_page_slot.offset_right = 0.0
+	_page_slot.offset_top = 0.0
+	_page_slot.offset_bottom = 0.0 if is_equal_approx(bottom_frac, 1.0) else -SPLIT_GUTTER_SIZE * 0.5
+
+	_gutter.anchor_left = 0.0
+	_gutter.anchor_right = 1.0
+	_gutter.anchor_top = bottom_frac
+	_gutter.anchor_bottom = bottom_frac
+	_gutter.offset_left = _content_left()
+	_gutter.offset_right = 0.0
+	_gutter.offset_top = -SPLIT_GUTTER_SIZE * 0.5
+	_gutter.offset_bottom = SPLIT_GUTTER_SIZE * 0.5
+
+
+## Name the destination under the pointer, on a plate that slides out beside it — the legacy build's
+## own behaviour, and the reason the rail can carry no captions and still be readable.
+##
+## **One plate, not seven.** Only one destination can be under the pointer at a time, so the label is
+## built once and moved; a panel per button would be seven controls the layout has to keep in step
+## with plates it does not own. It is parented to the stage rather than to the button, because a
+## button here is a [PanelContainer] and a container lays its children out to fill it — a label
+## positioned by hand inside one would be dragged back over the plate every frame.
+func _show_rail_label(text: String, plate: Control) -> void:
+	_rail_label_text.text = text.to_upper()
+	# Placed from the plate's live rect at the moment it is shown, so nothing has to watch the rail
+	# for movement: it is only ever wrong while it is invisible.
+	var rect := plate.get_global_rect()
+	# Sized from the font rather than from the panel's cached minimum: the text was set a moment ago
+	# and the container has not laid out since, so asking it now answers for the *previous* name.
+	_rail_label.reset_size()
+	var wanted := _rail_label.get_combined_minimum_size()
+	_rail_label.size = wanted
+	# The window opens [constant RAIL_LABEL_OVERLAP] *inside* the button, so the plate's left-hand cap
+	# — and every seam with it — stays under the button for as long as the label exists, rather than
+	# being trimmed at the join and still showing a sliver of its own moulding.
+	_rail_label.position = Vector2.ZERO
+	_rail_label_width = wanted.x + RAIL_LABEL_OVERLAP
+	var origin := _rail_host.get_global_rect().position
+	_rail_label_clip.position = Vector2(rect.end.x - origin.x - RAIL_LABEL_OVERLAP,
+		rect.position.y - origin.y + (rect.size.y - wanted.y) * 0.5)
+	_rail_label_clip.size.y = wanted.y
+	if not _rail_label_clip.visible:
+		_rail_label_clip.size.x = 0.0
+		_rail_label_clip.visible = true
+	_tween_rail_label(_rail_label_width, false)
+
+
+func _hide_rail_label() -> void:
+	_tween_rail_label(0.0, true)
+
+
+## No fade either way: the window is what hides the plate, and the rail is what hides the window's
+## first few units.
+func _tween_rail_label(to_width: float, hide_after: bool) -> void:
+	if _rail_label_tween != null and _rail_label_tween.is_valid():
+		_rail_label_tween.kill()
+	if not is_inside_tree():
+		return
+	_rail_label_tween = create_tween()
+	_rail_label_tween.set_ease(Motion.EASE).set_trans(Motion.TRANS)
+	_rail_label_tween.tween_property(_rail_label_clip, "size:x", to_width, RAIL_LABEL_TIME)
+	if hide_after:
+		_rail_label_tween.tween_callback(func() -> void: _rail_label_clip.visible = false)
+
+
+func _collapsed_chat_height() -> float:
+	return _chat_dock.collapsed_height if _chat_dock != null else UiSkin.CONTROL_HEIGHT
+
+
+## How far in from the stage's left edge anything that is **not** the map begins: past the floating
+## rail on desktop, flush on a phone where there is no rail. The map itself ignores this and runs the
+## full width, which is the point of the rail floating.
+func _content_left() -> float:
+	if _is_mobile:
+		return 0.0
+	return CHAT_SIDE_INSET + _rail_plate.get_combined_minimum_size().x + CHAT_SIDE_INSET
+
+
+## A page fills the stage, minus whatever the floating rail is standing in front of.
 func _fill(control: Control) -> void:
 	control.anchor_left = 0.0
 	control.anchor_right = 1.0
 	control.anchor_top = 0.0
 	control.anchor_bottom = 1.0
-	control.offset_left = 0.0
+	control.offset_left = _content_left()
 	control.offset_right = 0.0
 	control.offset_top = 0.0
 	control.offset_bottom = 0.0
-
-
-## Rule 1 (desktop, both open -> half height each) + rule 2 (draggable to any position): page takes
-## the top [param top_frac] of the stage, chat the rest, with a fixed-thickness gutter between them
-## regardless of the stage's own height.
-func _layout_split(top_frac: float) -> void:
-	_page_slot.anchor_left = 0.0
-	_page_slot.anchor_right = 1.0
-	_page_slot.anchor_top = 0.0
-	_page_slot.anchor_bottom = top_frac
-	_page_slot.offset_left = 0.0
-	_page_slot.offset_right = 0.0
-	_page_slot.offset_top = 0.0
-	_page_slot.offset_bottom = -SPLIT_GUTTER_SIZE * 0.5
-
-	_gutter.anchor_left = 0.0
-	_gutter.anchor_right = 1.0
-	_gutter.anchor_top = top_frac
-	_gutter.anchor_bottom = top_frac
-	_gutter.offset_left = 0.0
-	_gutter.offset_right = 0.0
-	_gutter.offset_top = -SPLIT_GUTTER_SIZE * 0.5
-	_gutter.offset_bottom = SPLIT_GUTTER_SIZE * 0.5
-
-	chat_slot.anchor_left = 0.0
-	chat_slot.anchor_right = 1.0
-	chat_slot.anchor_top = top_frac
-	chat_slot.anchor_bottom = 1.0
-	chat_slot.offset_left = 0.0
-	chat_slot.offset_right = 0.0
-	chat_slot.offset_top = SPLIT_GUTTER_SIZE * 0.5
-	chat_slot.offset_bottom = 0.0
 
 
 func _on_gutter_gui_input(event: InputEvent) -> void:
