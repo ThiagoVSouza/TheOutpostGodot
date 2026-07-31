@@ -38,7 +38,10 @@ const RAIL_BUTTON_FONT_SIZE := UiSkin.FONT_SMALL
 ## are square and framed, and too much air between them stops reading as one column.
 const RAIL_SEPARATION := 10
 
-## How long the hover label takes to unroll — the legacy's own (`0.16s ease`).
+## How far the hover label starts inside the button it belongs to, and how long it takes to unroll.
+## The overlap is what keeps its left-hand cap out of sight: the plate draws under the button, so
+## anything within this distance of the button's edge is covered by the button itself.
+const RAIL_LABEL_OVERLAP := 16.0
 const RAIL_LABEL_TIME := 0.16
 
 ## How far the floating mobile menu button sits in from the stage's bottom-right corner.
@@ -207,9 +210,13 @@ func _build() -> void:
 	# under its last destination, everything below that was a dead strip of background the map was
 	# not allowed to draw in. It is parented into the stage now, over the base layer, and only the
 	# things that are *not* the map are held clear of it (see `_content_left`).
-	# **Drawn over the column, not under it.** It emerges from the button's own edge and runs across
-	# the rail's parchment and its right-hand moulding — the column is the thing it comes out over,
-	# and the button is the thing it comes out from. Parented after the rail plate for that reason.
+	# **It has to draw between the column and the buttons**: over the rail's parchment and its
+	# right-hand moulding, and under the plate it belongs to, so the end that meets the button is
+	# genuinely hidden rather than trimmed to look hidden. That means being a child of the rail plate
+	# ahead of the buttons — and a [PanelContainer] would lay a child like that out to fill it, which
+	# is what [member Control.top_level] is for: a container skips a top-level child when it sorts,
+	# while the draw order stays where the child sits in the list. The cost is that its position is
+	# then in canvas coordinates, which is what `_show_rail_label` measures in anyway.
 	# **The reveal is a window, not a slide.** The plate keeps its own size and a clipping wrapper
 	# widens over it, so the name unrolls out from under the column instead of arriving beside it.
 	# It has to be done this way round: a [PanelContainer] cannot be tweened narrower than the text
@@ -218,6 +225,7 @@ func _build() -> void:
 	_rail_label_clip.clip_contents = true
 	_rail_label_clip.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_rail_label_clip.visible = false
+	_rail_label_clip.top_level = true
 	_rail_label = PanelContainer.new()
 	_rail_label.add_theme_stylebox_override("panel", UiSkin.sidemenu_label_style())
 	_rail_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -237,8 +245,8 @@ func _build() -> void:
 	_rail.custom_minimum_size = Vector2(RAIL_WIDTH, 0)
 	_rail.alignment = BoxContainer.ALIGNMENT_CENTER
 	_rail.add_theme_constant_override("separation", RAIL_SEPARATION)
+	_rail_plate.add_child(_rail_label_clip)
 	_rail_plate.add_child(_rail)
-	_stage.add_child(_rail_label_clip)
 
 	_page_slot = Control.new()
 	_stage.add_child(_page_slot)
@@ -618,20 +626,19 @@ func _show_rail_label(text: String, plate: Control) -> void:
 	# Placed from the plate's live rect at the moment it is shown, so nothing has to watch the rail
 	# for movement: it is only ever wrong while it is invisible.
 	var rect := plate.get_global_rect()
-	var origin := _stage.get_global_rect().position
 	# Sized from the font rather than from the panel's cached minimum: the text was set a moment ago
 	# and the container has not laid out since, so asking it now answers for the *previous* name.
 	_rail_label.reset_size()
 	var wanted := _rail_label.get_combined_minimum_size()
 	_rail_label.size = wanted
-	# **The window opens at the button's own right edge**, and the plate inside it starts a border's
-	# width to the left — so its left-hand frame is outside the window and never drawn. What unrolls
-	# has no cap on the end that meets the button: the parchment runs straight into it, as though the
-	# rest of the plate were behind it. The column's own moulding is simply covered.
-	_rail_label.position = Vector2(-UiSkin.SIDEMENU_LABEL_BORDER, 0.0)
-	_rail_label_width = wanted.x - UiSkin.SIDEMENU_LABEL_BORDER
-	_rail_label_clip.position = Vector2(rect.end.x - origin.x,
-		rect.position.y - origin.y + (rect.size.y - wanted.y) * 0.5)
+	# The window opens [constant RAIL_LABEL_OVERLAP] *inside* the button, so the plate's left-hand cap
+	# — and every seam with it — stays under the button for as long as the label exists, rather than
+	# being trimmed at the join and still showing a sliver of its own moulding. Canvas coordinates,
+	# because the window is top-level.
+	_rail_label.position = Vector2.ZERO
+	_rail_label_width = wanted.x + RAIL_LABEL_OVERLAP
+	_rail_label_clip.position = Vector2(rect.end.x - RAIL_LABEL_OVERLAP,
+		rect.position.y + (rect.size.y - wanted.y) * 0.5)
 	_rail_label_clip.size.y = wanted.y
 	if not _rail_label_clip.visible:
 		_rail_label_clip.size.x = 0.0
