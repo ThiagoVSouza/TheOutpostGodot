@@ -39,7 +39,11 @@ const BANNER_SHADOW_COLOR := Color(0.0, 0.0, 0.0, 0.34)
 
 ## Wide enough for ">>>" with room around it, and identical across all four so the row reads as one
 ## switch rather than four buttons of increasing importance.
-const SPEED_BUTTON_WIDTH := 64.0
+const SPEED_BUTTON_WIDTH := 52.0
+
+## Short enough to sit inside the bar with air above and below it. [constant UiSkin.CONTROL_HEIGHT]
+## is a field's height and would fill the strip corner to corner.
+const SPEED_BUTTON_HEIGHT := 42.0
 ## Wide enough that "Yes" and "No" are the same plate — an answer whose halves are different sizes
 ## reads as one of them being the expected one.
 const ANSWER_BUTTON_WIDTH := 130.0
@@ -56,6 +60,7 @@ var _map_view: OverworldMapView
 
 var _source: AiInputSource
 var _outpost_label: Label
+var _tier_label: Label
 var _flag_view: FlagView
 var _flag_shadow: FlagView
 var _gold_label: Label
@@ -261,17 +266,16 @@ func _build_top_bar() -> void:
 	_shell.set_banner(_build_banner(), BANNER_TOP_INSET)
 	_flag_view.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 
-	var identity := VBoxContainer.new()
-	identity.add_theme_constant_override("separation", 0)
-	identity.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	bar.add_child(identity)
+	# **One line, not two.** The name and the tier were stacked, which is what set the bar's height as
+	# much as the padding did; a strip this shallow reads as a single row, and side by side they still
+	# say the same thing.
 	_outpost_label = _bar_label(UiSkin.FONT_BODY)
-	identity.add_child(_outpost_label)
+	bar.add_child(_outpost_label)
 	# The growth axis the wireframe implies (Outpost -> Village -> Town -> ...) has no system
 	# behind it yet — a fixed tier, not a computed one, until M7 designs the ladder (ux_plan.md §5).
-	var domain_level_label := _bar_label(UiSkin.FONT_SMALL, true)
-	domain_level_label.text = "Outpost"
-	identity.add_child(domain_level_label)
+	_tier_label = _bar_label(UiSkin.FONT_SMALL, true)
+	_tier_label.text = "Outpost"
+	bar.add_child(_tier_label)
 
 	# **The icons the words were standing in for.** ux_plan.md §5 called "Gold"/"Population" a
 	# placeholder for the wireframe's icon slots; the legacy build's coin and head fill them, and the
@@ -304,7 +308,7 @@ func _build_top_bar() -> void:
 		UiSkin.apply_card(button)
 		button.add_theme_stylebox_override("pressed", UiSkin.input_style(UiSkin.PRESSED_TINT))
 		button.add_theme_stylebox_override("hover_pressed", UiSkin.input_style(UiSkin.PRESSED_TINT))
-		button.custom_minimum_size = Vector2(SPEED_BUTTON_WIDTH, UiSkin.CONTROL_HEIGHT)
+		button.custom_minimum_size = Vector2(SPEED_BUTTON_WIDTH, SPEED_BUTTON_HEIGHT)
 		button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		button.pressed.connect(_set_time_speed.bind(speed))
 		bar.add_child(button)
@@ -817,6 +821,10 @@ func _sync_speed_layout() -> void:
 	var size := UiSkin.FONT_SMALL if mobile else UiSkin.FONT_BODY
 	for label: Label in [_outpost_label, _gold_label, _population_label, _date_label]:
 		label.add_theme_font_size_override("font_size", size)
+	# The tier is the first thing off a phone's bar. It stood under the name until the bar was
+	# shortened and the two went side by side, which is what tipped the row over 720 again — and it is
+	# a placeholder tier (ux_plan.md §5) reading "Outpost" beside a settlement that says as much.
+	_tier_label.visible = not mobile
 	_refresh_resources()
 
 

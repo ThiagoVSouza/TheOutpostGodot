@@ -132,7 +132,7 @@ const SPEED_ICONS := [
 ## How tall the bar is drawn. The art is resampled to exactly this ([method top_bar_style]) so its
 ## channel keeps the proportion it was painted at — a nine-patch draws its border at the source's own
 ## pixel size, and a 29px rail off a 188px-tall bar would be a third of the height of ours.
-const TOP_BAR_HEIGHT := 96.0
+const TOP_BAR_HEIGHT := 64.0
 
 ## **How much of either end of the header art is thrown away before anything else happens.** The
 ## strip is painted with a flourish in each corner, and the bar runs the full width of the window —
@@ -147,13 +147,13 @@ const TOP_BAR_SLICE := 10.0
 
 ## Room for the lettering inside the strip — clear of its rule, and clear of the corner flourishes at
 ## either end.
-const TOP_BAR_PADDING_TOP := 10.0
-const TOP_BAR_PADDING_BOTTOM := 12.0
-const TOP_BAR_PADDING_SIDE := 28.0
+const TOP_BAR_PADDING_TOP := 5.0
+const TOP_BAR_PADDING_BOTTOM := 7.0
+const TOP_BAR_PADDING_SIDE := 22.0
 
 ## The coin and the head beside their numbers, and the glyph on a speed plate.
-const TOP_BAR_ICON_SIZE := 34
-const SPEED_ICON_SIZE := 30
+const TOP_BAR_ICON_SIZE := 28
+const SPEED_ICON_SIZE := 24
 
 ## The conversation's own art. **The one thing in the game that is not parchment**: a dark board with
 ## a metal edge, carrying a parchment sheet and a parchment field on it. That is deliberate — the

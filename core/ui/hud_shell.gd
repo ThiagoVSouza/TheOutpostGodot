@@ -523,6 +523,12 @@ func _place_banner() -> void:
 	var origin := overlay.get_global_rect().position
 	_banner.position = Vector2(
 		rect.position.x - origin.x + (rect.size.x - wanted.x) * 0.5, _banner_top)
+	# **The column starts under the banner it is headed by.** Derived rather than a constant: the
+	# banner's own height decides it, so shortening the bar — which lifts the stage, and with it the
+	# rail — cannot leave the two overlapping again. The banner is placed in the overlay's space and
+	# the rail in the stage's, which is what the one subtraction is for.
+	var stage_top := _stage.get_global_rect().position.y - origin.y
+	_rail_plate.position.y = maxf(RAIL_MARGIN, _banner_top + wanted.y + RAIL_MARGIN - stage_top)
 
 
 ## Parent the conversation into the stage. It stays there for the shell's whole life — collapsed and
