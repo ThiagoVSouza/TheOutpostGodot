@@ -40,6 +40,11 @@ const RAIL_BUTTON_FONT_SIZE := UiSkin.FONT_SMALL
 ## the same margins, so the rail measures the same and the conversation's insets do not shift.
 const RAIL_BACKGROUND := false
 
+## How far the rail sits in from the stage's top-left. Tighter than the conversation's inset: the
+## plates carry their own frames and their own shadows, so they read as sitting *on* the map rather
+## than needing air cut around them.
+const RAIL_MARGIN := 8.0
+
 ## Between one destination plate and the next. Tighter than the old lettered buttons wanted: these
 ## are square and framed, and too much air between them stops reading as one column.
 const RAIL_SEPARATION := 10
@@ -260,7 +265,7 @@ func _build() -> void:
 	_rail_plate.add_theme_stylebox_override("panel", UiSkin.sidemenu_style(RAIL_BACKGROUND))
 	_stage.add_child(_rail_plate)
 	_rail_plate.set_anchors_and_offsets_preset(
-		Control.PRESET_TOP_LEFT, Control.PRESET_MODE_MINSIZE, int(CHAT_SIDE_INSET))
+		Control.PRESET_TOP_LEFT, Control.PRESET_MODE_MINSIZE, int(RAIL_MARGIN))
 	_rail = VBoxContainer.new()
 	_rail.custom_minimum_size = Vector2(RAIL_WIDTH, 0)
 	_rail.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -483,6 +488,12 @@ func set_chat_dock(dock: ChatDock) -> void:
 	_chat_dock = dock
 	chat_slot.add_child(dock)
 	dock.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	# **The collapsed board is only as tall as the dock says, so it has to be re-asked.** Its height was
+	# taken once, during the first layout, when the input row had not settled to its final metrics —
+	# so the strip on a freshly loaded game was a couple of units out and stayed that way until the
+	# first expand happened to run the layout again. This also covers the pending-question row: it
+	# appears inside the board, and the strip has to grow to keep it answerable.
+	dock.minimum_size_changed.connect(_relayout_stage)
 	dock.engaged.connect(func() -> void: set_chat_expanded(true))
 	dock.dismissed.connect(func() -> void: set_chat_expanded(false))
 	_relayout_stage()
@@ -703,7 +714,7 @@ func _collapsed_chat_height() -> float:
 func _content_left() -> float:
 	if _is_mobile:
 		return 0.0
-	return CHAT_SIDE_INSET + _rail_plate.get_combined_minimum_size().x + CHAT_SIDE_INSET
+	return RAIL_MARGIN + _rail_plate.get_combined_minimum_size().x + CHAT_SIDE_INSET
 
 
 ## A page fills the stage, minus whatever the floating rail is standing in front of.
