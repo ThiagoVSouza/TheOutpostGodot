@@ -34,6 +34,12 @@ const RAIL_WIDTH := UiSkin.SIDEMENU_WIDTH - UiSkin.SIDEMENU_PADDING * 2.0
 ## alone would set the column nearly 100 units wider than the map can spare.
 const RAIL_BUTTON_FONT_SIZE := UiSkin.FONT_SMALL
 
+## Whether the rail draws its painted column behind the destination plates. **Off, to be looked at**
+## — the plates carry their own frames, so the question is whether the column behind them is holding
+## them together or just adding weight. The geometry does not move either way: the empty box keeps
+## the same margins, so the rail measures the same and the conversation's insets do not shift.
+const RAIL_BACKGROUND := false
+
 ## Between one destination plate and the next. Tighter than the old lettered buttons wanted: these
 ## are square and framed, and too much air between them stops reading as one column.
 const RAIL_SEPARATION := 10
@@ -251,7 +257,7 @@ func _build() -> void:
 	_rail_label_clip.add_child(_rail_label)
 
 	_rail_plate = PanelContainer.new()
-	_rail_plate.add_theme_stylebox_override("panel", UiSkin.sidemenu_style())
+	_rail_plate.add_theme_stylebox_override("panel", UiSkin.sidemenu_style(RAIL_BACKGROUND))
 	_stage.add_child(_rail_plate)
 	_rail_plate.set_anchors_and_offsets_preset(
 		Control.PRESET_TOP_LEFT, Control.PRESET_MODE_MINSIZE, int(CHAT_SIDE_INSET))

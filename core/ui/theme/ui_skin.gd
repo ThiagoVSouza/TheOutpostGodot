@@ -654,7 +654,16 @@ static func sidemenu_label_style() -> StyleBoxTexture:
 
 
 ## The rail's column, resampled to the width it is drawn at — see [constant SIDEMENU_WIDTH].
-static func sidemenu_style() -> StyleBoxTexture:
+##
+## [param painted] false gives the same box with nothing drawn in it, for judging the destination
+## plates on their own over the map. It keeps the content margins, so the rail sits and measures
+## exactly where it did — everything that reads the column's width, the conversation's insets
+## included, is unaffected by the paint being off.
+static func sidemenu_style(painted: bool = true) -> StyleBox:
+	if not painted:
+		var bare := StyleBoxEmpty.new()
+		bare.set_content_margin_all(SIDEMENU_PADDING)
+		return bare
 	var style := StyleBoxTexture.new()
 	var scale := SIDEMENU_WIDTH / SIDEMENU_TEXTURE.get_size().x
 	style.texture = scaled_texture(SIDEMENU_TEXTURE,
