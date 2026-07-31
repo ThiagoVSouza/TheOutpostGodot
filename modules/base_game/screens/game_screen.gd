@@ -28,14 +28,12 @@ const HEADER_FLAG_WIDTH := 44.0
 ## Wide enough for ">>>" with room around it, and identical across all four so the row reads as one
 ## switch rather than four buttons of increasing importance.
 const SPEED_BUTTON_WIDTH := 64.0
-## The dock's plate holds its contents closer to the rail than a page does: it is a strip across the
-## bottom of the screen, and a page's padding there would cost the map a band of height for nothing.
-const DOCK_PLATE_PADDING := 10.0
-
 ## Wide enough that "Yes" and "No" are the same plate — an answer whose halves are different sizes
 ## reads as one of them being the expected one.
 const ANSWER_BUTTON_WIDTH := 130.0
-const SEND_BUTTON_WIDTH := 150.0
+
+## Load sits beside the slot list, so it is sized rather than left to its caption.
+const MENU_ACTION_WIDTH := 140.0
 
 const MARKER_FLAG_WIDTH := 30.0
 const MAIN_MENU_PAGE_ID := "main_menu"
@@ -53,9 +51,8 @@ var _date_label: Label
 var _log_label: RichTextLabel
 var _message_list: ChatMessageList
 var _input: LineEdit
-var _send_button: SkinnedButton
+var _send_button: Button
 var _retry_button: SkinnedButton
-var _chat_expand_button: Button
 var _event_image: Control
 var _speed_buttons: Dictionary = {}
 var _trace_label: RichTextLabel
@@ -67,7 +64,7 @@ var _pending_label: Label
 var _pending_instance: String = ""
 var _slots: OptionButton
 
-var _chat_panel: HudPanel
+var _chat_dock: ChatDock
 var _menu_panel: HudPanel
 var _destination_panels: Dictionary = {} # id -> persistent HudPanel
 
@@ -306,14 +303,13 @@ func _ink(label: Label, font_size: int, muted: bool = false) -> void:
 	label.add_theme_color_override("font_color", UiSkin.INK_MUTED if muted else UiSkin.INK)
 
 
-## The expanded-chat shape (ux_plan.md §1.2 state 2): built once and kept parented under
-## `_shell.chat_slot` for the screen's whole lifetime (see [HudShell]'s class doc) so the log and
-## trace survive being collapsed and re-expanded.
+## The conversation: one [ChatDock] built once and left in the stage for the screen's whole
+## lifetime, so the chronicle survives being collapsed and re-expanded. Collapsed and expanded are
+## the same board at two heights — the shell owns that geometry, this owns what is on it.
 func _build_chat_panel() -> void:
-	_chat_panel = HudPanel.new()
-	_shell.chat_slot.add_child(_chat_panel)
-	_chat_panel.set_title("Conversation")
-	_chat_panel.dismissed.connect(func() -> void: _shell.set_chat_expanded(false))
+	_chat_dock = ChatDock.new()
+	_shell.set_chat_dock(_chat_dock)
+	_chat_dock.set_title("Conversation")
 
 	# The slot art will hang in is a mount, so it is drawn as one: the thin frame, empty, with the
 	# note inside saying what belongs there. It was a dark rounded rectangle from the old theme —
@@ -324,7 +320,7 @@ func _build_chat_panel() -> void:
 	event_image.custom_minimum_size = Vector2(0, 140)
 	event_image.tooltip_text = "Event artwork"
 	event_image.add_theme_stylebox_override("panel", UiSkin.thin_frame_style())
-	_chat_panel.body.add_child(event_image)
+	_chat_dock.body.add_child(event_image)
 	var placeholder := VBoxContainer.new()
 	placeholder.alignment = BoxContainer.ALIGNMENT_CENTER
 	event_image.add_child(placeholder)
@@ -340,37 +336,28 @@ func _build_chat_panel() -> void:
 	placeholder.add_child(placeholder_note)
 
 	_message_list = ChatMessageList.new()
-	_chat_panel.body.add_child(_message_list)
+	_chat_dock.body.add_child(_message_list)
 
 	# Existing integration tests inspect this semantic transcript directly. It remains as a
 	# hidden mirror while the visible conversation is rendered as structured message rows.
 	_log_label = RichTextLabel.new()
 	_log_label.bbcode_enabled = true
 	_log_label.visible = false
-	_chat_panel.body.add_child(_log_label)
+	_chat_dock.body.add_child(_log_label)
 
 
-## The bottom edge, full width, always visible (ux_plan.md §1.1) — the input line the wireframes'
-## "Main" state collapses everything else to, plus the pending-question row (kept out of the
-## collapsible panel above so an unanswered question is never hidden by a collapsed chat).
+## The board's bottom section: the line the player writes on, the send plate, and the pending
+## question kept beside them. **The question stays on the collapsed strip** — ux_plan.md put it in
+## the dock precisely so an unanswered one is never hidden, and that reason survives the two frames
+## becoming one.
 func _build_dock() -> void:
-	var dock := _shell.dock
-
-	# The dock sits on the map, so it carries its own plate: an input line and two plates floating on
-	# the terrain had nothing holding them together.
-	var plate := PanelContainer.new()
-	plate.add_theme_stylebox_override("panel", UiSkin.chrome_style(DOCK_PLATE_PADDING))
-	dock.add_child(plate)
-	var rows := VBoxContainer.new()
-	rows.add_theme_constant_override("separation", 8)
-	plate.add_child(rows)
-
 	_pending_row = HBoxContainer.new()
 	_pending_row.add_theme_constant_override("separation", 8)
 	_pending_row.visible = false
-	rows.add_child(_pending_row)
+	_chat_dock.set_pending_row(_pending_row)
 	_pending_label = Label.new()
-	_ink(_pending_label, UiSkin.FONT_BODY)
+	_pending_label.add_theme_font_size_override("font_size", UiSkin.FONT_BODY)
+	_pending_label.add_theme_color_override("font_color", UiSkin.LABEL)
 	_pending_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_pending_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_pending_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
@@ -385,28 +372,21 @@ func _build_dock() -> void:
 	no.pressed.connect(func() -> void: await _answer(false))
 	_pending_row.add_child(no)
 
-	var input_row := HBoxContainer.new()
-	input_row.add_theme_constant_override("separation", 8)
-	rows.add_child(input_row)
-	# The chevron is the skin's own select arrow rather than the characters "^" and "v", which is
-	# what it has been standing in for since Phase 3.
-	_chat_expand_button = Button.new()
-	_chat_expand_button.tooltip_text = "Show conversation"
-	UiSkin.apply_input(_chat_expand_button)
-	_chat_expand_button.custom_minimum_size = Vector2(UiSkin.CONTROL_HEIGHT, UiSkin.CONTROL_HEIGHT)
-	_chat_expand_button.pressed.connect(
-		func() -> void: _shell.set_chat_expanded(not _shell.is_chat_expanded()))
-	input_row.add_child(_chat_expand_button)
-	_set_chevron(false)
+	var input_row := _chat_dock.input_row
 	_input = LineEdit.new()
 	_input.placeholder_text = "e.g. I send scouts to forage the hills"
-	UiSkin.apply_line_edit(_input)
+	UiSkin.apply_chat_input(_input)
 	_input.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_input.text_submitted.connect(_on_submit)
+	# Writing *is* opening the conversation. Reaching the field by any route — a tap on it, the
+	# focus-input key, or a press on the board around it — is the same intent, so they all land here.
+	_input.focus_entered.connect(func() -> void: _shell.set_chat_expanded(true))
 	input_row.add_child(_input)
-	_send_button = SkinnedButton.create("Send", UiSkin.BLUE, UiSkin.CONTROL_HEIGHT,
-		UiSkin.CONTROL_FONT_SIZE)
-	_send_button.custom_minimum_size.x = SEND_BUTTON_WIDTH
+	# The send plate carries its arrow in the art, so it has no caption and stays square whatever the
+	# type size is.
+	_send_button = Button.new()
+	_send_button.tooltip_text = "Send"
+	UiSkin.apply_chat_send(_send_button)
 	_send_button.pressed.connect(func() -> void: _on_submit(_input.text))
 	input_row.add_child(_send_button)
 	_retry_button = SkinnedButton.create("Retry connection", UiSkin.BROWN, UiSkin.CONTROL_HEIGHT,
@@ -416,16 +396,11 @@ func _build_dock() -> void:
 	input_row.add_child(_retry_button)
 
 
+## Opening the conversation puts the caret where the player is about to type. There is no expand
+## chevron any more: the board itself is the control, and the header's close is what puts it away.
 func _on_chat_expanded_changed(expanded: bool) -> void:
-	_set_chevron(expanded)
-
-
-## Point the dock's chevron at what pressing it does: down to put the conversation away, up to bring
-## it back. A theme *icon* rather than the button's text, so the plate keeps the field styling every
-## other square control on this dock has.
-func _set_chevron(expanded: bool) -> void:
-	_chat_expand_button.add_theme_icon_override("icon",
-		UiSkin.SELECT_ARROW_TEXTURE if expanded else UiSkin.SELECT_ARROW_UP_TEXTURE)
+	if expanded and _input.editable and not _input.has_focus():
+		_input.grab_focus()
 
 
 ## The Main Menu panel (ux_plan.md §2.2: "Main Menu is one of the seven destinations and opens as a
@@ -445,49 +420,42 @@ func _build_menu_panel() -> void:
 	add_child(_menu_panel)
 	_menu_panel.set_title("Main Menu")
 
-	var save_button := Button.new()
-	save_button.text = "Save"
-	save_button.pressed.connect(_on_save)
+	# The last unskinned controls in the game: this page kept Godot's default plates while the panel
+	# around it became parchment, so the one page a player opens most often was also the one that
+	# still looked like a debug menu.
+	var save_button := _menu_action("Save", UiSkin.BLUE, _on_save)
 	_menu_panel.body.add_child(save_button)
 
 	var slot_row := HBoxContainer.new()
+	slot_row.add_theme_constant_override("separation", 8)
 	_menu_panel.body.add_child(slot_row)
 	_slots = OptionButton.new()
 	_slots.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	UiSkin.apply_input(_slots)
 	slot_row.add_child(_slots)
-	var load_button := Button.new()
-	load_button.text = "Load"
-	load_button.pressed.connect(_on_load)
+	var load_button := _menu_action("Load", UiSkin.BROWN, _on_load)
+	load_button.custom_minimum_size.x = MENU_ACTION_WIDTH
 	slot_row.add_child(load_button)
 
-	var new_button := Button.new()
-	new_button.text = "New game"
-	new_button.pressed.connect(_on_new_game)
-	_menu_panel.body.add_child(new_button)
+	_menu_panel.body.add_child(_menu_action("New game", UiSkin.BROWN, _on_new_game))
+	_menu_panel.body.add_child(_menu_action("Settings", UiSkin.BROWN,
+		func() -> void: Kernel.router.goto("core.settings", {"back": "base_game.chat"})))
+	_menu_panel.body.add_child(_menu_action("Quit to title", UiSkin.BROWN,
+		func() -> void: Kernel.router.goto("core.main_menu")))
 
-	var settings_button := Button.new()
-	settings_button.text = "Settings"
-	settings_button.pressed.connect(
-		func() -> void: Kernel.router.goto("core.settings", {"back": "base_game.chat"}))
-	_menu_panel.body.add_child(settings_button)
+	var rule := HSeparator.new()
+	rule.add_theme_stylebox_override("separator", UiSkin.separator_style())
+	_menu_panel.body.add_child(rule)
 
-	var quit_button := Button.new()
-	quit_button.text = "Quit to title"
-	quit_button.pressed.connect(func() -> void: Kernel.router.goto("core.main_menu"))
-	_menu_panel.body.add_child(quit_button)
-
-	_menu_panel.body.add_child(HSeparator.new())
-
-	var dev_ask := Button.new()
-	dev_ask.text = "Ask me something (dev)"
 	# No authored workflow uses `confirm` yet — game content is still scaffolding. This drives
 	# the real path anyway (orchestrator → executor → suspension → instance store → resume), so
 	# the machinery is verifiable in the running app rather than only in tests.
-	dev_ask.pressed.connect(func() -> void: await _on_dev_ask())
-	_menu_panel.body.add_child(dev_ask)
+	_menu_panel.body.add_child(_menu_action("Ask me something (dev)", UiSkin.GRAY,
+		func() -> void: await _on_dev_ask()))
 
 	var trace_toggle := CheckButton.new()
 	trace_toggle.text = "Show AI trace"
+	UiSkin.apply_toggle(trace_toggle)
 	trace_toggle.toggled.connect(func(on: bool) -> void: _trace_label.visible = on)
 	_menu_panel.body.add_child(trace_toggle)
 
@@ -495,8 +463,17 @@ func _build_menu_panel() -> void:
 	_trace_label.bbcode_enabled = false
 	_trace_label.fit_content = true
 	_trace_label.custom_minimum_size = Vector2(0, 140)
+	_trace_label.add_theme_color_override("default_color", UiSkin.INK)
+	_trace_label.add_theme_font_size_override("normal_font_size", UiSkin.FONT_SMALL)
 	_trace_label.visible = false
 	_menu_panel.body.add_child(_trace_label)
+
+
+func _menu_action(text: String, variant: UiSkin.Variant, on_pressed: Callable) -> SkinnedButton:
+	var button := SkinnedButton.create(text, variant, UiSkin.CONTROL_HEIGHT,
+		UiSkin.CONTROL_FONT_SIZE)
+	button.pressed.connect(on_pressed)
+	return button
 
 
 func _open_main_menu() -> void:
@@ -585,8 +562,12 @@ func _set_busy(busy: bool) -> void:
 	# A pending question locks input as firmly as a turn in flight does.
 	var blocked := busy or not _pending_instance.is_empty()
 	_input.editable = not blocked
-	_send_button.set_disabled(blocked)
-	if not blocked:
+	_send_button.disabled = blocked
+	# **Only while the conversation is already open.** Focus is what opens the board now, so putting
+	# the caret in the field unasked opened it — including on the way in, which meant a new game began
+	# with the chronicle covering the map the player had just chosen a site on. Between turns, with
+	# the board open, keeping the caret ready is still exactly right.
+	if not blocked and _shell.is_chat_expanded():
 		_input.grab_focus()
 
 

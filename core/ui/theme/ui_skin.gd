@@ -64,6 +64,35 @@ const TAB_FONT_SIZE := FONT_SMALL
 ## A sunken parchment field: dropdowns, and anything else that should read as somewhere a value goes
 ## rather than something you press. Its border is ~5px, so 10 carries the corner.
 const INPUT_TEXTURE := preload("res://core/assets/ui/input_background.png")
+
+## The conversation's own art. **The one thing in the game that is not parchment**: a dark board with
+## a metal edge, carrying a parchment sheet and a parchment field on it. That is deliberate — the
+## chrome frames the window, and this is an object lying on the map, so it reads as one piece whether
+## it is showing a single line or the whole chronicle.
+const CHAT_FRAME_TEXTURE := preload("res://core/assets/ui/chat_frame.png")
+const CHAT_TEXT_AREA_TEXTURE := preload("res://core/assets/ui/chat_text_area.png")
+const CHAT_INPUT_TEXTURE := preload("res://core/assets/ui/chat_input.png")
+const CHAT_SEND_TEXTURE := preload("res://core/assets/ui/chat_send_button.png")
+
+## The metal edge on `chat_frame.png`, measured off the art (23px on a 1226px square).
+const CHAT_FRAME_SLICE := 26.0
+## Room inside that edge for the sheet and the field.
+const CHAT_FRAME_PADDING := 12.0
+
+## `chat_text_area.png` carries a flourish in each corner. The slice has to clear the whole flourish
+## or the nine-patch cuts through it and stretches half an ornament down the side of the sheet.
+const CHAT_TEXT_AREA_SLICE := 46.0
+const CHAT_TEXT_AREA_PADDING := 18.0
+
+## The field's rounded caps are wider than its top and bottom rails, so this is the one style here
+## whose slice cannot be square: a single margin big enough for the cap exceeds half the art's height
+## and Godot collapses the middle.
+const CHAT_INPUT_SLICE_H := 36.0
+const CHAT_INPUT_SLICE_V := 24.0
+
+## The send plate is drawn at its own size and never stretched far, so its corners are all it needs.
+const CHAT_SEND_SLICE := 20.0
+const CHAT_SEND_SIZE := 60.0
 const INPUT_SLICE := 10.0
 const INPUT_PADDING_H := 16.0
 const INPUT_PADDING_V := 10.0
@@ -457,6 +486,75 @@ static func chrome_style(padding: float = CHROME_PADDING) -> StyleBoxTexture:
 	var style := frame_style()
 	style.set_content_margin_all(padding)
 	return style
+
+
+## The board the whole conversation sits on — the outer piece, holding the sheet and the field.
+static func chat_frame_style() -> StyleBoxTexture:
+	var style := StyleBoxTexture.new()
+	style.texture = CHAT_FRAME_TEXTURE
+	# Stretched: the board's middle is a broadly even dark grain and this is the largest thing on the
+	# screen after the map, so a tile would repeat it many times over and show as banding.
+	_slice(style, CHAT_FRAME_SLICE, StyleBoxTexture.AXIS_STRETCH_MODE_STRETCH)
+	style.set_content_margin_all(CHAT_FRAME_PADDING)
+	return style
+
+
+## The parchment sheet the chronicle is written on, inside the board.
+static func chat_text_area_style() -> StyleBoxTexture:
+	var style := StyleBoxTexture.new()
+	style.texture = CHAT_TEXT_AREA_TEXTURE
+	_slice(style, CHAT_TEXT_AREA_SLICE, StyleBoxTexture.AXIS_STRETCH_MODE_STRETCH)
+	style.set_content_margin_all(CHAT_TEXT_AREA_PADDING)
+	return style
+
+
+## The field the player writes in. See [constant CHAT_INPUT_SLICE_H] for why the margins differ.
+static func chat_input_style(tint: Color = Color.WHITE) -> StyleBoxTexture:
+	var style := StyleBoxTexture.new()
+	style.texture = CHAT_INPUT_TEXTURE
+	style.texture_margin_left = CHAT_INPUT_SLICE_H
+	style.texture_margin_right = CHAT_INPUT_SLICE_H
+	style.texture_margin_top = CHAT_INPUT_SLICE_V
+	style.texture_margin_bottom = CHAT_INPUT_SLICE_V
+	style.axis_stretch_horizontal = StyleBoxTexture.AXIS_STRETCH_MODE_STRETCH
+	style.axis_stretch_vertical = StyleBoxTexture.AXIS_STRETCH_MODE_STRETCH
+	style.content_margin_left = INPUT_PADDING_H
+	style.content_margin_right = INPUT_PADDING_H
+	style.content_margin_top = INPUT_PADDING_V
+	style.content_margin_bottom = INPUT_PADDING_V
+	style.modulate_color = tint
+	return style
+
+
+## Dress the conversation's own input line: the painted field, ink, and a caret that shows on it.
+static func apply_chat_input(field: LineEdit) -> void:
+	field.add_theme_stylebox_override("normal", chat_input_style())
+	field.add_theme_stylebox_override("focus", chat_input_style(HOVER_TINT))
+	field.add_theme_stylebox_override("read_only", chat_input_style(Color(1, 1, 1, DISABLED_ALPHA)))
+	field.add_theme_color_override("font_color", INK)
+	field.add_theme_color_override("font_uneditable_color", INK_MUTED)
+	field.add_theme_color_override("font_placeholder_color", INK_MUTED)
+	field.add_theme_color_override("caret_color", INK)
+	field.add_theme_color_override("selection_color", Color(INK, 0.4))
+	field.add_theme_font_size_override("font_size", CONTROL_FONT_SIZE)
+
+
+## The send plate: a square with the arrow drawn into it, so it carries no caption of its own.
+static func chat_send_style(tint: Color = Color.WHITE) -> StyleBoxTexture:
+	var style := StyleBoxTexture.new()
+	style.texture = CHAT_SEND_TEXTURE
+	_slice(style, CHAT_SEND_SLICE, StyleBoxTexture.AXIS_STRETCH_MODE_STRETCH)
+	style.modulate_color = tint
+	return style
+
+
+static func apply_chat_send(button: Button) -> void:
+	button.add_theme_stylebox_override("normal", chat_send_style())
+	button.add_theme_stylebox_override("hover", chat_send_style(HOVER_TINT))
+	button.add_theme_stylebox_override("pressed", chat_send_style(PRESSED_TINT))
+	button.add_theme_stylebox_override("focus", chat_send_style(HOVER_TINT))
+	button.add_theme_stylebox_override("disabled", chat_send_style(Color(1, 1, 1, DISABLED_ALPHA)))
+	button.custom_minimum_size = Vector2(CHAT_SEND_SIZE, CHAT_SEND_SIZE)
 
 
 ## The border-only frame for a working area inside a page. Stretched, not tiled, for the same reason

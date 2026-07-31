@@ -40,7 +40,19 @@ const RAIL_BUTTON_FONT_SIZE := UiSkin.FONT_SMALL
 const MENU_BUTTON_MARGIN := 16
 const SPLIT_GUTTER_SIZE := 10.0
 const MIN_PANEL_FRACTION := 0.15
-const DOCK_BASE_MARGIN := 16
+
+## How far the conversation is held off the stage's edges. **On desktop only**: the board sits in
+## from the rail on one side and the window on the other, so it reads as an object lying on the map
+## rather than a bar bolted across the bottom of the window. On a phone there is no rail and no room
+## to spare, so it runs the full width.
+const CHAT_SIDE_INSET := 24.0
+const CHAT_BOTTOM_INSET := 16.0
+const CHAT_TOP_INSET := 16.0
+
+## How long the board takes to grow or shrink. Short on purpose — this happens every time the player
+## says anything, so it has to feel like the board answering rather than an animation being played
+## at them.
+const CHAT_REVEAL_TIME := Motion.DURATION_NORMAL
 
 ## A page or the chat dock has opened/closed. Lets a caller update its own UI (a chevron's glyph)
 ## without polling — used by `game_screen.gd` to flip the dock's expand button between ^ and v.
@@ -51,12 +63,16 @@ signal chat_expanded_changed(expanded: bool)
 signal breakpoint_changed(is_mobile: bool)
 
 ## Regions callers fill with content. [member base_layer] is always full-rect and always visible —
-## the map goes here and is never hidden by anything this class does. [member top_bar] and
-## [member dock] are plain containers a caller adds widgets to; [member chat_slot] is where a
-## caller permanently parents its one persistent expanded-chat [HudPanel] (see class doc above).
+## the map goes here and is never hidden by anything this class does. [member top_bar] is a plain
+## container a caller adds widgets to; [member chat_slot] holds the one [ChatDock], parented by
+## [method set_chat_dock] and never swapped or hidden.
+##
+## There is no separate `dock` region any more. The input line used to be a row below the stage,
+## spanning the whole window under the rail, while the conversation was a panel floating above it —
+## two frames that never lined up and read as two pieces of UI. Both are one board inside the stage
+## now; see [ChatDock].
 var base_layer: Control
 var top_bar: HBoxContainer
-var dock: VBoxContainer
 var chat_slot: Control
 
 var _rail: VBoxContainer
@@ -68,8 +84,18 @@ var _menu_list_box: VBoxContainer
 var _return_button: SkinnedButton
 var _mobile_menu_open := false
 
-var _dock_margin: MarginContainer
 var _last_keyboard_height := 0
+## Clearance the on-screen keyboard (or the navigation bar) needs under the conversation.
+var _keyboard_inset := 0.0
+
+## The conversation itself, parented into [member chat_slot] by [method set_chat_dock]. The shell
+## reads only its collapsed height and tells it when to show its expanded parts.
+var _chat_dock: ChatDock = null
+
+## 0 collapsed, 1 expanded — the value the open/close animation drives. Every chat geometry decision
+## reads it, so one tween moves the board and nothing else has to know it is moving.
+var _chat_reveal := 0.0
+var _chat_tween: Tween = null
 
 var _stage: Control
 var _page_slot: Control
@@ -107,14 +133,16 @@ func _process(_delta: float) -> void:
 	if height == _last_keyboard_height:
 		return
 	_last_keyboard_height = height
+	# The conversation is inside the stage now rather than in a row below it, so the keyboard's
+	# clearance is part of its own geometry — see `_layout_chat`.
 	# The keyboard's height is in *physical* pixels; this margin is in the stretched logical units
 	# `display/window/stretch/mode` puts the UI in (project.godot). Adding the raw number reserves
 	# far too much room — measured on an S26 Ultra, ~1.5x — leaving a dead band above the keyboard.
 	var window_height := float(DisplayServer.window_get_size().y)
 	var scale := get_viewport().get_visible_rect().size.y / window_height if window_height > 0.0 else 1.0
 	# The keyboard covers the navigation bar while it is up, so the two insets never add.
-	var below := maxi(int(height * scale), SafeArea.bottom(get_viewport()))
-	_dock_margin.add_theme_constant_override("margin_bottom", DOCK_BASE_MARGIN + below)
+	_keyboard_inset = float(maxi(int(height * scale), SafeArea.bottom(get_viewport())))
+	_relayout_stage()
 
 
 # --- building --------------------------------------------------------------------------------
@@ -181,16 +209,6 @@ func _build() -> void:
 	_gutter.mouse_default_cursor_shape = Control.CURSOR_VSIZE
 	_gutter.gui_input.connect(_on_gutter_gui_input)
 	_stage.add_child(_gutter)
-
-	_dock_margin = MarginContainer.new()
-	for side in ["left", "top", "right"]:
-		_dock_margin.add_theme_constant_override("margin_" + side, DOCK_BASE_MARGIN)
-	_dock_margin.add_theme_constant_override("margin_bottom",
-		DOCK_BASE_MARGIN + SafeArea.bottom(get_viewport()))
-	root.add_child(_dock_margin)
-	dock = VBoxContainer.new()
-	dock.add_theme_constant_override("separation", 6)
-	_dock_margin.add_child(dock)
 
 	# The mobile menu button floats over the stage, bottom-right (ux_plan.md §1.1's mobile re-flow).
 	# Parented to `_stage` and anchored, NOT to the shell: anchored to the shell it sits at the
@@ -340,8 +358,40 @@ func set_chat_expanded(expanded: bool) -> void:
 			hide_page()
 	else:
 		_open_order.erase("chat")
+	if _chat_dock != null:
+		_chat_dock.set_expanded(expanded)
+	_reveal_chat(1.0 if expanded else 0.0)
 	_relayout_stage()
 	chat_expanded_changed.emit(_chat_open)
+
+
+## Grow or shrink the board. The tween drives [member _chat_reveal] and re-runs the layout on each
+## step, so the animation and the resting geometry are the same code — there is no second path that
+## could put the board somewhere the layout would not.
+func _reveal_chat(to: float) -> void:
+	if _chat_tween != null and _chat_tween.is_valid():
+		_chat_tween.kill()
+	if not is_inside_tree():
+		_chat_reveal = to
+		return
+	_chat_tween = create_tween().set_ease(Motion.EASE).set_trans(Motion.TRANS)
+	_chat_tween.tween_method(_set_chat_reveal, _chat_reveal, to, CHAT_REVEAL_TIME)
+
+
+func _set_chat_reveal(value: float) -> void:
+	_chat_reveal = value
+	_relayout_stage()
+
+
+## Parent the conversation into the stage. It stays there for the shell's whole life — collapsed and
+## expanded are the same board at two heights, so there is nothing to swap in or out.
+func set_chat_dock(dock: ChatDock) -> void:
+	_chat_dock = dock
+	chat_slot.add_child(dock)
+	dock.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	dock.engaged.connect(func() -> void: set_chat_expanded(true))
+	dock.dismissed.connect(func() -> void: set_chat_expanded(false))
+	_relayout_stage()
 
 
 func is_chat_expanded() -> bool:
@@ -423,23 +473,80 @@ func _relayout_stage() -> void:
 	# occupies the stage, leave its content clean; on mobile the same action is in Menu, and on
 	# desktop it returns as soon as the player closes the overlay.
 	_map_layers_button.visible = not _is_mobile and not page_open and not _chat_open
-	_gutter.visible = false
-	if _event_active:
-		_fill(chat_slot)
-	elif _is_mobile:
-		if page_open:
-			_fill(_page_slot)
-		if _chat_open:
-			_fill(chat_slot)
-	elif page_open and _chat_open:
-		_gutter.visible = true
-		_layout_split(_split_fraction)
-	elif page_open:
+	# **The conversation is never hidden any more.** Collapsed it is the same board showing only its
+	# bottom section, which is what makes opening it look like one piece growing rather than a second
+	# panel arriving. Only the page still comes and goes.
+	_gutter.visible = not _is_mobile and page_open and _chat_open and not _event_active
+	if page_open and not (_is_mobile or _event_active):
+		_layout_page_above_split(_split_fraction if _chat_open else 1.0)
+	else:
 		_fill(_page_slot)
-	elif _chat_open:
-		_fill(chat_slot)
+	_layout_chat(page_open)
 	_page_slot.visible = page_open
-	chat_slot.visible = _chat_open
+
+
+## Where the board's top edge sits, measured up from the stage's bottom, at each end of the reveal —
+## and wherever the tween currently has it in between. Both ends are expressed the same way, against
+## the same edge, which is what makes one `lerp` enough to animate the whole thing.
+func _layout_chat(page_open: bool) -> void:
+	var side := 0.0 if _is_mobile else CHAT_SIDE_INSET
+	var bottom := CHAT_BOTTOM_INSET + _keyboard_inset
+	chat_slot.anchor_left = 0.0
+	chat_slot.anchor_right = 1.0
+	chat_slot.anchor_top = 1.0
+	chat_slot.anchor_bottom = 1.0
+	chat_slot.offset_left = side
+	chat_slot.offset_right = -side
+	chat_slot.offset_bottom = -bottom
+
+	var collapsed := _collapsed_chat_height() + bottom
+	var stage_height := _stage.size.y
+	var expanded := stage_height - CHAT_TOP_INSET
+	# Sharing the stage with a page (desktop rule 1): the board's ceiling is the split instead of the
+	# top of the stage. Event mode ignores the split — an unresolved decision owns the screen.
+	if page_open and not _is_mobile and not _event_active:
+		expanded = stage_height * (1.0 - _split_fraction) - SPLIT_GUTTER_SIZE * 0.5
+	chat_slot.offset_top = -maxf(collapsed, lerpf(collapsed, expanded, _chat_reveal))
+
+	# **The two floating plates ride on top of the board.** They are anchored to the stage's
+	# bottom-right corner, which used to be free map and is now where the conversation lives — the
+	# mobile Menu plate landed squarely on the send button, which is the same collision ux_plan.md
+	# already recorded once when the dock was a row of its own. Riding the board's edge also means
+	# they move with the reveal instead of being covered halfway through it.
+	_float_above_chat(_menu_button)
+	_float_above_chat(_map_layers_button)
+
+
+func _float_above_chat(button: Control) -> void:
+	var height := button.get_combined_minimum_size().y
+	button.offset_bottom = chat_slot.offset_top - MENU_BUTTON_MARGIN
+	button.offset_top = button.offset_bottom - height
+
+
+## The page's half of a split. [param bottom_frac] of 1.0 is "the page has the stage to itself",
+## which is what it gets while the conversation is only a strip along the bottom.
+func _layout_page_above_split(bottom_frac: float) -> void:
+	_page_slot.anchor_left = 0.0
+	_page_slot.anchor_right = 1.0
+	_page_slot.anchor_top = 0.0
+	_page_slot.anchor_bottom = bottom_frac
+	_page_slot.offset_left = 0.0
+	_page_slot.offset_right = 0.0
+	_page_slot.offset_top = 0.0
+	_page_slot.offset_bottom = 0.0 if is_equal_approx(bottom_frac, 1.0) else -SPLIT_GUTTER_SIZE * 0.5
+
+	_gutter.anchor_left = 0.0
+	_gutter.anchor_right = 1.0
+	_gutter.anchor_top = bottom_frac
+	_gutter.anchor_bottom = bottom_frac
+	_gutter.offset_left = 0.0
+	_gutter.offset_right = 0.0
+	_gutter.offset_top = -SPLIT_GUTTER_SIZE * 0.5
+	_gutter.offset_bottom = SPLIT_GUTTER_SIZE * 0.5
+
+
+func _collapsed_chat_height() -> float:
+	return _chat_dock.collapsed_height if _chat_dock != null else UiSkin.CONTROL_HEIGHT
 
 
 func _fill(control: Control) -> void:
@@ -451,38 +558,6 @@ func _fill(control: Control) -> void:
 	control.offset_right = 0.0
 	control.offset_top = 0.0
 	control.offset_bottom = 0.0
-
-
-## Rule 1 (desktop, both open -> half height each) + rule 2 (draggable to any position): page takes
-## the top [param top_frac] of the stage, chat the rest, with a fixed-thickness gutter between them
-## regardless of the stage's own height.
-func _layout_split(top_frac: float) -> void:
-	_page_slot.anchor_left = 0.0
-	_page_slot.anchor_right = 1.0
-	_page_slot.anchor_top = 0.0
-	_page_slot.anchor_bottom = top_frac
-	_page_slot.offset_left = 0.0
-	_page_slot.offset_right = 0.0
-	_page_slot.offset_top = 0.0
-	_page_slot.offset_bottom = -SPLIT_GUTTER_SIZE * 0.5
-
-	_gutter.anchor_left = 0.0
-	_gutter.anchor_right = 1.0
-	_gutter.anchor_top = top_frac
-	_gutter.anchor_bottom = top_frac
-	_gutter.offset_left = 0.0
-	_gutter.offset_right = 0.0
-	_gutter.offset_top = -SPLIT_GUTTER_SIZE * 0.5
-	_gutter.offset_bottom = SPLIT_GUTTER_SIZE * 0.5
-
-	chat_slot.anchor_left = 0.0
-	chat_slot.anchor_right = 1.0
-	chat_slot.anchor_top = top_frac
-	chat_slot.anchor_bottom = 1.0
-	chat_slot.offset_left = 0.0
-	chat_slot.offset_right = 0.0
-	chat_slot.offset_top = SPLIT_GUTTER_SIZE * 0.5
-	chat_slot.offset_bottom = 0.0
 
 
 func _on_gutter_gui_input(event: InputEvent) -> void:

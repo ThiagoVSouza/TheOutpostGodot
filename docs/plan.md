@@ -787,6 +787,27 @@ green. **Still deferred:** module-pick screen + a module-config-driven wizard
 (nothing to configure yet — this wizard's fields are all base_game's); Settings/Help/News screens;
 legacy background art per card.
 
+**The conversation becomes one piece — done (2026-07-31).** It was two frames that only looked like
+one thing by accident: a panel floating over the map, and below it an input bar spanning the whole
+window *under the rail*, with a different material and an edge that never lined up. New art from the
+user (`chat_frame`, `chat_text_area`, `chat_input`, `chat_send_button`) is now a single `ChatDock` —
+a dark board carrying a parchment sheet and a parchment field, **deliberately the one thing in the
+game that is not parchment**, because the chrome frames the window and this is an object lying on the
+map. Collapsed is the same board showing only its bottom section, so opening the conversation grows
+it rather than putting a second panel on screen. Clicking the board, clicking the field, or Enter all
+expand it and put the caret in the field; the header's ✕ or Esc puts it away; the whole move is one
+tween of a single `_chat_reveal` value that the layout reads, so the animation and the resting
+geometry are the same code. Desktop insets it from the rail and the window edge, mobile runs it full
+width. **`HudShell` lost its `dock` region entirely** — the input lives inside the stage now, which
+is what let the board sit in from the rail at all, and the keyboard clearance moved onto the board's
+own geometry. Two things that fell out of that move: the floating Menu and Map Layers plates are
+anchored to the stage's bottom-right corner, which is now *where the board is*, so they ride above
+its top edge (the mobile Menu plate had landed squarely on the send button — the same collision
+ux_plan.md already recorded once); and focus opens the board, so `_set_busy`'s habit of grabbing the
+caret between turns was opening the conversation on the way into a new game, over the map the player
+had just picked a site on. The Main Menu page — the last unskinned controls in the game — is painted
+plates now too. 445 green.
+
 **The game screen joins the painted skin — done (2026-07-30).** M8 shipped the in-game shell's
 *structure* and never dressed it: `game_screen.gd`, `hud_shell.gd`, `hud_panel.gd` and
 `chat_message_list.gd` between them made **zero** `UiSkin` calls, so everything inside the game ran
