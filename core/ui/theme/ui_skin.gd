@@ -65,6 +65,41 @@ const TAB_FONT_SIZE := FONT_SMALL
 ## rather than something you press. Its border is ~5px, so 10 carries the corner.
 const INPUT_TEXTURE := preload("res://core/assets/ui/input_background.png")
 
+## The in-game top bar, carried over from the legacy build along with the icons that stand in its
+## slots. Parchment in a dark metal channel with a notched right end — the shape the wireframe draws,
+## already painted, rather than a plain strip of the page's own frame standing in for it.
+const TOP_BAR_TEXTURE := preload("res://core/assets/ui/game_top_bar.png")
+const COIN_ICON := preload("res://core/assets/ui/icon_coins.png")
+const POPULATION_ICON := preload("res://core/assets/ui/icon_population.png")
+## Indexed by [code]TimeDriver.Speed[/code]: paused, 1x, 2x, 3x.
+const SPEED_ICONS := [
+	preload("res://core/assets/ui/icon_speed_pause.png"),
+	preload("res://core/assets/ui/icon_speed_slow.png"),
+	preload("res://core/assets/ui/icon_speed_medium.png"),
+	preload("res://core/assets/ui/icon_speed_fast.png"),
+]
+
+## How tall the bar is drawn. The art is resampled to exactly this ([method top_bar_style]) so its
+## channel keeps the proportion it was painted at — a nine-patch draws its border at the source's own
+## pixel size, and a 29px rail off a 188px-tall bar would be a third of the height of ours.
+const TOP_BAR_HEIGHT := 96.0
+
+## Measured off `game_top_bar.png` at its own size: the thin rail along the top, the deeper one along
+## the bottom, and enough of either end to carry the moulding and the notched right corner.
+const TOP_BAR_SLICE_TOP := 10.0
+const TOP_BAR_SLICE_BOTTOM := 34.0
+const TOP_BAR_SLICE_SIDE := 30.0
+
+## Room for the lettering inside the channel: clear of the bottom rail, and clear of the notch at the
+## right-hand end.
+const TOP_BAR_PADDING_TOP := 6.0
+const TOP_BAR_PADDING_BOTTOM := 20.0
+const TOP_BAR_PADDING_SIDE := 24.0
+
+## The coin and the head beside their numbers, and the glyph on a speed plate.
+const TOP_BAR_ICON_SIZE := 34
+const SPEED_ICON_SIZE := 30
+
 ## The conversation's own art. **The one thing in the game that is not parchment**: a dark board with
 ## a metal edge, carrying a parchment sheet and a parchment field on it. That is deliberate — the
 ## chrome frames the window, and this is an object lying on the map, so it reads as one piece whether
@@ -497,6 +532,36 @@ static func chrome_style(padding: float = CHROME_PADDING) -> StyleBoxTexture:
 	var style := frame_style()
 	style.set_content_margin_all(padding)
 	return style
+
+
+## The in-game top bar's channel.
+##
+## Resampled to [constant TOP_BAR_HEIGHT] before it is sliced, for the reason
+## [method chat_frame_style] spells out: a nine-patch draws its border at the source's own pixel
+## size, so the art's 29px bottom rail would land as a 29-unit slab under a 96-unit bar. Scaling the
+## whole image keeps the channel in the proportion it was painted at, and the slices come down with
+## it. The sides are sliced wide enough to carry the notch on the right-hand end intact.
+static func top_bar_style() -> StyleBoxTexture:
+	var style := StyleBoxTexture.new()
+	var scale := TOP_BAR_HEIGHT / TOP_BAR_TEXTURE.get_size().y
+	style.texture = scaled_texture(TOP_BAR_TEXTURE,
+		Vector2i((TOP_BAR_TEXTURE.get_size() * scale).round()))
+	style.texture_margin_top = TOP_BAR_SLICE_TOP * scale
+	style.texture_margin_bottom = TOP_BAR_SLICE_BOTTOM * scale
+	style.texture_margin_left = TOP_BAR_SLICE_SIDE * scale
+	style.texture_margin_right = TOP_BAR_SLICE_SIDE * scale
+	style.axis_stretch_horizontal = StyleBoxTexture.AXIS_STRETCH_MODE_STRETCH
+	style.axis_stretch_vertical = StyleBoxTexture.AXIS_STRETCH_MODE_STRETCH
+	style.content_margin_top = TOP_BAR_PADDING_TOP
+	style.content_margin_bottom = TOP_BAR_PADDING_BOTTOM
+	style.content_margin_left = TOP_BAR_PADDING_SIDE
+	style.content_margin_right = TOP_BAR_PADDING_SIDE
+	return style
+
+
+## One of the bar's icons at the size the bar wants it, rather than the size it was drawn at.
+static func top_bar_icon(texture: Texture2D, size: int = TOP_BAR_ICON_SIZE) -> Texture2D:
+	return scaled_texture(texture, Vector2i(size, size))
 
 
 ## The board the whole conversation sits on — the outer piece, holding the sheet and the field.

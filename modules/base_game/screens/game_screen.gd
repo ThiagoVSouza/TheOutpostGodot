@@ -250,11 +250,14 @@ func _build_top_bar() -> void:
 	domain_level_label.text = "Outpost"
 	identity.add_child(domain_level_label)
 
+	# **The icons the words were standing in for.** ux_plan.md §5 called "Gold"/"Population" a
+	# placeholder for the wireframe's icon slots; the legacy build's coin and head fill them, and the
+	# bar stops needing a different type size on a phone to fit two whole nouns.
+	bar.add_child(_bar_icon(UiSkin.COIN_ICON, "Coins"))
 	_gold_label = _bar_label(UiSkin.FONT_BODY)
-	_gold_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	bar.add_child(_gold_label)
+	bar.add_child(_bar_icon(UiSkin.POPULATION_ICON, "Population"))
 	_population_label = _bar_label(UiSkin.FONT_BODY)
-	_population_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	bar.add_child(_population_label)
 
 	var spacer := Control.new()
@@ -272,19 +275,30 @@ func _build_top_bar() -> void:
 	for speed in [TimeDriver.Speed.PAUSED, TimeDriver.Speed.SPEED_1,
 			TimeDriver.Speed.SPEED_2, TimeDriver.Speed.SPEED_3]:
 		var button := Button.new()
-		button.text = ["||", ">", ">>", ">>>"][speed]
+		button.icon = UiSkin.top_bar_icon(UiSkin.SPEED_ICONS[speed], UiSkin.SPEED_ICON_SIZE)
 		button.toggle_mode = true
 		button.tooltip_text = ["Pause", "Speed 1", "Speed 2", "Speed 3"][speed]
 		UiSkin.apply_card(button)
 		button.add_theme_stylebox_override("pressed", UiSkin.input_style(UiSkin.PRESSED_TINT))
 		button.add_theme_stylebox_override("hover_pressed", UiSkin.input_style(UiSkin.PRESSED_TINT))
-		button.add_theme_font_size_override("font_size", UiSkin.FONT_SMALL)
 		button.custom_minimum_size = Vector2(SPEED_BUTTON_WIDTH, UiSkin.CONTROL_HEIGHT)
 		button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		button.pressed.connect(_set_time_speed.bind(speed))
 		bar.add_child(button)
 		_speed_buttons[speed] = button
 	_refresh_time_buttons()
+
+
+## One of the top bar's icon slots — the coin, the head. A [TextureRect] rather than a [Label] with a
+## glyph in it, so the art is the art.
+func _bar_icon(texture: Texture2D, tooltip: String) -> TextureRect:
+	var icon := TextureRect.new()
+	icon.texture = UiSkin.top_bar_icon(texture)
+	icon.tooltip_text = tooltip
+	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	icon.custom_minimum_size = Vector2(UiSkin.TOP_BAR_ICON_SIZE, UiSkin.TOP_BAR_ICON_SIZE)
+	icon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	return icon
 
 
 ## A line of lettering on the game's own parchment chrome.
@@ -801,14 +815,13 @@ func _refresh_day() -> void:
 ## number nothing computes yet. Neutral-coloured on purpose — green/red would claim a real signal.
 func _refresh_resources() -> void:
 	var resources: Dictionary = Kernel.state.get_value("resources", {})
-	# The wireframe puts an icon before each number and no word at all; until that art exists the
-	# word stands in for the icon, and on a phone it is the first thing to go — a bar that runs off
-	# the screen takes the date and the speed control with it.
+	# The icon says which number this is, so the label is the number. The placeholder "+0" delta
+	# ux_plan.md §5 asks for goes beside it on a screen wide enough to hold one.
 	var compact := _shell != null and _shell.size.x < HudShell.MOBILE_BREAKPOINT_WIDTH
 	var gold := int(resources.get("gold", 0))
 	var population := int(resources.get("population", 0))
-	_gold_label.text = "%d" % gold if compact else "Gold %d  +0" % gold
-	_population_label.text = "%d" % population if compact else "Population %d  +0" % population
+	_gold_label.text = "%d" % gold if compact else "%d  +0" % gold
+	_population_label.text = "%d" % population if compact else "%d  +0" % population
 
 
 func _append(bbcode: String) -> void:

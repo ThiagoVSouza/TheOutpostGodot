@@ -170,7 +170,10 @@ func _build() -> void:
 	# the border-only thin frame was tried first — leaves the dark background showing through and the
 	# strip reads as a dark panel with a gold edge, which is the look this replaces.
 	var top_plate := PanelContainer.new()
-	top_plate.add_theme_stylebox_override("panel", UiSkin.chrome_style())
+	# The legacy build's own painted bar rather than a strip cut from the page's frame: parchment in a
+	# dark metal channel with a notched end, which is the shape the wireframe draws.
+	top_plate.add_theme_stylebox_override("panel", UiSkin.top_bar_style())
+	top_plate.custom_minimum_size.y = UiSkin.TOP_BAR_HEIGHT
 	root.add_child(top_plate)
 	top_bar = HBoxContainer.new()
 	top_bar.add_theme_constant_override("separation", 16)
