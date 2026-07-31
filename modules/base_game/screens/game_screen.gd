@@ -233,8 +233,13 @@ func _refresh_map_marker() -> void:
 ## button here — it only retires once Phase 4's `TimeDriver` replaces it with the four speeds.
 func _build_top_bar() -> void:
 	var bar := _shell.top_bar
+	# The poleless cut here: the bar is a shallow strip, and at the tall aspect nearly all of what fits
+	# in it is pole. The map pin keeps the full banner — a flag on a pole is what a pin should look
+	# like — so the two cuts are used for what each is for rather than one being a fallback.
 	_flag_view = FlagView.new()
-	_flag_view.custom_minimum_size = Vector2(HEADER_FLAG_WIDTH, HEADER_FLAG_WIDTH * FlagView.aspect())
+	_flag_view.short = true
+	_flag_view.custom_minimum_size = Vector2(
+		HEADER_FLAG_WIDTH, HEADER_FLAG_WIDTH * FlagView.aspect(true))
 	_flag_view.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	bar.add_child(_flag_view)
 

@@ -10,11 +10,20 @@ extends ColorRect
 const SHADER := preload("res://modules/base_game/ui/flag.gdshader")
 const BASE_TEX := preload("res://modules/base_game/assets/ui/flag_base.png")
 const EFFECT_TEX := preload("res://modules/base_game/assets/ui/flag_effect.png")
+## The same banner without its pole, and shorter for it — the legacy build's own second cut of the
+## art. A flag hung in a strip of chrome is nearly all pole and nearly no cloth at the tall aspect;
+## this one spends its height on the thing the player chose.
+const BASE_TEX_SHORT := preload("res://modules/base_game/assets/ui/flag_base_short.png")
+const EFFECT_TEX_SHORT := preload("res://modules/base_game/assets/ui/flag_effect_short.png")
 const PATTERN_DIR := "res://modules/base_game/assets/flags/patterns/"
 const EMBLEM_DIR := "res://modules/base_game/assets/flags/emblems/"
 
 # Texture cache shared across every FlagView, keyed by resource path.
 static var _tex_cache: Dictionary = {}
+
+## Draw the poleless cut. Set before the view enters the tree: the textures are chosen once, when
+## the material is built.
+var short := false
 
 var _value: FlagValue = FlagValue.new()
 var _material: ShaderMaterial
@@ -23,8 +32,11 @@ var _material: ShaderMaterial
 ## The flag art's height as a multiple of its width. Callers that want a flag at a given width size
 ## it as `Vector2(w, w * FlagView.aspect())`; the cloth is then never stretched, and no screen has
 ## to carry the art's pixel dimensions around as a literal.
-static func aspect() -> float:
-	var size := EFFECT_TEX.get_size()
+##
+## [param short] answers for the poleless cut, which is a different shape — 1.68 against 2.11 — so a
+## caller that sets [member short] has to size itself from the same argument.
+static func aspect(short: bool = false) -> float:
+	var size := (EFFECT_TEX_SHORT if short else EFFECT_TEX).get_size()
 	return size.y / maxf(size.x, 1.0)
 
 
@@ -37,14 +49,15 @@ func _init() -> void:
 func _ready() -> void:
 	_material = ShaderMaterial.new()
 	_material.shader = SHADER
-	_material.set_shader_parameter("base_tex", BASE_TEX)
-	_material.set_shader_parameter("effect_tex", EFFECT_TEX)
-	_material.set_shader_parameter("flag_hw", aspect())
+	_material.set_shader_parameter("base_tex", BASE_TEX_SHORT if short else BASE_TEX)
+	_material.set_shader_parameter("effect_tex", EFFECT_TEX_SHORT if short else EFFECT_TEX)
+	# The emblem is kept square against the cloth's own proportion, so this has to follow the cut.
+	_material.set_shader_parameter("flag_hw", aspect(short))
 	material = _material
 	# A sensible default footprint in the flag's own aspect; callers can override.
 	if custom_minimum_size == Vector2.ZERO:
 		var w := 120.0
-		custom_minimum_size = Vector2(w, w * aspect())
+		custom_minimum_size = Vector2(w, w * aspect(short))
 	_apply()
 
 
