@@ -24,50 +24,59 @@ func _ready() -> void:
 	# `_and_offsets_` fills continuously as the parent resizes rather than baking in that rect
 	# (the trap `map_overlay.gd` documented and ux_plan.md §7 carries forward).
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	# Panels need to read as a layer above the dark map rather than as another patch of the same
-	# background. The theme gives controls their states; this gives the code-built panel itself a
-	# clearly distinct blue-slate surface.
-	ShellPalette.paint(self, OutpostTheme.SURFACE)
+
+	# **A page in here is the same object as a page in the wizard.** It was a flat blue-slate surface
+	# from [ShellPalette] while every screen outside the game was painted parchment, which made the
+	# game look like a different product from its own menus. The shadow is a sibling plate behind the
+	# frame, exactly as the wizard's page builds it: a [StyleBoxTexture] cannot cast one.
+	var shadow := PanelContainer.new()
+	shadow.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	shadow.add_theme_stylebox_override("panel", UiSkin.frame_shadow_style())
+	add_child(shadow)
+
+	var plate := PanelContainer.new()
+	plate.add_theme_stylebox_override("panel", UiSkin.frame_style())
+	shadow.add_child(plate)
 
 	var outer := VBoxContainer.new()
-	outer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	outer.add_theme_constant_override("separation", 0)
-	add_child(outer)
+	plate.add_child(outer)
 
-	var header_margin := MarginContainer.new()
-	for side in ["left", "top", "right"]:
-		header_margin.add_theme_constant_override("margin_" + side, 16)
-	header_margin.add_theme_constant_override("margin_bottom", 8)
-	outer.add_child(header_margin)
-
+	# The frame's own texture carries the outer padding, so these are only the gaps *between* the
+	# header, its rule and the body.
 	var header := HBoxContainer.new()
 	header.add_theme_constant_override("separation", 12)
-	header_margin.add_child(header)
+	outer.add_child(header)
 
 	_title_label = Label.new()
-	_title_label.add_theme_font_size_override("font_size", 20)
+	# Ink, not [method UiSkin.label_style]: that paints the cream caption a dark button plate needs,
+	# and cream on parchment is barely there.
+	_title_label.add_theme_font_size_override("font_size", UiSkin.FONT_HEADING)
+	_title_label.add_theme_color_override("font_color", UiSkin.INK)
 	_title_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	header.add_child(_title_label)
 
 	var close := Button.new()
-	close.text = "✕"  # ✕
+	close.text = "✕"
 	close.tooltip_text = "Close"
+	UiSkin.apply_input(close)
+	close.add_theme_font_size_override("font_size", UiSkin.FONT_BODY)
+	close.custom_minimum_size = Vector2(UiSkin.CONTROL_HEIGHT, UiSkin.CONTROL_HEIGHT)
 	close.pressed.connect(func() -> void: dismissed.emit())
 	header.add_child(close)
 
-	outer.add_child(HSeparator.new())
-
-	var body_margin := MarginContainer.new()
-	body_margin.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	for side in ["left", "right", "bottom"]:
-		body_margin.add_theme_constant_override("margin_" + side, 16)
-	body_margin.add_theme_constant_override("margin_top", 12)
-	outer.add_child(body_margin)
+	var rule_margin := MarginContainer.new()
+	rule_margin.add_theme_constant_override("margin_top", 10)
+	rule_margin.add_theme_constant_override("margin_bottom", 10)
+	outer.add_child(rule_margin)
+	var rule := HSeparator.new()
+	rule.add_theme_stylebox_override("separator", UiSkin.separator_style())
+	rule_margin.add_child(rule)
 
 	body = VBoxContainer.new()
 	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	body.add_theme_constant_override("separation", 8)
-	body_margin.add_child(body)
+	outer.add_child(body)
 
 
 func set_title(text: String) -> void:

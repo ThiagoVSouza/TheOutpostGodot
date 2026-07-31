@@ -20,7 +20,10 @@ func test_seven_destinations_fill_the_rail_and_mobile_adds_map_layers_and_return
 	assert_eq(rail.get_child_count(), 7, "the desktop rail contains the seven game destinations")
 	assert_eq(mobile_menu.get_child_count(), 9,
 		"mobile contains those seven, Map Layers, and Return")
-	assert_eq((mobile_menu.get_child(-1) as Button).text, "Return", "Return stays at the foot of the list")
+	# A destination is a painted plate now, so its caption is the plate's own [Label] — a
+	# [SkinnedButton] draws no text of its own (only a [Label] can carry the font shadow).
+	assert_eq((mobile_menu.get_child(-1) as SkinnedButton).label.text, "Return",
+		"Return stays at the foot of the list")
 
 
 func test_domain_page_is_built_from_the_registry_and_reads_current_state() -> void:

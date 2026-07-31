@@ -15,7 +15,28 @@ extends Control
 ## `"base_game.chat"` by exactly these names. Keeping them is Phase 1's "nothing may regress"
 ## promise kept literally, rather than by updating every caller.
 
-const HEADER_FLAG_WIDTH := 26.0
+## Conversation colours, as hex because they are BBCode inside a message rather than a theme
+## override on a control. `wheat`, `gray`, `orange` and the rest were picked for a dark panel — on
+## parchment `wheat` is very nearly the paper itself, which is what made the narrated opening the
+## palest thing on the page. The player's own lines and the game master's keep their old tags: those
+## two go only to the hidden semantic log `_append` filters by that exact text.
+
+## The banner in the top bar. Sized to the identity block beside it rather than to the old dark
+## bar's 16px caption — a 26-unit flag next to [constant UiSkin.FONT_BODY] lettering read as a smudge.
+const HEADER_FLAG_WIDTH := 44.0
+
+## Wide enough for ">>>" with room around it, and identical across all four so the row reads as one
+## switch rather than four buttons of increasing importance.
+const SPEED_BUTTON_WIDTH := 64.0
+## The dock's plate holds its contents closer to the rail than a page does: it is a strip across the
+## bottom of the screen, and a page's padding there would cost the map a band of height for nothing.
+const DOCK_PLATE_PADDING := 10.0
+
+## Wide enough that "Yes" and "No" are the same plate — an answer whose halves are different sizes
+## reads as one of them being the expected one.
+const ANSWER_BUTTON_WIDTH := 130.0
+const SEND_BUTTON_WIDTH := 150.0
+
 const MARKER_FLAG_WIDTH := 30.0
 const MAIN_MENU_PAGE_ID := "main_menu"
 const MAP_LAYERS_PAGE_ID := "map_layers"
@@ -32,8 +53,8 @@ var _date_label: Label
 var _log_label: RichTextLabel
 var _message_list: ChatMessageList
 var _input: LineEdit
-var _send_button: Button
-var _retry_button: Button
+var _send_button: SkinnedButton
+var _retry_button: SkinnedButton
 var _chat_expand_button: Button
 var _event_image: Control
 var _speed_buttons: Dictionary = {}
@@ -155,7 +176,7 @@ func _play_opening() -> void:
 	if prose.is_empty():
 		# The narrator produced nothing (an outage, or the base stub): a fresh game still opens.
 		prose = "The King has granted you the outpost. Make it endure."
-	_append("[color=wheat]%s[/color]" % prose)
+	_append(prose)
 	Kernel.state.set_value("opening", {})  # played once; do not replay on remount
 	_set_busy(false)
 
@@ -221,39 +242,68 @@ func _build_top_bar() -> void:
 
 	var identity := VBoxContainer.new()
 	identity.add_theme_constant_override("separation", 0)
+	identity.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	bar.add_child(identity)
-	_outpost_label = Label.new()
-	_outpost_label.add_theme_font_size_override("font_size", 16)
+	_outpost_label = _bar_label(UiSkin.FONT_BODY)
 	identity.add_child(_outpost_label)
-	var domain_level := Label.new()
 	# The growth axis the wireframe implies (Outpost -> Village -> Town -> ...) has no system
 	# behind it yet — a fixed tier, not a computed one, until M7 designs the ladder (ux_plan.md §5).
-	domain_level.text = "Outpost"
-	domain_level.modulate = OutpostTheme.TEXT_MUTED
-	domain_level.add_theme_font_size_override("font_size", 12)
-	identity.add_child(domain_level)
+	var domain_level_label := _bar_label(UiSkin.FONT_SMALL, true)
+	domain_level_label.text = "Outpost"
+	identity.add_child(domain_level_label)
 
-	_gold_label = Label.new()
+	_gold_label = _bar_label(UiSkin.FONT_BODY)
+	_gold_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	bar.add_child(_gold_label)
-	_population_label = Label.new()
+	_population_label = _bar_label(UiSkin.FONT_BODY)
+	_population_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	bar.add_child(_population_label)
 
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	bar.add_child(spacer)
 
-	_date_label = Label.new()
+	_date_label = _bar_label(UiSkin.FONT_BODY)
+	_date_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	bar.add_child(_date_label)
+	# The four speeds are a pick-one, so they are the skin's field plates rather than button plates —
+	# a `SkinnedButton` has no state that stays down. **The pressed box has to be overridden after
+	# `apply_card`**: a card's selection is the glow its host panel draws, so `apply_card` leaves
+	# `pressed` looking exactly like `normal`, and four identical plates would never say which speed
+	# is running. Pushed-in is the right mark here anyway — this is a switch, not a card.
 	for speed in [TimeDriver.Speed.PAUSED, TimeDriver.Speed.SPEED_1,
 			TimeDriver.Speed.SPEED_2, TimeDriver.Speed.SPEED_3]:
 		var button := Button.new()
 		button.text = ["||", ">", ">>", ">>>"][speed]
 		button.toggle_mode = true
 		button.tooltip_text = ["Pause", "Speed 1", "Speed 2", "Speed 3"][speed]
+		UiSkin.apply_card(button)
+		button.add_theme_stylebox_override("pressed", UiSkin.input_style(UiSkin.PRESSED_TINT))
+		button.add_theme_stylebox_override("hover_pressed", UiSkin.input_style(UiSkin.PRESSED_TINT))
+		button.add_theme_font_size_override("font_size", UiSkin.FONT_SMALL)
+		button.custom_minimum_size = Vector2(SPEED_BUTTON_WIDTH, UiSkin.CONTROL_HEIGHT)
+		button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		button.pressed.connect(_set_time_speed.bind(speed))
 		bar.add_child(button)
 		_speed_buttons[speed] = button
 	_refresh_time_buttons()
+
+
+## A line of lettering on the game's own parchment chrome.
+##
+## **Not [method UiSkin.label_style]**, which is for a caption on a dark button plate: it paints the
+## cream ink and the drop shadow that make text readable *there*, and cream on parchment is very
+## nearly invisible. This is the same ink the wizard's field labels use.
+func _bar_label(font_size: int, muted: bool = false) -> Label:
+	var label := Label.new()
+	_ink(label, font_size, muted)
+	label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	return label
+
+
+func _ink(label: Label, font_size: int, muted: bool = false) -> void:
+	label.add_theme_font_size_override("font_size", font_size)
+	label.add_theme_color_override("font_color", UiSkin.INK_MUTED if muted else UiSkin.INK)
 
 
 ## The expanded-chat shape (ux_plan.md §1.2 state 2): built once and kept parented under
@@ -265,16 +315,15 @@ func _build_chat_panel() -> void:
 	_chat_panel.set_title("Conversation")
 	_chat_panel.dismissed.connect(func() -> void: _shell.set_chat_expanded(false))
 
+	# The slot art will hang in is a mount, so it is drawn as one: the thin frame, empty, with the
+	# note inside saying what belongs there. It was a dark rounded rectangle from the old theme —
+	# the one remaining piece of chrome that would still have looked borrowed once the panel around
+	# it was parchment.
 	var event_image := PanelContainer.new()
 	_event_image = event_image
-	event_image.custom_minimum_size = Vector2(0, 120)
+	event_image.custom_minimum_size = Vector2(0, 140)
 	event_image.tooltip_text = "Event artwork"
-	var event_style := StyleBoxFlat.new()
-	event_style.bg_color = Color(0.09, 0.10, 0.14)
-	event_style.border_color = OutpostTheme.BORDER
-	event_style.set_border_width_all(1)
-	event_style.set_corner_radius_all(OutpostTheme.CORNER_RADIUS)
-	event_image.add_theme_stylebox_override("panel", event_style)
+	event_image.add_theme_stylebox_override("panel", UiSkin.thin_frame_style())
 	_chat_panel.body.add_child(event_image)
 	var placeholder := VBoxContainer.new()
 	placeholder.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -282,12 +331,12 @@ func _build_chat_panel() -> void:
 	var placeholder_title := Label.new()
 	placeholder_title.text = "Event illustration"
 	placeholder_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	placeholder_title.add_theme_color_override("font_color", OutpostTheme.TEXT_MUTED)
+	_ink(placeholder_title, UiSkin.FONT_BODY, true)
 	placeholder.add_child(placeholder_title)
 	var placeholder_note := Label.new()
 	placeholder_note.text = "Artwork arrives with the authored event."
 	placeholder_note.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	placeholder_note.add_theme_color_override("font_color", OutpostTheme.TEXT_DISABLED)
+	_ink(placeholder_note, UiSkin.FONT_SMALL, true)
 	placeholder.add_child(placeholder_note)
 
 	_message_list = ChatMessageList.new()
@@ -307,47 +356,76 @@ func _build_chat_panel() -> void:
 func _build_dock() -> void:
 	var dock := _shell.dock
 
+	# The dock sits on the map, so it carries its own plate: an input line and two plates floating on
+	# the terrain had nothing holding them together.
+	var plate := PanelContainer.new()
+	plate.add_theme_stylebox_override("panel", UiSkin.chrome_style(DOCK_PLATE_PADDING))
+	dock.add_child(plate)
+	var rows := VBoxContainer.new()
+	rows.add_theme_constant_override("separation", 8)
+	plate.add_child(rows)
+
 	_pending_row = HBoxContainer.new()
+	_pending_row.add_theme_constant_override("separation", 8)
 	_pending_row.visible = false
-	dock.add_child(_pending_row)
+	rows.add_child(_pending_row)
 	_pending_label = Label.new()
+	_ink(_pending_label, UiSkin.FONT_BODY)
+	_pending_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_pending_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_pending_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	_pending_row.add_child(_pending_label)
-	var yes := Button.new()
-	yes.text = "Yes"
+	var yes := SkinnedButton.create("Yes", UiSkin.GREEN, UiSkin.CONTROL_HEIGHT,
+		UiSkin.CONTROL_FONT_SIZE)
+	yes.custom_minimum_size.x = ANSWER_BUTTON_WIDTH
 	yes.pressed.connect(func() -> void: await _answer(true))
 	_pending_row.add_child(yes)
-	var no := Button.new()
-	no.text = "No"
+	var no := SkinnedButton.create("No", UiSkin.RED, UiSkin.CONTROL_HEIGHT, UiSkin.CONTROL_FONT_SIZE)
+	no.custom_minimum_size.x = ANSWER_BUTTON_WIDTH
 	no.pressed.connect(func() -> void: await _answer(false))
 	_pending_row.add_child(no)
 
 	var input_row := HBoxContainer.new()
-	dock.add_child(input_row)
+	input_row.add_theme_constant_override("separation", 8)
+	rows.add_child(input_row)
+	# The chevron is the skin's own select arrow rather than the characters "^" and "v", which is
+	# what it has been standing in for since Phase 3.
 	_chat_expand_button = Button.new()
-	_chat_expand_button.text = "^"
 	_chat_expand_button.tooltip_text = "Show conversation"
+	UiSkin.apply_input(_chat_expand_button)
+	_chat_expand_button.custom_minimum_size = Vector2(UiSkin.CONTROL_HEIGHT, UiSkin.CONTROL_HEIGHT)
 	_chat_expand_button.pressed.connect(
 		func() -> void: _shell.set_chat_expanded(not _shell.is_chat_expanded()))
 	input_row.add_child(_chat_expand_button)
+	_set_chevron(false)
 	_input = LineEdit.new()
 	_input.placeholder_text = "e.g. I send scouts to forage the hills"
+	UiSkin.apply_line_edit(_input)
 	_input.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_input.text_submitted.connect(_on_submit)
 	input_row.add_child(_input)
-	_send_button = Button.new()
-	_send_button.text = "Send"
+	_send_button = SkinnedButton.create("Send", UiSkin.BLUE, UiSkin.CONTROL_HEIGHT,
+		UiSkin.CONTROL_FONT_SIZE)
+	_send_button.custom_minimum_size.x = SEND_BUTTON_WIDTH
 	_send_button.pressed.connect(func() -> void: _on_submit(_input.text))
 	input_row.add_child(_send_button)
-	_retry_button = Button.new()
-	_retry_button.text = "Retry connection"
+	_retry_button = SkinnedButton.create("Retry connection", UiSkin.BROWN, UiSkin.CONTROL_HEIGHT,
+		UiSkin.CONTROL_FONT_SIZE)
 	_retry_button.visible = false
 	_retry_button.pressed.connect(func() -> void: Kernel.ai_availability.retry())
 	input_row.add_child(_retry_button)
 
 
 func _on_chat_expanded_changed(expanded: bool) -> void:
-	_chat_expand_button.text = "v" if expanded else "^"
+	_set_chevron(expanded)
+
+
+## Point the dock's chevron at what pressing it does: down to put the conversation away, up to bring
+## it back. A theme *icon* rather than the button's text, so the plate keeps the field styling every
+## other square control on this dock has.
+func _set_chevron(expanded: bool) -> void:
+	_chat_expand_button.add_theme_icon_override("icon",
+		UiSkin.SELECT_ARROW_TEXTURE if expanded else UiSkin.SELECT_ARROW_UP_TEXTURE)
 
 
 ## The Main Menu panel (ux_plan.md §2.2: "Main Menu is one of the seven destinations and opens as a
@@ -507,7 +585,7 @@ func _set_busy(busy: bool) -> void:
 	# A pending question locks input as firmly as a turn in flight does.
 	var blocked := busy or not _pending_instance.is_empty()
 	_input.editable = not blocked
-	_send_button.disabled = blocked
+	_send_button.set_disabled(blocked)
 	if not blocked:
 		_input.grab_focus()
 
@@ -540,7 +618,7 @@ func _show_question(instance_id: String, wake: Dictionary) -> void:
 	_pending_row.visible = true
 	_shell.set_event_active(true)
 	_event_image.visible = true
-	_append("[color=yellow]Game master asks:[/color] %s" % _pending_label.text)
+	_append("[color=#95560d]Game master asks:[/color] %s" % _pending_label.text)
 	_set_busy(false)  # re-evaluates the lock now that a question is pending
 
 
@@ -569,7 +647,7 @@ func _clear_question() -> void:
 func _on_dev_ask() -> void:
 	var definition: Variant = Kernel.workflow_registry.get_definition("dev_confirm")
 	if not (definition is Dictionary):
-		_append("[color=orange]System:[/color] dev_confirm is not registered (release build?).")
+		_append("[color=#8c2f2f]System:[/color] dev_confirm is not registered (release build?).")
 		return
 	var instance := WorkflowInstance.create("dev_confirm", 1, {}, 0)
 	var result: RefCounted = await WorkflowExecutor.for_kernel(Kernel).run(
@@ -597,7 +675,7 @@ func _on_load() -> void:
 		return
 	var loaded: Dictionary = Kernel.session.load_slot(id)
 	if not bool(loaded["ok"]):
-		_append("[color=orange]System:[/color] Could not load (%s)." % loaded["error"])
+		_append("[color=#8c2f2f]System:[/color] Could not load (%s)." % loaded["error"])
 		return
 	_clear_question()
 	_append("[i]— Loaded '%s', day %d —[/i]" % [Kernel.session.slot_name, Kernel.clock.total_days])
@@ -625,10 +703,10 @@ func _on_new_game() -> void:
 func _on_save() -> void:
 	var result: Dictionary = Kernel.session.snapshot("manual")
 	if bool(result["ok"]):
-		_append("[color=gray]Saved '%s'.[/color]" % Kernel.session.slot_name)
+		_append("[color=#5d4f42]Saved '%s'.[/color]" % Kernel.session.slot_name)
 		_refresh_slots()
 	else:
-		_append("[color=orange]System:[/color] Could not save (%s)." % result["error"])
+		_append("[color=#8c2f2f]System:[/color] Could not save (%s)." % result["error"])
 
 
 ## Let one day of game time pass. Time is turn-driven and the player triggers it explicitly
@@ -672,6 +750,15 @@ func _sync_speed_layout() -> void:
 	var mobile := _shell.size.x < HudShell.MOBILE_BREAKPOINT_WIDTH
 	for speed: Variant in _speed_buttons:
 		_speed_buttons[speed].visible = not mobile or int(speed) == TimeDriver.Speed.SPEED_3
+	# **The bar is the one strip that cannot re-flow.** A page wraps and a card pager drops to one
+	# card, but the top bar is a single row by definition, so on a phone it is the type size that
+	# gives. At the desktop size this row wants about 870 units of a 720-wide screen, and a Godot
+	# container does not clip: the overflow pushed the date and the speed control clean off the
+	# right-hand edge, and the panels below inherited the same too-wide row.
+	var size := UiSkin.FONT_SMALL if mobile else UiSkin.FONT_BODY
+	for label: Label in [_outpost_label, _gold_label, _population_label, _date_label]:
+		label.add_theme_font_size_override("font_size", size)
+	_refresh_resources()
 
 
 func _on_open_map() -> void:
@@ -686,7 +773,7 @@ func _on_workflow_emit(payload: Dictionary) -> void:
 	var msg := String(payload.get("msg", ""))
 	var values: Dictionary = payload.get("values", {})
 	var suffix := "  %s" % JSON.stringify(values) if not values.is_empty() else ""
-	_append("[color=gray]Chronicle:[/color] %s%s" % [msg, suffix])
+	_append("[color=#5d4f42]Chronicle:[/color] %s%s" % [msg, suffix])
 
 
 func _on_ai_availability_changed(payload: Dictionary) -> void:
@@ -695,16 +782,16 @@ func _on_ai_availability_changed(payload: Dictionary) -> void:
 	match state:
 		"recovering":
 			if attempt == 0:
-				_append("[color=orange]System:[/color] Game master connection lost — attempting to recover.")
+				_append("[color=#8c2f2f]System:[/color] Game master connection lost — attempting to recover.")
 			else:
-				_append("[color=orange]System:[/color] Reconnecting (attempt %d/%d)…" % [attempt, AiAvailability.MAX_ATTEMPTS])
+				_append("[color=#8c2f2f]System:[/color] Reconnecting (attempt %d/%d)…" % [attempt, AiAvailability.MAX_ATTEMPTS])
 			_retry_button.visible = false
 		"unavailable":
-			_append("[color=orange]System:[/color] The game master is unavailable. Press Retry to reconnect.")
+			_append("[color=#8c2f2f]System:[/color] The game master is unavailable. Press Retry to reconnect.")
 			_retry_button.visible = true
 		"available":
 			if int(payload.get("attempts_used", 0)) > 0:
-				_append("[color=orange]System:[/color] Game master connection restored.")
+				_append("[color=#8c2f2f]System:[/color] Game master connection restored.")
 			_retry_button.visible = false
 
 
@@ -727,8 +814,14 @@ func _refresh_day() -> void:
 ## number nothing computes yet. Neutral-coloured on purpose — green/red would claim a real signal.
 func _refresh_resources() -> void:
 	var resources: Dictionary = Kernel.state.get_value("resources", {})
-	_gold_label.text = "Gold %d  +0" % int(resources.get("gold", 0))
-	_population_label.text = "Population %d  +0" % int(resources.get("population", 0))
+	# The wireframe puts an icon before each number and no word at all; until that art exists the
+	# word stands in for the icon, and on a phone it is the first thing to go — a bar that runs off
+	# the screen takes the date and the speed control with it.
+	var compact := _shell != null and _shell.size.x < HudShell.MOBILE_BREAKPOINT_WIDTH
+	var gold := int(resources.get("gold", 0))
+	var population := int(resources.get("population", 0))
+	_gold_label.text = "%d" % gold if compact else "Gold %d  +0" % gold
+	_population_label.text = "%d" % population if compact else "Population %d  +0" % population
 
 
 func _append(bbcode: String) -> void:

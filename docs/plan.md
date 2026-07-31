@@ -787,6 +787,29 @@ green. **Still deferred:** module-pick screen + a module-config-driven wizard
 (nothing to configure yet — this wizard's fields are all base_game's); Settings/Help/News screens;
 legacy background art per card.
 
+**The game screen joins the painted skin — done (2026-07-30).** M8 shipped the in-game shell's
+*structure* and never dressed it: `game_screen.gd`, `hud_shell.gd`, `hud_panel.gd` and
+`chat_message_list.gd` between them made **zero** `UiSkin` calls, so everything inside the game ran
+on `OutpostTheme`'s flat dark default while every screen outside it was painted parchment. Two
+visual languages in one product, which is why the game read as a prototype next to a finished
+wizard. Now: the top bar, the rail and the dock sit on `UiSkin.chrome_style()` — `frame_style` held
+closer to its moulding, deliberately **not** `thin_frame_style`, which draws a border with nothing
+behind it and left the dark background showing through; `HudPanel` is the wizard's own framed page,
+shadow and all; rail destinations, Send, Yes/No and Retry are `SkinnedButton` plates; the four
+speeds are field plates with an overridden `pressed` box (a card's selection is its host's glow, so
+`apply_card` alone leaves all four looking identical); the dock's chevron is the skin's select arrow
+instead of the characters `^` and `v`; conversation rows get a framed portrait mount. **Every piece
+of lettering that moved onto parchment had to change colour** — `UiSkin.label_style` paints the
+cream caption a *dark plate* needs, and the message BBCode's `wheat`/`gray`/`orange` were picked for
+the same dark panel; on paper the narrated opening was the palest thing on the page. **The top bar
+is the one strip that cannot re-flow**: at the desktop type size it wanted ~870 units of a 720-wide
+phone and a Godot container does not clip, so it pushed the date and the speed control off-screen —
+it drops to `FONT_SMALL` and sheds the placeholder `+0` deltas below the breakpoint. The inline
+reasoning timeline is **gone from the conversation** (the user's call): it is a developer's view of
+the orchestration and it was sitting in the middle of the fiction. `AiTrace` is untouched and the
+playground still renders it; a dev overlay of its own is the replacement, not a row in the
+chronicle. 445 green, both breakpoints captured.
+
 **Wizard Hero/Banner split + banner designer — done (2026-07-30).** The flow is now five fixed
 steps on every device: Background → Location → Hero → Banner → Settings. Hero owns hero name and
 sex (with no empty appearance placeholder); Banner owns the outpost name and the flag. The three

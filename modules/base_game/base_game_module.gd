@@ -17,6 +17,10 @@ const PLAYGROUND_ID := "base_game.playground"
 ## This module's audio cues, declared in data (see [AudioManager]).
 const AUDIO_MANIFEST := "res://modules/base_game/assets/audio/audio.json"
 
+## "Available now" beside a map layer that exists. The wizard's own label colour, for the same job:
+## naming what kind of thing the line beside it is.
+const AVAILABLE_COLOR := Color(0.58, 0.34, 0.05)
+
 
 func register(kernel: GameKernel) -> void:
 	# AI tool the game master may call.
@@ -150,7 +154,7 @@ func _build_population_panel(panel: HudPanel, _kernel: GameKernel) -> void:
 	var note := Label.new()
 	note.text = "Growth, households, and needs arrive with the economy systems in M7."
 	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	note.add_theme_color_override("font_color", OutpostTheme.TEXT_MUTED)
+	_ink(note, true)
 	panel.body.add_child(note)
 
 
@@ -163,7 +167,7 @@ func _refresh_population_panel(panel: HudPanel, kernel: GameKernel) -> void:
 func _build_placeholder_panel(panel: HudPanel, _kernel: GameKernel) -> void:
 	var note := Label.new()
 	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	note.add_theme_color_override("font_color", OutpostTheme.TEXT_MUTED)
+	_ink(note, true)
 	panel.body.add_child(note)
 	match String(panel.get_meta("hud_page_id", "")):
 		"economy": note.text = "Economy is not modelled yet. Income, upkeep, and trade will live here."
@@ -177,24 +181,35 @@ func _build_map_layers_panel(panel: HudPanel, _kernel: GameKernel) -> void:
 	terrain_row.add_theme_constant_override("separation", 12)
 	panel.body.add_child(terrain_row)
 	var terrain := Label.new()
+	_ink(terrain)
 	terrain.text = "Base terrain"
 	terrain.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	terrain_row.add_child(terrain)
 	var available := Label.new()
 	available.text = "Available now"
-	available.add_theme_color_override("font_color", OutpostTheme.ACCENT)
+	available.add_theme_font_size_override("font_size", UiSkin.FONT_SMALL)
+	available.add_theme_color_override("font_color", AVAILABLE_COLOR)
 	terrain_row.add_child(available)
 	var note := Label.new()
 	note.text = "Biome terrain is the only available map layer. Blends, decorations, and seasons are future map polish."
 	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	note.add_theme_color_override("font_color", OutpostTheme.TEXT_MUTED)
+	_ink(note, true)
 	panel.body.add_child(note)
 
 
 func _add_page_line(panel: HudPanel, id: String) -> void:
 	var line := Label.new()
 	line.name = id
+	_ink(line)
 	panel.body.add_child(line)
+
+
+## A page is read on parchment, so its lettering is the skin's ink. Every one of these lines was the
+## dark theme's cream or muted grey, which on a page is somewhere between faint and invisible.
+static func _ink(label: Label, muted: bool = false) -> void:
+	label.add_theme_font_size_override("font_size",
+		UiSkin.FONT_SMALL if muted else UiSkin.FONT_BODY)
+	label.add_theme_color_override("font_color", UiSkin.INK_MUTED if muted else UiSkin.INK)
 
 
 func _page_line(panel: HudPanel, id: String) -> Label:
