@@ -278,6 +278,7 @@ func _build() -> void:
 	# plain Control has none of its own. `add_rail_action` keeps it in step as plates arrive.
 	_rail_host = Control.new()
 	_rail_plate.add_child(_rail_host)
+	_rail_plate.resized.connect(_place_banner)
 	_rail_host.add_child(_rail_label_clip)
 	_rail_host.add_child(_rail)
 	_rail.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -363,6 +364,8 @@ func add_rail_action(label: String, on_pressed: Callable, icon: Texture2D = null
 	_rail.add_child(rail_button)
 	# Deferred: the column's minimum only counts the new plate once it has been laid out.
 	_rail_host.call_deferred("set", "custom_minimum_size", _rail.get_combined_minimum_size())
+	# The banner heads this column, so it moves when the column does.
+	_place_banner.call_deferred()
 
 	_add_mobile_menu_action(label, on_pressed)
 
@@ -501,15 +504,25 @@ func set_banner(banner: Control, top: float) -> void:
 	_place_banner()
 
 
+## **Centred on the first destination plate**, not on the column around it: the column is wider than
+## a plate by its own moulding, so centring on it left the banner off to one side of the icons it is
+## supposed to head. Falls back to the column only while the rail is still empty.
+##
+## Re-run whenever the rail's size settles as well as on a resize. The first call lands before the
+## rail has been laid out — every rect is still zero then, which put the banner hard against the left
+## edge of the screen and left it there on any window that never resized afterwards.
 func _place_banner() -> void:
 	if _banner == null:
 		return
 	var wanted := _banner.get_combined_minimum_size()
 	_banner.size = wanted
-	var rail := _rail_plate.get_global_rect()
+	var target: Control = _rail_plate
+	if _rail != null and _rail.get_child_count() > 0:
+		target = _rail.get_child(0) as Control
+	var rect := target.get_global_rect()
 	var origin := overlay.get_global_rect().position
 	_banner.position = Vector2(
-		rail.position.x - origin.x + (rail.size.x - wanted.x) * 0.5, _banner_top)
+		rect.position.x - origin.x + (rect.size.x - wanted.x) * 0.5, _banner_top)
 
 
 ## Parent the conversation into the stage. It stays there for the shell's whole life — collapsed and
