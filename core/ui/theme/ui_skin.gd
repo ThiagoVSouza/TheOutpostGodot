@@ -134,10 +134,16 @@ const SPEED_ICONS := [
 ## pixel size, and a 29px rail off a 188px-tall bar would be a third of the height of ours.
 const TOP_BAR_HEIGHT := 96.0
 
-## Measured off the art at its own size. One number, not one per edge: this bar is a plain strip with
-## a flourish in each corner, and the slice has to clear the whole flourish or the nine-patch cuts one
-## in half and smears it along the edge.
-const TOP_BAR_SLICE := 48.0
+## **How much of either end of the header art is thrown away before anything else happens.** The
+## strip is painted with a flourish in each corner, and the bar runs the full width of the window —
+## so those corners land at the screen's own edges, where an ornament reads as a decoration sliced in
+## half rather than a finished corner. Cropping is the only way to be rid of them: a nine-patch that
+## slices *past* a flourish still draws it at each end, and one that slices through it smears the
+## halves along the edge instead.
+const TOP_BAR_END_CROP := 72
+
+## What is left is a plain strip, so the border regions only have to carry its top and bottom rules.
+const TOP_BAR_SLICE := 10.0
 
 ## Room for the lettering inside the strip — clear of its rule, and clear of the corner flourishes at
 ## either end.
@@ -682,15 +688,28 @@ static func sidemenu_style(painted: bool = true) -> StyleBox:
 ## brings the slice down with it.
 static func top_bar_style() -> StyleBoxTexture:
 	var style := StyleBoxTexture.new()
-	var scale := TOP_BAR_HEIGHT / TOP_BAR_TEXTURE.get_size().y
-	style.texture = scaled_texture(TOP_BAR_TEXTURE,
-		Vector2i((TOP_BAR_TEXTURE.get_size() * scale).round()))
-	_slice(style, TOP_BAR_SLICE * scale, StyleBoxTexture.AXIS_STRETCH_MODE_STRETCH)
+	style.texture = _top_bar_art()
+	_slice(style, TOP_BAR_SLICE, StyleBoxTexture.AXIS_STRETCH_MODE_STRETCH)
 	style.content_margin_top = TOP_BAR_PADDING_TOP
 	style.content_margin_bottom = TOP_BAR_PADDING_BOTTOM
 	style.content_margin_left = TOP_BAR_PADDING_SIDE
 	style.content_margin_right = TOP_BAR_PADDING_SIDE
 	return style
+
+
+## The header strip with its ornamented ends cut off and resampled to the height it is drawn at, in
+## one derived copy. Both steps have to happen before the nine-patch sees it: the crop because a
+## border region cannot hide what is inside it, and the resample because a nine-patch draws its
+## border at the source's own pixel size ([method chat_frame_style] explains the same trap).
+static func _top_bar_art() -> Texture2D:
+	return _derive(TOP_BAR_TEXTURE, "header@%d/%d" % [TOP_BAR_END_CROP, int(TOP_BAR_HEIGHT)],
+		func(image: Image) -> void:
+			var kept := image.get_region(Rect2i(TOP_BAR_END_CROP, 0,
+				image.get_width() - TOP_BAR_END_CROP * 2, image.get_height()))
+			var scale := TOP_BAR_HEIGHT / float(kept.get_height())
+			kept.resize(int(roundf(kept.get_width() * scale)), int(TOP_BAR_HEIGHT),
+				Image.INTERPOLATE_LANCZOS)
+			image.copy_from(kept))
 
 
 ## One of the bar's icons at the size the bar wants it, rather than the size it was drawn at.
