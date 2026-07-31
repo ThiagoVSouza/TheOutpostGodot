@@ -65,6 +65,25 @@ const TAB_FONT_SIZE := FONT_SMALL
 ## rather than something you press. Its border is ~5px, so 10 carries the corner.
 const INPUT_TEXTURE := preload("res://core/assets/ui/input_background.png")
 
+## The backgrounds the legacy build painted for the game itself, in place of the wizard's parchment
+## frame standing in for them. **Both carry their own soft edge**, which is why neither gets a
+## [method frame_shadow_style] plate behind it: that shadow is an opaque near-black fill, and these
+## have transparent corners for it to show through.
+const SCREEN_FRAME_TEXTURE := preload("res://core/assets/ui/screen_frame.png")
+const SIDEMENU_TEXTURE := preload("res://core/assets/ui/sidemenu_background.png")
+
+## The in-game page's cream ground in its thin dark frame. Drawn at the art's own size: the border is
+## slight, and a page is far bigger than the art, so it thins out with scale rather than thickening.
+const SCREEN_FRAME_SLICE := 26.0
+const SCREEN_FRAME_PADDING := 30.0
+
+## The rail's column. Resampled to the width it is actually drawn at, so the flourish in each corner
+## keeps its proportion — at the art's own 404px the same flourish would be a quarter of a 220-unit
+## rail. The slice has to clear the whole flourish or the nine-patch cuts one in half.
+const SIDEMENU_WIDTH := 220.0
+const SIDEMENU_SLICE := 54.0
+const SIDEMENU_PADDING := 16.0
+
 ## The in-game top bar, carried over from the legacy build along with the icons that stand in its
 ## slots. Parchment in a dark metal channel with a notched right end — the shape the wireframe draws,
 ## already painted, rather than a plain strip of the page's own frame standing in for it.
@@ -531,6 +550,27 @@ static func apply_button(button: Button, variant: Variant) -> void:
 static func chrome_style(padding: float = CHROME_PADDING) -> StyleBoxTexture:
 	var style := frame_style()
 	style.set_content_margin_all(padding)
+	return style
+
+
+## The ground an in-game page is written on — the legacy build's own, in place of the wizard's
+## parchment frame doing double duty.
+static func screen_frame_style() -> StyleBoxTexture:
+	var style := StyleBoxTexture.new()
+	style.texture = SCREEN_FRAME_TEXTURE
+	_slice(style, SCREEN_FRAME_SLICE, StyleBoxTexture.AXIS_STRETCH_MODE_STRETCH)
+	style.set_content_margin_all(SCREEN_FRAME_PADDING)
+	return style
+
+
+## The rail's column, resampled to the width it is drawn at — see [constant SIDEMENU_WIDTH].
+static func sidemenu_style() -> StyleBoxTexture:
+	var style := StyleBoxTexture.new()
+	var scale := SIDEMENU_WIDTH / SIDEMENU_TEXTURE.get_size().x
+	style.texture = scaled_texture(SIDEMENU_TEXTURE,
+		Vector2i((SIDEMENU_TEXTURE.get_size() * scale).round()))
+	_slice(style, SIDEMENU_SLICE * scale, StyleBoxTexture.AXIS_STRETCH_MODE_STRETCH)
+	style.set_content_margin_all(SIDEMENU_PADDING)
 	return style
 
 

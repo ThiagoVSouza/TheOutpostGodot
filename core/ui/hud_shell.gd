@@ -29,7 +29,7 @@ const MOBILE_BREAKPOINT_WIDTH := 900.0
 ## [constant UiSkin.FONT_SMALL]. The wireframe draws a narrow column of round icons and this is the
 ## same column carrying words instead, because no icon art exists yet — when it does, this narrows
 ## back to the icon's own plate and nothing else about the rail changes.
-const RAIL_WIDTH := 190.0
+const RAIL_WIDTH := UiSkin.SIDEMENU_WIDTH - UiSkin.SIDEMENU_PADDING * 2.0
 
 ## The rail's plates, and the mobile menu list's. Smaller than a page's buttons: this is a list of
 ## destinations, not a row of decisions, and at [constant UiSkin.CONTROL_FONT_SIZE] "Diplomacy" alone
@@ -198,7 +198,7 @@ func _build() -> void:
 	# not allowed to draw in. It is parented into the stage now, over the base layer, and only the
 	# things that are *not* the map are held clear of it (see `_content_left`).
 	_rail_plate = PanelContainer.new()
-	_rail_plate.add_theme_stylebox_override("panel", UiSkin.chrome_style())
+	_rail_plate.add_theme_stylebox_override("panel", UiSkin.sidemenu_style())
 	_stage.add_child(_rail_plate)
 	_rail_plate.set_anchors_and_offsets_preset(
 		Control.PRESET_TOP_LEFT, Control.PRESET_MODE_MINSIZE, int(CHAT_SIDE_INSET))

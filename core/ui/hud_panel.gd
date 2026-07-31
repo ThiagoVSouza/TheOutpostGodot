@@ -25,18 +25,14 @@ func _ready() -> void:
 	# (the trap `map_overlay.gd` documented and ux_plan.md §7 carries forward).
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
-	# **A page in here is the same object as a page in the wizard.** It was a flat blue-slate surface
-	# from [ShellPalette] while every screen outside the game was painted parchment, which made the
-	# game look like a different product from its own menus. The shadow is a sibling plate behind the
-	# frame, exactly as the wizard's page builds it: a [StyleBoxTexture] cannot cast one.
-	var shadow := PanelContainer.new()
-	shadow.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	shadow.add_theme_stylebox_override("panel", UiSkin.frame_shadow_style())
-	add_child(shadow)
-
+	# **The legacy build's own page ground**, in place of the wizard's parchment frame doing double
+	# duty in here. No shadow plate behind it: the art carries its own soft edge, and
+	# [method UiSkin.frame_shadow_style] is an opaque near-black fill that would show straight through
+	# this one's transparent corners.
 	var plate := PanelContainer.new()
-	plate.add_theme_stylebox_override("panel", UiSkin.frame_style())
-	shadow.add_child(plate)
+	plate.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	plate.add_theme_stylebox_override("panel", UiSkin.screen_frame_style())
+	add_child(plate)
 
 	var outer := VBoxContainer.new()
 	outer.add_theme_constant_override("separation", 0)
