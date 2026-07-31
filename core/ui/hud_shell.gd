@@ -25,25 +25,23 @@ extends Control
 ## line between the two layouts.
 const MOBILE_BREAKPOINT_WIDTH := 900.0
 
-## Wide enough for the longest destination name ("Diplomacy") on a painted plate at
-## [constant UiSkin.FONT_SMALL]. The wireframe draws a narrow column of round icons and this is the
-## same column carrying words instead, because no icon art exists yet — when it does, this narrows
-## back to the icon's own plate and nothing else about the rail changes.
+## One destination plate wide — the narrow column of icons the wireframe draws. It carried the names
+## as lettering until there was art to carry them instead; those live on the hover label now.
 const RAIL_WIDTH := UiSkin.SIDEMENU_WIDTH - UiSkin.SIDEMENU_PADDING * 2.0
 
-## The rail's plates, and the mobile menu list's. Smaller than a page's buttons: this is a list of
-## destinations, not a row of decisions, and at [constant UiSkin.CONTROL_FONT_SIZE] "Diplomacy" alone
-## would set the rail nearly 100 units wider than the map can spare.
+## For a destination with no art yet, and for the mobile menu's list. Smaller than a page's buttons:
+## these are destinations, not decisions, and at [constant UiSkin.CONTROL_FONT_SIZE] "Diplomacy"
+## alone would set the column nearly 100 units wider than the map can spare.
 const RAIL_BUTTON_FONT_SIZE := UiSkin.FONT_SMALL
 
 ## Between one destination plate and the next. Tighter than the old lettered buttons wanted: these
 ## are square and framed, and too much air between them stops reading as one column.
 const RAIL_SEPARATION := 10
 
-## The hover label: how far off the plate it sits, how far it travels on its way in, and how long it
-## takes. The distance and the timing are the legacy build's own (`translateX(-12px)`, `0.16s ease`).
+## The hover label: how far off the plate it comes to rest, and how long it takes to get there. It
+## travels out from behind the rail rather than the legacy's fixed twelve units, so how far it goes
+## is whatever the name's own width turns out to be; the timing is the legacy's (`0.16s ease`).
 const RAIL_LABEL_GAP := 14.0
-const RAIL_LABEL_SLIDE := 12.0
 const RAIL_LABEL_TIME := 0.16
 
 ## How far the floating mobile menu button sits in from the stage's bottom-right corner.
@@ -95,6 +93,7 @@ var _rail_plate: PanelContainer
 var _rail_label: PanelContainer
 var _rail_label_text: Label
 var _rail_label_home := Vector2.ZERO
+var _rail_label_tucked := Vector2.ZERO
 var _rail_label_tween: Tween = null
 var _menu_button: SkinnedButton
 var _map_layers_button: SkinnedButton
@@ -211,31 +210,29 @@ func _build() -> void:
 	# under its last destination, everything below that was a dead strip of background the map was
 	# not allowed to draw in. It is parented into the stage now, over the base layer, and only the
 	# things that are *not* the map are held clear of it (see `_content_left`).
-	_rail_plate = PanelContainer.new()
-	_rail_plate.add_theme_stylebox_override("panel", UiSkin.sidemenu_style())
-	_stage.add_child(_rail_plate)
-	_rail_plate.set_anchors_and_offsets_preset(
-		Control.PRESET_TOP_LEFT, Control.PRESET_MODE_MINSIZE, int(CHAT_SIDE_INSET))
-	# Built once and parented to the stage, above the rail, so it can stand off the column's edge
-	# without widening it. Hidden until a plate is pointed at.
+	# **Built and parented before the rail, so the rail draws over it.** The label comes out from
+	# *behind* the column: at rest it is tucked entirely underneath, which is why it needs no fade.
 	_rail_label = PanelContainer.new()
 	_rail_label.add_theme_stylebox_override("panel", UiSkin.sidemenu_label_style())
 	_rail_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_rail_label.visible = false
-	_rail_label.modulate.a = 0.0
 	_rail_label_text = Label.new()
 	_rail_label_text.add_theme_font_size_override("font_size", UiSkin.FONT_SMALL)
 	_rail_label_text.add_theme_color_override("font_color", UiSkin.SIDEMENU_LABEL_INK)
 	_rail_label_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_rail_label.add_child(_rail_label_text)
+	_stage.add_child(_rail_label)
 
+	_rail_plate = PanelContainer.new()
+	_rail_plate.add_theme_stylebox_override("panel", UiSkin.sidemenu_style())
+	_stage.add_child(_rail_plate)
+	_rail_plate.set_anchors_and_offsets_preset(
+		Control.PRESET_TOP_LEFT, Control.PRESET_MODE_MINSIZE, int(CHAT_SIDE_INSET))
 	_rail = VBoxContainer.new()
 	_rail.custom_minimum_size = Vector2(RAIL_WIDTH, 0)
 	_rail.alignment = BoxContainer.ALIGNMENT_CENTER
 	_rail.add_theme_constant_override("separation", RAIL_SEPARATION)
 	_rail_plate.add_child(_rail)
-	# After the rail plate, so the label draws over the column rather than under it.
-	_stage.add_child(_rail_label)
 
 	_page_slot = Control.new()
 	_stage.add_child(_page_slot)
@@ -623,26 +620,32 @@ func _show_rail_label(text: String, plate: Control) -> void:
 	_rail_label.size = wanted
 	_rail_label_home = Vector2(rect.end.x - origin.x + RAIL_LABEL_GAP,
 		rect.position.y - origin.y + (rect.size.y - wanted.y) * 0.5)
-	_rail_label.position = _rail_label_home - Vector2(RAIL_LABEL_SLIDE, 0.0)
-	_rail_label.visible = true
-	_tween_rail_label(1.0, _rail_label_home)
+	# Tucked is far enough left that the whole plate is behind the column — its right edge level with
+	# the rail's — so what slides out has been out of sight rather than faded up over the parchment.
+	# Measured off the rail rather than a fixed distance: a longer name has further to travel.
+	_rail_label_tucked = Vector2(
+		_rail_plate.get_global_rect().end.x - origin.x - wanted.x, _rail_label_home.y)
+	if not _rail_label.visible:
+		_rail_label.position = _rail_label_tucked
+		_rail_label.visible = true
+	_tween_rail_label(_rail_label_home, false)
 
 
 func _hide_rail_label() -> void:
-	_tween_rail_label(0.0, _rail_label_home - Vector2(RAIL_LABEL_SLIDE, 0.0))
+	_tween_rail_label(_rail_label_tucked, true)
 
 
-func _tween_rail_label(alpha: float, to: Vector2) -> void:
+## No fade either way: the label is hidden by the rail itself, so it has nothing to fade out of.
+func _tween_rail_label(to: Vector2, hide_after: bool) -> void:
 	if _rail_label_tween != null and _rail_label_tween.is_valid():
 		_rail_label_tween.kill()
 	if not is_inside_tree():
 		return
-	_rail_label_tween = create_tween().set_parallel(true)
+	_rail_label_tween = create_tween()
 	_rail_label_tween.set_ease(Motion.EASE).set_trans(Motion.TRANS)
-	_rail_label_tween.tween_property(_rail_label, "modulate:a", alpha, RAIL_LABEL_TIME)
 	_rail_label_tween.tween_property(_rail_label, "position", to, RAIL_LABEL_TIME)
-	if is_zero_approx(alpha):
-		_rail_label_tween.chain().tween_callback(func() -> void: _rail_label.visible = false)
+	if hide_after:
+		_rail_label_tween.tween_callback(func() -> void: _rail_label.visible = false)
 
 
 func _collapsed_chat_height() -> float:
