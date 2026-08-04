@@ -19,24 +19,42 @@ uniform bool has_pattern = false;
 uniform bool has_emblem = false;
 // Flag rect height / width, so the square emblem stays square when centred on a tall flag.
 uniform float flag_hw = 2.1;
-// Fraction of the flag width the emblem occupies (contain, centred).
-uniform float emblem_scale = 0.62;
+
+// Where the cloth actually is inside this quad, as (min.x, min.y, width, height) in UV.
+//
+// **The quad is not the flag.** The art carries a pole, a crossbar and a finial, and the cloth hangs
+// in only part of the rectangle — on the poleless cut it sits from 0.21 to 1.0 down the quad, so its
+// centre is at 0.605 and not at 0.5. Pattern and emblem were laid out against the quad, which put
+// them a tenth of the flag's height too high and cropped the pattern's edges against the silhouette.
+// Everything heraldic is placed against this rect instead; `flag_view.gd` measures it off the effect
+// texture's own alpha rather than carrying the numbers as literals.
+uniform vec4 cloth_rect = vec4(0.0, 0.0, 1.0, 1.0);
+
+// Fraction of the *cloth's* width the emblem occupies (contain, centred on the cloth).
+uniform float emblem_scale = 0.79;
 
 void fragment() {
 	vec4 base_c = texture(base_tex, UV);
 	vec4 eff_c = texture(effect_tex, UV);
 	float cloth_a = eff_c.a;                 // the flag silhouette
 
+	vec2 cloth_min = cloth_rect.xy;
+	vec2 cloth_size = max(cloth_rect.zw, vec2(0.0001));
+	vec2 cloth_centre = cloth_min + cloth_size * 0.5;
+
 	vec3 cloth = shape_color.rgb;
 	if (has_pattern) {
-		float pa = texture(pattern_tex, UV).a;   // pattern stretched over the cloth (100% x 100%)
+		// Stretched over the cloth itself, corner to corner — against the quad it was cropped by the
+		// silhouette on every side and hung too high with it.
+		vec2 puv = clamp((UV - cloth_min) / cloth_size, vec2(0.0), vec2(1.0));
+		float pa = texture(pattern_tex, puv).a;
 		cloth = mix(cloth, texture_color.rgb, pa);
 	}
 	if (has_emblem) {
-		// Map UV into a centred square of side = emblem_scale * width; keep it square via flag_hw.
-		vec2 euv = (UV - vec2(0.5)) / emblem_scale;
-		euv.y *= flag_hw;
-		euv += vec2(0.5);
+		// A square centred on the cloth, `emblem_scale` of the cloth's width across. Its height in UV
+		// is divided by the quad's aspect so the square stays square in pixels on a tall flag.
+		float ew = emblem_scale * cloth_size.x;
+		vec2 euv = (UV - cloth_centre) / vec2(ew, ew / flag_hw) + vec2(0.5);
 		if (euv.x >= 0.0 && euv.x <= 1.0 && euv.y >= 0.0 && euv.y <= 1.0) {
 			float ea = texture(emblem_tex, euv).a;
 			cloth = mix(cloth, emblem_color.rgb, ea);
@@ -50,5 +68,8 @@ void fragment() {
 	// Composite the cloth over the base (base shows only where the cloth silhouette is absent).
 	vec3 rgb = mix(base_c.rgb, cloth, cloth_a);
 	float a = max(base_c.a, cloth_a);
-	COLOR = vec4(rgb, a) * COLOR.a;
+	// Modulate in full, not just its alpha. A canvas item is meant to multiply by the whole of
+	// COLOR, and taking only `.a` meant a black-tinted copy of the flag came out in full colour —
+	// which is exactly what a drop shadow behind the banner needs to be able to do.
+	COLOR = vec4(rgb * COLOR.rgb, a * COLOR.a);
 }

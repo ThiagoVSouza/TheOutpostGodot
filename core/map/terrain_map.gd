@@ -22,6 +22,9 @@ var _biomes: Dictionary = {}
 # the decoded layer: a palette char -> biome name, plus the raw rows
 var _palette: Dictionary = {}
 var _rows: PackedStringArray = PackedStringArray()
+## A procedural map does not need hundreds of identical row strings. When set, every in-range cell
+## resolves to this biome and the regular palette/row path remains available for authored maps.
+var _solid_biome := ""
 
 
 ## Build from already-parsed JSON dictionaries (the map and its terrain set). Kept separate from file
@@ -29,6 +32,26 @@ var _rows: PackedStringArray = PackedStringArray()
 static func from_data(map_data: Dictionary, terrain_data: Dictionary) -> TerrainMap:
 	var m := TerrainMap.new()
 	m._decode(map_data, terrain_data)
+	return m
+
+
+## Build a large uniform map without allocating a cell string for every row. This is still a normal
+## [TerrainMap] to callers: dimensions, biome queries, centre placement and rendering use the same
+## API as authored JSON maps.
+static func create_flat(map_id: String, map_width: int, map_height: int, tile_size: int,
+		biome: String, map_seed: int = 0, world_meters_per_tile: float = 20.0) -> TerrainMap:
+	assert(map_width > 0 and map_height > 0, "a flat map needs positive dimensions")
+	assert(tile_size > 0, "a flat map needs a positive tile size")
+	assert(not biome.is_empty(), "a flat map needs a biome")
+	var m := TerrainMap.new()
+	m.id = map_id
+	m.width = map_width
+	m.height = map_height
+	m.seed = map_seed
+	m.tile_size_px = tile_size
+	m.tile_world_meters = world_meters_per_tile
+	m._solid_biome = biome
+	m._biomes[biome] = {"priority": 1, "textures": PackedStringArray()}
 	return m
 
 
@@ -100,6 +123,8 @@ func _validate() -> void:
 func biome_at(x: int, y: int) -> String:
 	assert(x >= 0 and x < width and y >= 0 and y < height,
 		"cell (%d,%d) is outside the %dx%d grid" % [x, y, width, height])
+	if not _solid_biome.is_empty():
+		return _solid_biome
 	return String(_palette[_rows[y][x]])
 
 
@@ -115,6 +140,12 @@ func biome_names() -> Array:
 ## settlement is the game's decision, not the map format's. Centre-out because the edge of a map is
 ## a strange place to found anything.
 func find_cell_nearest_centre(allowed: PackedStringArray) -> Vector2i:
+	if not _solid_biome.is_empty():
+		if not allowed.has(_solid_biome):
+			return Vector2i(-1, -1)
+		# For an even dimension four cells tie; lower row then lower column preserves the authored-map
+		# method's deterministic tie break.
+		return Vector2i((width - 1) / 2, (height - 1) / 2)
 	var best := Vector2i(-1, -1)
 	var best_distance := INF
 	var centre := Vector2(width - 1, height - 1) * 0.5

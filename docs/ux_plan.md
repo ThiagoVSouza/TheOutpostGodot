@@ -231,6 +231,11 @@ and Map Layers. Domain and Population render current state; the four unavailable
 what is deferred; Map Layers names the real base-terrain layer. The HUD contrast was lifted at the
 same time so pages, buttons, and chrome read as distinct layers over the map.
 
+**Amended (2026-08-03):** Map Layers is no longer a page on the desktop. Its bottom-right shortcut
+latches and unrolls a column of layer plates above itself, over the map those layers change — a page
+covered both the map and the button that opened it. The registered page stays, because the phone has
+no shortcut to press and reaches the same layers through Menu.
+
 A panel registry so modules contribute pages, mirroring how they already register
 screens and commands. Domain and Population can read real state today. Economy,
 Military, Diplomacy and Knowledge become titled empty pages until M7 fills them —
@@ -255,6 +260,45 @@ Named here so no one builds a convincing-looking lie into the top bar.
   has fixed when the calendar starts, so Phase 2 picked the outpost's own founding.
   Twelve English month names are a placeholder too; a setting-appropriate calendar is
   content work, not UI work, and can replace both without touching `GameClock`.
+- **The top of the selection ladder.** See below.
+
+---
+
+## 5b. The selection ladder
+
+Clicking the map picks the smallest thing under the pointer whose **own footprint on
+screen** is at least `OverworldMapView.MIN_SELECTABLE_PX` (10 units). If it is too
+small, the walk climbs to the thing that contains it. One rule, no hand-assigned tiers:
+a subtile retires as the player zooms out, a one-tile cottage retires later, a farm
+plot later still, and a building nobody has designed yet retires at whatever zoom its
+own size implies.
+
+**Two rungs are built. Two are not.**
+
+| Rung | Data | State |
+|---|---|---|
+| Subtile (5×5 per tile) | the map's own subdivision | ✅ |
+| Construction | `BaseGameMap.constructions()` | ✅ |
+| Settlement | — | ✗ no footprint exists |
+| Region | — | ✗ no such concept exists |
+
+The outpost is a single cell in state (`GameSession.OUTPOST_SITE_STATE_KEY`) with no
+extent, and nothing in the project has a notion of a region. Inventing either to fill
+the ladder would mean a shape a real settlement system throws away, so the walk stops
+after a construction and a click that reaches no further selects nothing.
+
+When they exist, they slot in at `BaseGameMap.selection_at()`: give a construction a
+`settlement` id and return the settlement's own footprint as the next candidate when
+the construction fails the threshold. Nothing in the renderer changes. Two things to
+carry in at that point:
+
+- `OverworldMapView._draw_selection()` traces the perimeter with four neighbour lookups
+  per subtile. That is right for a building and wrong for a province — a region wants
+  its bounds instead.
+- Nothing built today is ever too small to click: a farm plot bottoms out at ~13 units
+  at `MIN_ZOOM`, so the rung above a construction is currently unreachable in practice.
+  Lowering `MIN_ZOOM`, or building something a single tile across, is what makes the
+  walk start mattering.
 
 ---
 

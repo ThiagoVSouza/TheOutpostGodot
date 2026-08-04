@@ -82,3 +82,13 @@ func test_a_biome_the_map_lacks_yields_no_cell() -> void:
 	var map := TerrainMap.from_files(MAP_JSON, TERRAIN_JSON)
 	assert_eq(map.find_cell_nearest_centre(PackedStringArray(["glacier"])), Vector2i(-1, -1),
 		"asking for ground the map has none of is answered, not guessed at")
+
+
+func test_a_large_flat_map_needs_no_authored_cell_rows() -> void:
+	var map := TerrainMap.create_flat("large-green", 500, 500, 128, "grass", 19)
+	assert_eq(map.width, 500)
+	assert_eq(map.height, 500)
+	assert_eq(map.biome_at(0, 0), "grass")
+	assert_eq(map.biome_at(499, 499), "grass")
+	assert_eq(map.find_cell_nearest_centre(PackedStringArray(["grass"])), Vector2i(249, 249))
+	assert_eq(map.find_cell_nearest_centre(PackedStringArray(["ocean"])), Vector2i(-1, -1))

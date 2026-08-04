@@ -761,6 +761,13 @@ chat log). 32 biome textures + a demo map ported to `modules/base_game/assets/ma
 311 green at merge. **Deferred:** corner-blend mask overlays, tile decorations, season tint; tying
 the map to gameplay (outpost position, travel) — polish over this base layer, not urgent.
 
+**Construction-map refactor (2026-08-02).** Gameplay now opens on a procedural 500x500 all-grass
+map instead of fitting the entire 40x28 biome demo into the stage. The default camera frames about
+ten tiles vertically on desktop and remains centred near the outpost. A strong tile grid and an
+independent 5x5-per-tile subgrid render as culled overlays; both are toggled from the existing Map
+Layers page. This is intentionally a coordinate canvas for later world authoring, not finished
+terrain art.
+
 **Flag component — done (2026-07-24, PR #48).** The legacy flag-compositing system (base cloth →
 tinted pattern → tinted emblem → fold-shading effect, one shader pass) ported as a reusable
 widget ahead of the wizard: `FlagValue` (design data, round-trips the legacy JSON unchanged) +
@@ -786,6 +793,111 @@ pattern), including a full walk to `begin_new_game` asserting the collected fiel
 green. **Still deferred:** module-pick screen + a module-config-driven wizard
 (nothing to configure yet — this wizard's fields are all base_game's); Settings/Help/News screens;
 legacy background art per card.
+
+**A third status readout, and the bar finally centred — done (2026-08-03).** New authored icons from
+the user for coins and population replace the old pair, and **score joins them** as a third readout
+after population. It has no system behind it: it reads 0 with a neutral +0, taken from
+`resources["score"]` the same way the other two are read, so the day something writes one the bar
+shows it without another edit. Two structural fixes came with it. **Each readout now holds a fixed
+slot** (`TOP_BAR_RESOURCE_SLOT_WIDTH`), so the spacing is a property of the bar rather than of
+today's numbers and the group cannot shuffle sideways when a figure gains a digit. And **the group is
+centred on the window** rather than on the gap between the clusters either side of it: it was
+positioned by a hand-tuned `stretch_ratio` of 2.25 compensating for the date-and-speed cluster being
+wider than the banner-and-identity one, but a ratio splits the *free* space, so one number could only
+ever be right at one width — measured, it sat 92 units right of centre at 1280. The left spacer
+carries a computed width now, corrected from the laid-out rect rather than calculated from the parts
+(nothing before it expands, so widening it moves the group and nothing else), and it is asserted at
+three window widths. **The phone needed real work to absorb the third readout**: the row is one line
+by definition and already wanted ~870 units of a 720-wide screen, so adding score ran the settlement
+name into the coins and pushed the date and the speed plate off the right edge. Four things give
+there, all of them size rather than content — a smaller icon, narrower figure boxes, half the spacing
+between the bar's clusters, and the settlement name at `FONT_SMALL`, which also fixed a latent bug:
+the name is drawn by hand in a fixed 150-unit box and a `Label` does not clip, so a long name always
+ran past it and it was simply invisible while there was empty bar to run into. 476 green.
+
+**The conversation becomes one sheet — done (2026-08-03).** New art from the user
+(`chat_background_light.png`) with two deliberate omissions: **no bottom rail and no division across
+it**. Both follow from where the board sits. It rests on the bottom edge of the stage, so a painted
+rail at its foot was a line drawn along the screen's own edge; and the row the player writes on now
+lives on the same parchment as the chronicle instead of on a darker shelf below a rule, so collapsing
+the board shows *less of one surface* rather than revealing a second one. The nine-slice says the
+same thing: `CHAT_FRAME_SLICE_BOTTOM` is **zero**, so the parchment middle stretches to the board's
+own last row at every height between collapsed and open. The old board had to be resampled before
+slicing so its top frame and its dark shelf would meet exactly when collapsed
+(`CHAT_FRAME_SCALE = 102 / (18 + 146)`); with no shelf there is nothing to make meet, so the art is
+drawn at its own size and that derived copy is gone from memory. One thing measurement corrected: the
+first draft protected 22px because the rule's inward shadow reaches further than the rule, and the
+test asserting the middle began on *open* parchment failed — the vignette is still at 87% there and
+does not flatten until ~80px in. It does not need protecting. A gradient caught in the stretched
+middle becomes a wider gradient; only a hard feature would smear. The slice clears the rule, which is
+what the test checks now.
+
+**The map is ready for terrain art — done (2026-08-03).** Groundwork ahead of the grass textures, in
+response to the right question ("should the 256px PNGs be smaller JPGs?") having the wrong premise.
+**The source format does not survive import** — Godot converts PNG and JPG alike to its own `.ctex`,
+so what a texture costs at runtime is decided by its *import settings*, not its file extension, and
+JPG only adds ringing at the tile edges that breaks seamless tiling. Four 256px tiles are ~170 KB in
+VRAM. Texture memory was never the risk. **The per-cell loop was.** Returning anything at all from
+`load_textures` disables the fast path in `_draw` that collapses a uniform map to one `draw_rect`;
+this map is 500x500 at 128px tiles, so a 1280x800 stage would go from 1 draw call to 160 at the
+default frame and **25,000** at `MIN_ZOOM` — each with a dictionary lookup and a three-round 32-bit
+hash in GDScript before it reaches `draw_texture_rect`. It lands as a stutter while dragging or
+zooming rather than a steady frame cost, because `_draw` only runs on `queue_redraw`. Now:
+`MIN_TEXTURED_TILE_PX` drops the art below 32 screen pixels per tile, which is past legibility and
+caps the loop at about a thousand cells; the flat colour it falls back to is **averaged from the
+biome's own textures**, so crossing the threshold loses detail rather than shifting hue;
+`slice_variants()` cuts one atlas into four `AtlasTexture` variants over a single base, so every cell
+on screen draws from the same texture and the canvas can batch instead of switching texture every few
+tiles (`filter_clip` stops a variant bleeding into its neighbour; the threshold is what keeps the map
+away from the deeper mips, where the base genuinely mixes cells together). And **the map now asks for
+`TEXTURE_FILTER_LINEAR_WITH_MIPMAPS`** — the project leaves the canvas filter at Godot's Linear,
+which never samples a mip level, so mipmaps in the import would have been generated and silently
+ignored, shimmering at every zoom.
+
+**And the ground landed the same day.** `core/assets/map/atlas_grass.png` — 512x512, four 256px
+variants in a 2x2 grid, from the user. Checked before wiring rather than after: the four quadrants
+differ in detail while sharing an average colour to within 0.5/255 (which is what makes them
+*variants* rather than four grounds), and **no pairing of them seams** — the worst edge join measures
+1.8x the ordinary noise between two neighbouring columns inside a tile, which matters because the
+variant is chosen per cell and every pairing therefore occurs somewhere on a 500x500 map. Imported
+VRAM-compressed with mipmaps (the alpha channel was fully opaque, so nothing was lost); ETC2/ASTC was
+already enabled in `project.godot`, so Android is covered. One trap on the way in: `_average_color`
+crashed on every screen that mounts the map, because **`AtlasTexture.get_image` slices the base
+before anything can decompress it** and `Image.get_region` refuses to operate on a block-compressed
+image — base first, decompress, *then* region. Measured through the finished path: with the grid
+lines excluded, the ground either side of the threshold differs by **2.3/255**, so the fallback is
+invisible as a colour change. Captures `07da_map_terrain_close` / `07db_map_terrain_far` hold both
+sides of it. 473 green.
+
+**Map layers open where the map is — done (2026-08-03).** The bottom-right shortcut used to open a
+full page, which covered both the map the player was about to change and the button they opened it
+with. It now latches on and unrolls a **flyout**: the rail's own painted column, pinned by its foot
+to the shortcut's bottom edge and growing upward, with the round plate seated inside it. The reveal
+is the hover label's trick turned on its side — a clipping window whose bottom edge is fixed while
+its height grows and the column is held against that edge inside it — so the layers unroll out from
+under the button rather than arriving from off screen. New authored art from the user
+(`button_grid`, `button_terrain`, both with a `_selected` blue counterpart) makes each layer a
+latched plate on `speed_button`'s pattern, `hover_pressed` override and all. **The two coordinate
+overlays are one layer here**: the subgrid is the tile grid's own subdivision, and a plate offering
+fine lines over hidden tiles is offering a state nobody wants — the page keeps them separate because
+a page has room to explain the difference. Terrain ships inert; it is the layer everything else will
+eventually be drawn over, so it takes its place now rather than appearing later and moving the
+others. Four things the geometry taught, all of them found by looking at the capture rather than by a
+test: **the floating plates are not a rail destination's 84** — they were built at that size, and at
+it the corner read as a second rail growing out of it, so they are 64 and the column is proportioned
+to match (`MAP_LAYERS_ICON_SIZE`, its own padding and separation); the shortcut needs a **deeper
+inset than the mobile Menu plate** on every side, because the column overhangs it in all directions
+— at the Menu plate's own margin the column's right-hand ornament was cut off against the window
+edge and its foot landed on the conversation; the column's foot has to reserve **the gap, the plate,
+and the moulding again**, or it ends on the shortcut's own bottom edge and the button reads as poking
+out through the bottom of it; and the column has to **straddle the hover label** — parchment beneath
+it, plates above — or a layer's name appears to unroll out of the background instead of out of the
+button, which is a different and wronger thing for it to be doing. The flyout also leaves
+*immediately*, not on a tween, when a page or the expanded conversation takes the shortcut off
+screen — the same flash `_relayout_stage` already
+removes from the label. The phone keeps the page: there is no shortcut below the breakpoint and no
+room beside it for a column, so Menu still opens Map Layers, and neither surface may state the map's
+condition from memory. 468 green.
 
 **The conversation becomes one piece — done (2026-07-31).** It was two frames that only looked like
 one thing by accident: a panel floating over the map, and below it an input bar spanning the whole
