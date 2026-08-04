@@ -25,6 +25,29 @@ extends Control
 ## It is taller than the bar at this width, and hanging past it is the point: a banner flies from a
 ## rail, it does not sit in a box.
 const HEADER_FLAG_WIDTH := 88.0
+const TOP_BAR_NAME_FONT_SIZE := UiSkin.FONT_BODY
+const TOP_BAR_RANK_FONT_SIZE := UiSkin.FONT_SMALL - 4
+const TOP_BAR_RESOURCE_VALUE_FONT_SIZE := UiSkin.FONT_BODY
+const TOP_BAR_RESOURCE_INCREMENT_FONT_SIZE := TOP_BAR_RANK_FONT_SIZE
+
+## **Every readout occupies the same width, whatever its number.** Left to size themselves, the three
+## sit at whatever rhythm today's values happen to produce, and the group shuffles sideways the moment
+## a figure gains a digit — a status bar that moves when the status changes. A fixed slot each makes
+## the spacing a property of the bar rather than of the numbers on it.
+const TOP_BAR_RESOURCE_SLOT_WIDTH := 98.0
+const TOP_BAR_RESOURCE_SEPARATION := 14
+
+## What the number and its delta are given inside that slot.
+const TOP_BAR_RESOURCE_VALUES_WIDTH := 42.0
+
+## **A third readout does not fit a phone at the desktop's measurements.** The bar is one row by
+## definition and cannot wrap, and it already wanted about 870 units of a 720-wide screen with two
+## readouts on it — adding score at full size ran the settlement's name into the coins and pushed the
+## date off the right-hand edge. So on a phone the icon and the figures both give, which is the same
+## answer this row has always reached: it is the type size that yields, because nothing here can move
+## to another line. Measured back from what fits rather than chosen.
+const TOP_BAR_RESOURCE_SLOT_WIDTH_MOBILE := 64.0
+const TOP_BAR_RESOURCE_VALUES_WIDTH_MOBILE := 31.0
 
 ## Where the banner hangs from. **Negative on purpose**: the art carries a finial and a crossbar
 ## above the cloth — a quarter of its height — and at this size that is a long brown spike standing
@@ -32,18 +55,29 @@ const HEADER_FLAG_WIDTH := 88.0
 ## and the hardware off the screen, which is what a banner hung from a rail looks like.
 const BANNER_TOP_INSET := -34.0
 
-## The banner's shadow: how far it falls, and how dark. Black at a third, because it lands on
-## parchment for its top half and on the map for the rest — anything heavier reads as a second flag.
-const BANNER_SHADOW_OFFSET := Vector2(4.0, 5.0)
-const BANNER_SHADOW_COLOR := Color(0.0, 0.0, 0.0, 0.34)
+## **The banner casts the top bar's own shadow** — `UiSkin.HEADER_SHADOW_*`, the wide flat falloff
+## that separates the chrome from the map. It hangs off that bar, so the two were the one pair on
+## this screen that had no excuse for disagreeing, and a hard-edged black copy of the cloth read as a
+## second flag behind the first rather than as a shadow.
+##
+## It cannot be the same *stylebox*. [method UiSkin.shadow_style] documents at length why its centre
+## has to be an opaque fill — Godot draws no shadow at all without one, and the shadow is a filled
+## rounded rect rather than a ring — which works only because a plate covers that fill completely.
+## A notched cloth on a crossbar covers almost none of its own bounding box, so behind this the fill
+## would be a near-black slab showing through the V at the foot and either side of the hardware: the
+## same failure the arrow plates and the card fields hit through a few transparent pixels, at the
+## scale of most of the shape.
+##
+## So the falloff is cast from the silhouette instead — several copies of the cloth in a ring, each
+## faint enough that where they all overlap they compose to the header's own opacity, and the band
+## where progressively fewer of them land is the blur. The colour, the drop and the radius are all
+## read from the header's constants, so the two shadows cannot drift apart.
+##
+## Eight taps is where the ring stops scalloping at this radius: the union of the copies is what
+## gives the shadow its outer edge, and too few leave that edge visibly polygonal.
+const BANNER_SHADOW_TAPS := 8
+const SPEED_BUTTON_SEPARATION := 4
 
-## Wide enough for ">>>" with room around it, and identical across all four so the row reads as one
-## switch rather than four buttons of increasing importance.
-const SPEED_BUTTON_WIDTH := 52.0
-
-## Short enough to sit inside the bar with air above and below it. [constant UiSkin.CONTROL_HEIGHT]
-## is a field's height and would fill the strip corner to corner.
-const SPEED_BUTTON_HEIGHT := 42.0
 ## Wide enough that "Yes" and "No" are the same plate — an answer whose halves are different sizes
 ## reads as one of them being the expected one.
 const ANSWER_BUTTON_WIDTH := 130.0
@@ -57,14 +91,36 @@ const MAP_LAYERS_PAGE_ID := "map_layers"
 
 var _shell: HudShell
 var _map_view: OverworldMapView
+## Held because selection has to ask the content what is at a cell, which the view cannot answer —
+## it draws the map and never learns what has been built on it.
+var _terrain_map: TerrainMap
+var _selection_dock: SelectionDock
+## What kind of thing is selected ([constant BaseGameMap.KIND_CONSTRUCTION] and friends), or empty.
+## The map view holds the *footprint*; which layer that footprint belongs to is this screen's to
+## remember, and it is what decides whether hiding the constructions has to drop it.
+var _selection_kind := ""
 
 var _source: AiInputSource
 var _outpost_label: Label
 var _tier_label: Label
 var _flag_view: FlagView
-var _flag_shadow: FlagView
+## The copies that make up the banner's shadow. They never get the flag's value: the silhouette they
+## are drawn for comes from the cloth's own alpha, which is the same whatever is painted on it.
+var _flag_shadows: Array[FlagView] = []
 var _gold_label: Label
+var _gold_increment_label: Label
 var _population_label: Label
+var _population_increment_label: Label
+## Score has no system behind it yet — it reads 0 and its delta reads +0, which is the honest answer
+## until something computes one. It takes its place in the bar now rather than appearing later and
+## shifting the two readouts beside it.
+var _score_label: Label
+var _score_increment_label: Label
+## The status group and the spacer that positions it, held so [method _centre_status_group] can put
+## the group on the bar's own centre line at any width.
+var _resources_left: Control
+var _resources_host: Control
+var _resource_icons: Array[TextureRect] = []
 var _date_label: Label
 var _log_label: RichTextLabel
 var _message_list: ChatMessageList
@@ -73,6 +129,11 @@ var _send_button: Button
 var _retry_button: SkinnedButton
 var _event_image: Control
 var _speed_buttons: Dictionary = {}
+var _speed_host: Control
+## The plates in the map-layers flyout. Held because the same overlays are also reachable from the
+## phone's Map Layers page, and the two must not contradict each other.
+var _grid_layer_plate: SkinnedButton
+var _terrain_layer_plate: SkinnedButton
 var _trace_label: RichTextLabel
 
 ## The question the game master is waiting on, if any (M4/B4b). Lives in the dock, not inside the
@@ -210,6 +271,7 @@ func _build_ui() -> void:
 	_build_top_bar()
 	_build_chat_panel()
 	_build_dock()
+	_build_selection_band()
 	_build_menu_panel()
 	_build_destination_actions()
 
@@ -221,7 +283,14 @@ func _build_map() -> void:
 	var map := BaseGameMap.load_map()
 	if map == null:
 		return
+	_terrain_map = map
 	_map_view.setup(map, BaseGameMap.load_textures(map))
+	_map_view.set_scatter(BaseGameMap.load_scatter(map))
+	_map_view.set_ground_overrides(BaseGameMap.load_ground_overrides(map))
+	_map_view.subtile_clicked.connect(_on_subtile_clicked)
+	# The map drops a selection the player has zoomed away from, on its own. That is the only route by
+	# which the band can go stale without anything here being pressed.
+	_map_view.selection_changed.connect(_on_map_selection_changed)
 	_refresh_map_marker()
 
 
@@ -230,10 +299,22 @@ func _build_map() -> void:
 ## panel) can change *which* cell that is without the terrain itself changing — the old
 ## `MapOverlay` got this for free by rebuilding from scratch on every open; the map is now built
 ## once, so anything that can change the outpost's site has to ask for this explicitly.
+##
+## **Off while the map is being built up.** There is no settlement drawn on the ground yet for a
+## banner to be planting itself over, so a flag on a bare cell is a label for something that is not
+## there — and it is the one thing standing in the middle of the map while the terrain, the ground
+## scatter and eventually the forests are being judged against each other. Everything it needs is
+## kept, wired and called from all three places that can move the site; flip this back to true and the
+## pin returns, over whatever the outpost has become by then.
+const MAP_MARKER_ENABLED := false
+
+
 func _refresh_map_marker() -> void:
 	if _map_view == null:
 		return
 	_map_view.remove_marker("outpost")
+	if not MAP_MARKER_ENABLED:
+		return
 	var site: Dictionary = Kernel.state.get_value(GameSession.OUTPOST_SITE_STATE_KEY, {})
 	if site.is_empty():
 		return
@@ -266,73 +347,132 @@ func _build_top_bar() -> void:
 	_shell.set_banner(_build_banner(), BANNER_TOP_INSET)
 	_flag_view.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 
-	# **One line, not two.** The name and the tier were stacked, which is what set the bar's height as
-	# much as the padding did; a strip this shallow reads as a single row, and side by side they still
-	# say the same thing.
-	_outpost_label = _bar_label(UiSkin.FONT_BODY)
-	bar.add_child(_outpost_label)
+	# The name and tier are a compact two-line identity stack, with the rank deliberately quieter below.
+	var identity := Control.new()
+	identity.name = "top_identity"
+	_outpost_label = _bar_label(TOP_BAR_NAME_FONT_SIZE)
+	# The settlement name is the header's primary identity, so give its ink a one-pixel same-colour
+	# outline. It reads as a true bold weight without changing the size or disturbing the rank below.
+	_outpost_label.add_theme_constant_override("outline_size", 1)
+	_outpost_label.add_theme_color_override("font_outline_color", UiSkin.INK)
+	_outpost_label.position = Vector2(0, -8)
+	_outpost_label.size = Vector2(150, 28)
+	identity.add_child(_outpost_label)
 	# The growth axis the wireframe implies (Outpost -> Village -> Town -> ...) has no system
 	# behind it yet — a fixed tier, not a computed one, until M7 designs the ladder (ux_plan.md §5).
-	_tier_label = _bar_label(UiSkin.FONT_SMALL, true)
+	_tier_label = _bar_label(TOP_BAR_RANK_FONT_SIZE, true)
 	_tier_label.text = "Outpost"
-	bar.add_child(_tier_label)
+	_tier_label.position = Vector2(0, 22)
+	_tier_label.size = Vector2(150, 19)
+	identity.add_child(_tier_label)
+	var identity_host := Control.new()
+	identity_host.name = "top_identity_slot"
+	identity_host.custom_minimum_size = Vector2(150, UiSkin.TOP_BAR_HEIGHT
+		- UiSkin.TOP_BAR_PADDING_TOP - UiSkin.TOP_BAR_PADDING_BOTTOM)
+	identity.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	identity_host.add_child(identity)
+	bar.add_child(identity_host)
 
-	# **The icons the words were standing in for.** ux_plan.md §5 called "Gold"/"Population" a
-	# placeholder for the wireframe's icon slots; the legacy build's coin and head fill them, and the
-	# bar stops needing a different type size on a phone to fit two whole nouns.
-	bar.add_child(_bar_icon(UiSkin.COIN_ICON, "Coins"))
-	_gold_label = _bar_label(UiSkin.FONT_BODY)
-	bar.add_child(_gold_label)
-	bar.add_child(_bar_icon(UiSkin.POPULATION_ICON, "Population"))
-	_population_label = _bar_label(UiSkin.FONT_BODY)
-	bar.add_child(_population_label)
-
-	var spacer := Control.new()
-	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	bar.add_child(spacer)
+	# Coins, population and score share one status group between the identity and the date. Each keeps
+	# its authored icon beside a two-line value stack: the amount is prominent and the neutral
+	# placeholder delta sits beneath it at the same scale as the outpost rank.
+	#
+	# **The left spacer is sized, not stretched.** It used to expand with a hand-tuned 2.25 ratio to
+	# compensate for the date-and-speed cluster being wider than the banner-and-identity one — but a
+	# ratio splits the *free* space, and how much of that is free changes with the window, so one
+	# number could only be right at one width. It carries a computed width now
+	# ([method _centre_status_group]) and only the right-hand spacer expands, which is what keeps the
+	# date and the speed plates flush to the right edge.
+	_resources_left = Control.new()
+	_resources_left.name = "top_resources_spacer"
+	bar.add_child(_resources_left)
+	var resources := HBoxContainer.new()
+	resources.name = "top_resources"
+	resources.alignment = BoxContainer.ALIGNMENT_CENTER
+	resources.add_theme_constant_override("separation", TOP_BAR_RESOURCE_SEPARATION)
+	resources.custom_minimum_size.y = TOP_BAR_NAME_FONT_SIZE + TOP_BAR_RANK_FONT_SIZE
+	var gold := _resource_item(UiSkin.COIN_ICON, "Coins")
+	_gold_label = gold.get_node("values/value") as Label
+	_gold_increment_label = gold.get_node("values/increment") as Label
+	resources.add_child(gold)
+	var population := _resource_item(UiSkin.POPULATION_ICON, "Population")
+	_population_label = population.get_node("values/value") as Label
+	_population_increment_label = population.get_node("values/increment") as Label
+	resources.add_child(population)
+	var score := _resource_item(UiSkin.SCORE_ICON, "Score")
+	_score_label = score.get_node("values/value") as Label
+	_score_increment_label = score.get_node("values/increment") as Label
+	resources.add_child(score)
+	_resources_host = Control.new()
+	_resources_host.name = "top_resources_slot"
+	_resources_host.custom_minimum_size.y = (UiSkin.TOP_BAR_HEIGHT
+		- UiSkin.TOP_BAR_PADDING_TOP - UiSkin.TOP_BAR_PADDING_BOTTOM)
+	resources.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_resources_host.add_child(resources)
+	bar.add_child(_resources_host)
+	var resources_right := Control.new()
+	resources_right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	bar.add_child(resources_right)
+	bar.resized.connect(_centre_status_group)
 
 	_date_label = _bar_label(UiSkin.FONT_BODY)
 	_date_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	bar.add_child(_date_label)
-	# The four speeds are a pick-one, so they are the skin's field plates rather than button plates —
-	# a `SkinnedButton` has no state that stays down. **The pressed box has to be overridden after
-	# `apply_card`**: a card's selection is the glow its host panel draws, so `apply_card` leaves
-	# `pressed` looking exactly like `normal`, and four identical plates would never say which speed
-	# is running. Pushed-in is the right mark here anyway — this is a switch, not a card.
+	# Four authored pick-one plates. The active speed keeps its blue selected artwork; the wrapper
+	# supplies the same shadow, hover lift and press response as the rest of the painted controls.
+	var speed_row := HBoxContainer.new()
+	speed_row.name = "top_speed_buttons"
+	speed_row.add_theme_constant_override("separation", SPEED_BUTTON_SEPARATION)
+	speed_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	_speed_host = Control.new()
+	_speed_host.name = "top_speed_slot"
+	_speed_host.custom_minimum_size = Vector2(UiSkin.SPEED_BUTTON_SIZE * 4
+		+ SPEED_BUTTON_SEPARATION * 3, UiSkin.TOP_BAR_HEIGHT
+		- UiSkin.TOP_BAR_PADDING_TOP - UiSkin.TOP_BAR_PADDING_BOTTOM)
+	speed_row.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_speed_host.add_child(speed_row)
 	for speed in [TimeDriver.Speed.PAUSED, TimeDriver.Speed.SPEED_1,
 			TimeDriver.Speed.SPEED_2, TimeDriver.Speed.SPEED_3]:
-		var button := Button.new()
-		button.icon = UiSkin.top_bar_icon(UiSkin.SPEED_ICONS[speed], UiSkin.SPEED_ICON_SIZE)
-		button.toggle_mode = true
+		var button := UiSkin.speed_button(speed)
 		button.tooltip_text = ["Pause", "Speed 1", "Speed 2", "Speed 3"][speed]
-		UiSkin.apply_card(button)
-		button.add_theme_stylebox_override("pressed", UiSkin.input_style(UiSkin.PRESSED_TINT))
-		button.add_theme_stylebox_override("hover_pressed", UiSkin.input_style(UiSkin.PRESSED_TINT))
-		button.custom_minimum_size = Vector2(SPEED_BUTTON_WIDTH, SPEED_BUTTON_HEIGHT)
 		button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		button.pressed.connect(_set_time_speed.bind(speed))
-		bar.add_child(button)
+		speed_row.add_child(button)
 		_speed_buttons[speed] = button
+	bar.add_child(_speed_host)
 	_refresh_time_buttons()
 
 
-## The banner: the cloth, and a second copy of it behind as a shadow.
+## The banner: the cloth, and the ring of faint copies behind it that is its shadow (see
+## [constant BANNER_SHADOW_TAPS] for why it is built this way rather than from a stylebox).
 ##
-## **The shadow has to be a sibling drawn first, not a child.** A [Control]'s children draw after it,
-## so a shadow parented to the flag would fall in front of it — and the flag is a shader on a
-## [ColorRect] with no stylebox to hang [method UiSkin.shadow_style] on. A black copy of the same
-## banner, nudged down and across, is the shadow a shape this irregular actually wants.
+## **The shadow has to be siblings drawn first, not children.** A [Control]'s children draw after it,
+## so a shadow parented to the flag would fall in front of it.
 func _build_banner() -> Control:
 	var size := Vector2(HEADER_FLAG_WIDTH, HEADER_FLAG_WIDTH * FlagView.aspect(true))
 	var banner := Control.new()
 	banner.custom_minimum_size = size
 	banner.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_flag_shadow = _banner_cloth(banner, size)
-	_flag_shadow.modulate = BANNER_SHADOW_COLOR
-	_flag_shadow.offset_left += BANNER_SHADOW_OFFSET.x
-	_flag_shadow.offset_right += BANNER_SHADOW_OFFSET.x
-	_flag_shadow.offset_top += BANNER_SHADOW_OFFSET.y
-	_flag_shadow.offset_bottom += BANNER_SHADOW_OFFSET.y
+	_flag_shadows.clear()
+	# Solved rather than guessed at: compositing N layers of alpha `a` leaves `1 - (1 - a)^N`, so this
+	# is the per-copy alpha whose overlap lands exactly on the header's. Stacking eight copies at the
+	# header's own 0.34 would be a black cut-out.
+	var tap_alpha := 1.0 - pow(1.0 - UiSkin.HEADER_SHADOW_COLOR.a, 1.0 / float(BANNER_SHADOW_TAPS))
+	# The stylebox's `shadow_size` is how far the blur reaches *beyond* the box; a ring of radius r
+	# spreads r outward and erodes r inward, so half the header's size puts the falloff's outer edge
+	# in the same place.
+	var radius := float(UiSkin.HEADER_SHADOW_SIZE) * 0.5
+	for tap in BANNER_SHADOW_TAPS:
+		var angle := TAU * float(tap) / float(BANNER_SHADOW_TAPS)
+		var at := UiSkin.HEADER_SHADOW_OFFSET + Vector2(cos(angle), sin(angle)) * radius
+		var cloth := _banner_cloth(banner, size)
+		cloth.modulate = Color(UiSkin.HEADER_SHADOW_COLOR.r, UiSkin.HEADER_SHADOW_COLOR.g,
+			UiSkin.HEADER_SHADOW_COLOR.b, tap_alpha)
+		cloth.offset_left += at.x
+		cloth.offset_right += at.x
+		cloth.offset_top += at.y
+		cloth.offset_bottom += at.y
+		_flag_shadows.append(cloth)
 	_flag_view = _banner_cloth(banner, size)
 	return banner
 
@@ -352,14 +492,67 @@ func _banner_cloth(parent: Control, size: Vector2) -> FlagView:
 
 ## One of the top bar's icon slots — the coin, the head. A [TextureRect] rather than a [Label] with a
 ## glyph in it, so the art is the art.
-func _bar_icon(texture: Texture2D, tooltip: String) -> TextureRect:
+func _bar_icon(texture: Texture2D, tooltip: String, size: int = UiSkin.TOP_BAR_ICON_SIZE) -> TextureRect:
 	var icon := TextureRect.new()
-	icon.texture = UiSkin.top_bar_icon(texture)
+	icon.texture = UiSkin.top_bar_icon(texture, size)
+	# The art at its authored size, kept because the drawn one is a resampled copy: crossing the
+	# breakpoint has to re-derive from the source, not from the copy made for the other breakpoint.
+	icon.set_meta("source", texture)
 	icon.tooltip_text = tooltip
 	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	icon.custom_minimum_size = Vector2(UiSkin.TOP_BAR_ICON_SIZE, UiSkin.TOP_BAR_ICON_SIZE)
+	icon.custom_minimum_size = Vector2(size, size)
 	icon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	return icon
+
+
+func _resource_item(texture: Texture2D, tooltip: String) -> HBoxContainer:
+	var item := HBoxContainer.new()
+	item.name = "top_%s" % tooltip.to_lower()
+	item.alignment = BoxContainer.ALIGNMENT_CENTER
+	item.add_theme_constant_override("separation", 5)
+	item.custom_minimum_size = Vector2(TOP_BAR_RESOURCE_SLOT_WIDTH,
+		TOP_BAR_NAME_FONT_SIZE + TOP_BAR_RANK_FONT_SIZE)
+	var icon := _bar_icon(texture, tooltip)
+	_resource_icons.append(icon)
+	item.add_child(icon)
+	var values := Control.new()
+	values.name = "values"
+	values.custom_minimum_size = Vector2(TOP_BAR_RESOURCE_VALUES_WIDTH, 44)
+	var value := _bar_label(TOP_BAR_RESOURCE_VALUE_FONT_SIZE)
+	value.name = "value"
+	value.position = Vector2(0, -6)
+	value.size = Vector2(TOP_BAR_RESOURCE_VALUES_WIDTH, 29)
+	value.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	values.add_child(value)
+	var increment := _bar_label(TOP_BAR_RESOURCE_INCREMENT_FONT_SIZE, true)
+	increment.name = "increment"
+	increment.position = Vector2(0, 22)
+	increment.size = Vector2(TOP_BAR_RESOURCE_VALUES_WIDTH, 19)
+	increment.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	values.add_child(increment)
+	item.add_child(values)
+	return item
+
+
+## Put the status group on the bar's own centre line — the middle of the *window*, not the middle of
+## whatever gap the clusters either side of it happen to leave.
+##
+## **Corrected from the laid-out rect rather than calculated from the parts.** Working it out up front
+## means summing two fixed clusters, the container's separations and the group's own minimum, and
+## every one of those is a number this file would then own a copy of. Measuring how far off centre the
+## group actually landed and moving the spacer by exactly that much needs none of them, and it is a
+## single pass: nothing before the spacer expands, so widening it shifts the group and moves nothing
+## else.
+func _centre_status_group() -> void:
+	if _resources_left == null or _resources_host == null or not is_inside_tree():
+		return
+	var bar := _shell.top_bar
+	if bar == null or bar.size.x <= 0.0 or _resources_host.size.x <= 0.0:
+		return
+	var offset := bar.size.x * 0.5 - (_resources_host.position.x + _resources_host.size.x * 0.5)
+	if is_zero_approx(offset):
+		return
+	_resources_left.custom_minimum_size.x = maxf(0.0, _resources_left.size.x + offset)
 
 
 ## A line of lettering on the game's own parchment chrome.
@@ -472,6 +665,75 @@ func _build_dock() -> void:
 	input_row.add_child(_retry_button)
 
 
+# --- map selection ---------------------------------------------------------------------------
+
+## The band that describes whatever the player has picked off the map. Built once and left in the
+## stage, like the conversation: showing it is a layout decision, not a construction one.
+func _build_selection_band() -> void:
+	_selection_dock = SelectionDock.new()
+	_shell.set_selection_dock(_selection_dock)
+	# Esc and the band's own ✕ both reach the shell, never this screen — so the map's outline is
+	# cleared from the shell's own report rather than from each of the routes that can close the band.
+	_shell.selection_visibility_changed.connect(_on_selection_visibility_changed)
+
+
+## A press on the map that was not a pan. **The ladder is walked here**, in the module: which things
+## contain which is game content, while how big they are on screen is the view's — so this asks
+## `BaseGameMap` what is at the subtile and `BaseGameMap` asks the view whether it is big enough to
+## be worth aiming at.
+func _on_subtile_clicked(subtile: Vector2i) -> void:
+	if _terrain_map == null or _map_view == null:
+		return
+	var picked := BaseGameMap.selection_at(_terrain_map, _map_view, subtile,
+		_map_view.is_construction_layer_visible())
+	# Nothing selectable there — off the map, or everything under the pointer is too small at this
+	# zoom to point at. Either way the honest answer is that the player has selected nothing.
+	if picked.is_empty():
+		_clear_selection()
+		return
+	var footprint: Array[Rect2i] = picked["footprint"]
+	# Pressing the same thing again puts it away, which is the only way to deselect that does not
+	# require finding a key or a small ✕.
+	if _shell.is_selection_visible() and _map_view.selection() == footprint:
+		_clear_selection()
+		return
+	_selection_kind = String(picked["kind"])
+	_map_view.set_selection(footprint)
+	_selection_dock.show_selection(String(picked["title"]),
+		_holder_of(bool(picked["owned"])), picked["art"] as Texture2D)
+	_shell.set_selection_visible(true)
+
+
+## Who holds the selected thing. The settlement's own name for anything the player owns; nothing at
+## all for wild ground, rather than a word invented to stand in for "no one". There is no faction
+## system to ask yet, so "owned" is the only distinction the content can honestly draw.
+func _holder_of(owned: bool) -> String:
+	if not owned:
+		return ""
+	var outpost: Dictionary = Entities.get_entity(Kernel.state, "outpost")
+	return String(outpost.get("name", "The Outpost"))
+
+
+func _on_selection_visibility_changed(visible: bool) -> void:
+	if not visible:
+		_selection_kind = ""
+		if _map_view != null:
+			_map_view.clear_selection()
+
+
+## The map let a selection go by itself — the player zoomed out past the point where it was worth
+## outlining. The band describes something that is no longer marked on the map, so it goes too.
+func _on_map_selection_changed(footprint: Array[Rect2i]) -> void:
+	if footprint.is_empty():
+		_shell.set_selection_visible(false)
+
+
+func _clear_selection() -> void:
+	_shell.set_selection_visible(false)
+	if _map_view != null:
+		_map_view.clear_selection()
+
+
 ## Opening the conversation puts the caret where the player is about to type. There is no expand
 ## chevron any more: the board itself is the control, and the header's close is what puts it away.
 func _on_chat_expanded_changed(expanded: bool) -> void:
@@ -565,6 +827,7 @@ func _build_destination_actions() -> void:
 		var label := String(definition.get("label", id))
 		if id == MAP_LAYERS_PAGE_ID:
 			_shell.add_map_layers_action(label, _open_destination.bind(id))
+			_build_map_layer_toggles()
 		else:
 			_shell.add_rail_action(label, _open_destination.bind(id),
 				definition.get("icon") as Texture2D)
@@ -583,9 +846,107 @@ func _open_destination(id: String) -> void:
 		panel.set_meta("hud_page_id", id)
 		panel.set_title(String(definition.get("title", id.capitalize())))
 		Kernel.hud_panels.build(id, panel, Kernel)
+		if id == MAP_LAYERS_PAGE_ID:
+			_wire_map_layer_toggles(panel)
 		_destination_panels[id] = panel
 	Kernel.hud_panels.refresh(id, panel, Kernel)
+	if id == MAP_LAYERS_PAGE_ID:
+		_sync_map_layer_toggles(panel)
 	_shell.show_page(panel)
+
+
+## The layers the desktop shortcut's flyout offers. **The two coordinate overlays are one layer
+## here**: the subgrid is the tile grid's own subdivision, and a plate that showed the fine lines
+## while the tiles they divide were off would be offering a state nobody wants. The page keeps them
+## separate because a page has room to explain the difference; a plate does not.
+##
+## **Terrain is a view, not a layer of its own.** The ground is always drawn — it is the surface
+## everything else stands on, so there is nothing coherent for a plate that hid it to leave behind.
+## What the plate does instead is strip the map back *to* the ground: latched, it takes away the
+## constructions and the units together, which is the one arrangement that answers "show me the land
+## itself". It is registered last because the column reads as a stack, with the ground at its foot.
+func _build_map_layer_toggles() -> void:
+	var grids_on := _map_view != null and _map_view.is_tile_grid_visible()
+	_grid_layer_plate = _shell.add_map_layers_toggle("Grid", UiSkin.MAP_LAYER_GRID_TEXTURE,
+		UiSkin.MAP_LAYER_GRID_SELECTED_TEXTURE, _set_map_grids_visible, grids_on)
+	# Unlatched by default: the map opens as the world, with everything on it, and stripping it back
+	# is the thing the player asks for.
+	_terrain_layer_plate = _shell.add_map_layers_toggle("Terrain",
+		UiSkin.MAP_LAYER_TERRAIN_TEXTURE, UiSkin.MAP_LAYER_TERRAIN_SELECTED_TEXTURE,
+		_set_terrain_only, false)
+
+
+## Strip the map back to bare ground, or put the world back on it.
+##
+## Both layers move together because that is what "terrain only" means; they are separate flags on
+## the view so that a later plate can turn units off on their own without this one being in the way.
+func _set_terrain_only(only: bool) -> void:
+	if _map_view == null:
+		return
+	_map_view.set_construction_layer_visible(not only)
+	_map_view.set_units_layer_visible(not only)
+	# A selected farm that is no longer drawn would leave an outline round what now looks like plain
+	# grass. Bare ground survives — it is still there, and still what the outline encloses.
+	if only and _selection_kind == BaseGameMap.KIND_CONSTRUCTION:
+		_clear_selection()
+
+
+func _set_map_grids_visible(shown: bool) -> void:
+	if _map_view == null:
+		return
+	_map_view.set_tile_grid_visible(shown)
+	_map_view.set_subgrid_visible(shown)
+
+
+func _wire_map_layer_toggles(panel: HudPanel) -> void:
+	if _map_view == null:
+		return
+	var tile_grid := panel.find_child(BaseGameMap.TILE_GRID_TOGGLE_NAME, true, false) as CheckButton
+	var subgrid := panel.find_child(BaseGameMap.SUBGRID_TOGGLE_NAME, true, false) as CheckButton
+	var terrain_only := panel.find_child(BaseGameMap.TERRAIN_ONLY_TOGGLE_NAME, true,
+		false) as CheckButton
+	if tile_grid != null:
+		tile_grid.toggled.connect(func(value: bool) -> void:
+			_map_view.set_tile_grid_visible(value)
+			_restate_grid_plate())
+	if subgrid != null:
+		subgrid.toggled.connect(_map_view.set_subgrid_visible)
+	if terrain_only != null:
+		terrain_only.toggled.connect(func(value: bool) -> void:
+			_set_terrain_only(value)
+			_restate_terrain_plate())
+
+
+## Two controls reach the same overlays — the phone's page and the desktop shortcut's flyout — so
+## neither may state the map's condition from memory. The page is re-read from the map view each time
+## it is opened, which is the only moment it can have gone stale; the plate is re-stated the moment
+## the page changes anything, because it is on screen behind the page rather than rebuilt on sight.
+func _sync_map_layer_toggles(panel: HudPanel) -> void:
+	if _map_view == null:
+		return
+	var tile_grid := panel.find_child(BaseGameMap.TILE_GRID_TOGGLE_NAME, true, false) as CheckButton
+	var subgrid := panel.find_child(BaseGameMap.SUBGRID_TOGGLE_NAME, true, false) as CheckButton
+	var terrain_only := panel.find_child(BaseGameMap.TERRAIN_ONLY_TOGGLE_NAME, true,
+		false) as CheckButton
+	if tile_grid != null:
+		tile_grid.set_pressed_no_signal(_map_view.is_tile_grid_visible())
+	if subgrid != null:
+		subgrid.set_pressed_no_signal(_map_view.is_subgrid_visible())
+	if terrain_only != null:
+		# The page's row is the plate's own question asked the other way round: the plate latches to
+		# strip the map back, and the map reports what it is drawing.
+		terrain_only.set_pressed_no_signal(not _map_view.is_construction_layer_visible())
+
+
+func _restate_grid_plate() -> void:
+	if _grid_layer_plate != null and _map_view != null:
+		_grid_layer_plate.button.set_pressed_no_signal(_map_view.is_tile_grid_visible())
+
+
+func _restate_terrain_plate() -> void:
+	if _terrain_layer_plate != null and _map_view != null:
+		_terrain_layer_plate.button.set_pressed_no_signal(
+			not _map_view.is_construction_layer_visible())
 
 
 ## The typed source's submit path: a real backend turn takes 0.85-4 s (D22), so input
@@ -799,8 +1160,8 @@ func _refresh_time_buttons() -> void:
 		return
 	var current := Kernel.time_driver.speed()
 	for speed: Variant in _speed_buttons:
-		var button: Button = _speed_buttons[speed]
-		button.button_pressed = int(speed) == current
+		var button: SkinnedButton = _speed_buttons[speed]
+		button.button.set_pressed_no_signal(int(speed) == current)
 
 
 ## The mobile wireframe keeps only the fastest speed in the constrained top bar. Pause and exact
@@ -811,6 +1172,33 @@ func _on_shell_breakpoint_changed(_is_mobile: bool) -> void:
 
 func _sync_speed_layout() -> void:
 	var mobile := _shell.size.x < HudShell.MOBILE_BREAKPOINT_WIDTH
+	# Derived from the slot the readouts actually occupy rather than a number kept in step by hand:
+	# adding score changed how wide this group is, and a literal here would have gone on reserving
+	# room for two.
+	# The gaps *between* the bar's clusters are the cheapest room a phone has: six of them at the
+	# desktop's spacing is nearly a hundred units of a 720-wide row, spent on air rather than on
+	# anything that says something.
+	_shell.top_bar.add_theme_constant_override("separation", 8 if mobile else 16)
+	var slot := TOP_BAR_RESOURCE_SLOT_WIDTH_MOBILE if mobile else TOP_BAR_RESOURCE_SLOT_WIDTH
+	var count := float(_resource_icons.size())
+	_resources_host.custom_minimum_size.x = (slot * count
+		+ TOP_BAR_RESOURCE_SEPARATION * maxf(0.0, count - 1.0))
+	var icon_size := (UiSkin.TOP_BAR_ICON_SIZE_MOBILE if mobile else UiSkin.TOP_BAR_ICON_SIZE)
+	for icon: TextureRect in _resource_icons:
+		icon.custom_minimum_size = Vector2(icon_size, icon_size)
+		icon.texture = UiSkin.top_bar_icon(icon.get_meta("source") as Texture2D, icon_size)
+	var values_width := (TOP_BAR_RESOURCE_VALUES_WIDTH_MOBILE if mobile
+		else TOP_BAR_RESOURCE_VALUES_WIDTH)
+	for item: Control in _resources_host.get_child(0).get_children():
+		item.custom_minimum_size.x = slot
+		# The figures are laid out by hand inside their own box rather than by a container, so the
+		# box narrowing is not enough on its own — each label has to be told as well.
+		var values := item.get_node("values") as Control
+		values.custom_minimum_size.x = values_width
+		for label: Control in values.get_children():
+			label.size.x = values_width
+	_speed_host.custom_minimum_size.x = (UiSkin.SPEED_BUTTON_SIZE if mobile
+		else UiSkin.SPEED_BUTTON_SIZE * 4 + SPEED_BUTTON_SEPARATION * 3)
 	for speed: Variant in _speed_buttons:
 		_speed_buttons[speed].visible = not mobile or int(speed) == TimeDriver.Speed.SPEED_3
 	# **The bar is the one strip that cannot re-flow.** A page wraps and a card pager drops to one
@@ -819,13 +1207,27 @@ func _sync_speed_layout() -> void:
 	# container does not clip: the overflow pushed the date and the speed control clean off the
 	# right-hand edge, and the panels below inherited the same too-wide row.
 	var size := UiSkin.FONT_SMALL if mobile else UiSkin.FONT_BODY
-	for label: Label in [_outpost_label, _gold_label, _population_label, _date_label]:
-		label.add_theme_font_size_override("font_size", size)
+	# The settlement's name is drawn by hand inside a fixed 150-unit box and a [Label] does not clip,
+	# so at the desktop size a name of any length simply runs on past it. That was invisible while the
+	# bar had room to its right; with a third readout there it ran into the coins. The name is the one
+	# thing on this row that cannot be shortened, so it is the size that gives instead.
+	_outpost_label.add_theme_font_size_override("font_size", size)
+	_date_label.add_theme_font_size_override("font_size", size)
+	var resource_value_size := UiSkin.FONT_SMALL + 4 if mobile else TOP_BAR_RESOURCE_VALUE_FONT_SIZE
+	for label: Label in [_gold_label, _population_label, _score_label]:
+		label.add_theme_font_size_override("font_size", resource_value_size)
+	for label: Label in [_gold_increment_label, _population_increment_label,
+			_score_increment_label]:
+		label.add_theme_font_size_override("font_size", TOP_BAR_RESOURCE_INCREMENT_FONT_SIZE)
 	# The tier is the first thing off a phone's bar. It stood under the name until the bar was
 	# shortened and the two went side by side, which is what tipped the row over 720 again — and it is
 	# a placeholder tier (ux_plan.md §5) reading "Outpost" beside a settlement that says as much.
-	_tier_label.visible = not mobile
+	_tier_label.add_theme_font_size_override("font_size", TOP_BAR_RANK_FONT_SIZE)
+	_tier_label.visible = true
 	_refresh_resources()
+	# The group's width has just changed, so where its centre falls has too. Deferred: the container
+	# has not laid the new minimums out yet, and this measures the result rather than predicting it.
+	_centre_status_group.call_deferred()
 
 
 func _on_open_map() -> void:
@@ -870,7 +1272,6 @@ func _refresh_outpost() -> void:
 	# so there is nothing to hide here.
 	var flag := FlagValue.from_dict(stored)
 	_flag_view.set_value(flag)
-	_flag_shadow.set_value(flag)
 	var outpost: Dictionary = Entities.get_entity(Kernel.state, "outpost")
 	_outpost_label.text = String(outpost.get("name", "The Outpost"))
 
@@ -885,11 +1286,18 @@ func _refresh_resources() -> void:
 	var resources: Dictionary = Kernel.state.get_value("resources", {})
 	# The icon says which number this is, so the label is the number. The placeholder "+0" delta
 	# ux_plan.md §5 asks for goes beside it on a screen wide enough to hold one.
-	var compact := _shell != null and _shell.size.x < HudShell.MOBILE_BREAKPOINT_WIDTH
 	var gold := int(resources.get("gold", 0))
 	var population := int(resources.get("population", 0))
-	_gold_label.text = "%d" % gold if compact else "%d  +0" % gold
-	_population_label.text = "%d" % population if compact else "%d  +0" % population
+	# Score is read the same way as the other two, so the day something writes it the bar shows it
+	# without another edit here. Nothing does yet, which is why it reads zero rather than a number
+	# invented to fill the slot.
+	var score := int(resources.get("score", 0))
+	_gold_label.text = "%d" % gold
+	_gold_increment_label.text = "+0"
+	_population_label.text = "%d" % population
+	_population_increment_label.text = "+0"
+	_score_label.text = "%d" % score
+	_score_increment_label.text = "+0"
 
 
 func _append(bbcode: String) -> void:

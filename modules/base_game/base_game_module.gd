@@ -209,11 +209,36 @@ func _build_map_layers_panel(panel: HudPanel, _kernel: GameKernel) -> void:
 	available.add_theme_font_size_override("font_size", UiSkin.FONT_SMALL)
 	available.add_theme_color_override("font_color", AVAILABLE_COLOR)
 	terrain_row.add_child(available)
+
+	_add_map_layer_toggle(panel, BaseGameMap.TILE_GRID_TOGGLE_NAME, "Tile grid")
+	_add_map_layer_toggle(panel, BaseGameMap.SUBGRID_TOGGLE_NAME, "5 x 5 subgrid")
+	# The phone's half of the desktop Terrain plate. Worded as what it does rather than as the plate's
+	# one-word name: a page has room to say that this takes things *away*, and a plate does not.
+	_add_map_layer_toggle(panel, BaseGameMap.TERRAIN_ONLY_TOGGLE_NAME, "Terrain only")
+
 	var note := Label.new()
-	note.text = "Biome terrain is the only available map layer. Blends, decorations, and seasons are future map polish."
+	note.text = ("The ground is always visible. Toggle either coordinate overlay independently, or "
+		+ "strip the map back to bare terrain — which hides constructions and units together.")
 	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_ink(note, true)
 	panel.body.add_child(note)
+
+
+func _add_map_layer_toggle(panel: HudPanel, control_name: String, label_text: String) -> void:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 12)
+	panel.body.add_child(row)
+	var label := Label.new()
+	label.text = label_text
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_ink(label)
+	row.add_child(label)
+	var toggle := CheckButton.new()
+	toggle.name = control_name
+	toggle.button_pressed = true
+	UiSkin.apply_toggle(toggle)
+	row.add_child(toggle)
 
 
 func _add_page_line(panel: HudPanel, id: String) -> void:

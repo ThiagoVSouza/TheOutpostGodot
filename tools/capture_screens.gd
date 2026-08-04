@@ -168,6 +168,55 @@ func _run() -> void:
 		await _shoot("07ca_domain_panel")
 		chat.call("_open_destination", "map_layers")
 		await _shoot("07cb_map_layers_panel")
+		# The desktop path to the same layers: the shortcut's own column, over the map it changes.
+		# Shot with the page closed, because that is the only state the shortcut exists in.
+		shell.hide_page()
+		shell.set_chat_expanded(false)
+		(shell.get("_map_layers_button") as SkinnedButton).button.button_pressed = true
+		shell.call("_toggle_map_layers")
+		await _shoot("07cc_map_layers_flyout")
+		# A layer names itself on the same plate the shortcut does, unrolling out from under the
+		# column. Worth a capture of its own: it is the one part of the flyout whose overlap with the
+		# chrome is a judgement about legibility rather than something a test can assert.
+		var grid_plate: SkinnedButton = chat.get("_grid_layer_plate")
+		shell.call("_show_map_layers_label", "Grid", grid_plate)
+		await _shoot("07cd_map_layers_flyout_label")
+		shell.call("_hide_map_layers_label")
+		shell.call("_set_map_layers_open", false, false)
+
+		# The terrain at both sides of `MIN_TEXTURED_TILE_PX`: the ground as authored, and the flat
+		# average it falls back to once a tile is too small to read. The pair is the whole point of
+		# the threshold — if the two shots disagree on colour, the fallback is wrong.
+		var map_view: OverworldMapView = chat.get("_map_view")
+		await _shoot("07da_map_terrain_close")
+
+		# Selection, both ends of the ladder. These are the captures worth having: whether the
+		# outline reads as an enclosure over ploughed earth, and whether a band cut from the
+		# conversation's own parchment really sits on it as one surface, are judgements about the
+		# art that no assertion about offsets can make.
+		var plot := (BaseGameMap.constructions(chat.get("_terrain_map"))[0]["cells"]) as Rect2i
+		chat.call("_on_subtile_clicked",
+			plot.position * BaseGameMap.SUBTILES_PER_TILE + Vector2i(2, 2))
+		await _shoot("07dc_map_selection_field")
+		# The outpost's own cell, which no plot covers — dead centre of the frame, so the finest tier
+		# is judged where it is easiest to see rather than somewhere near the edge.
+		var site := BaseGameMap.outpost_site(chat.get("_terrain_map"))
+		chat.call("_on_subtile_clicked",
+			site * BaseGameMap.SUBTILES_PER_TILE + Vector2i(2, 2))
+		await _shoot("07dd_map_selection_ground")
+		shell.set_selection_visible(false)
+
+		# The map stripped back to bare ground: the Terrain plate takes the fields and everything
+		# standing on them away together, which is the one shot that shows the layer really reaching
+		# the map rather than only latching.
+		var terrain_plate: SkinnedButton = chat.get("_terrain_layer_plate")
+		terrain_plate.button.button_pressed = true
+		await _shoot("07de_map_terrain_only")
+		terrain_plate.button.button_pressed = false
+
+		while map_view.is_terrain_textured():
+			map_view.call("_zoom_at", map_view.size * 0.5, 0.5)
+		await _shoot("07db_map_terrain_far")
 
 		# Narrow the window without remounting — crossing the breakpoint with both panels open
 		# should collapse to whichever opened more recently (rule 5), not leave both on screen.

@@ -54,18 +54,36 @@ const RAIL_SEPARATION := 10
 ## anything within this distance of the button's edge is covered by the button itself.
 const RAIL_LABEL_OVERLAP := 16.0
 const RAIL_LABEL_TIME := 0.16
+## The hover plate must clear every page/chat layer, while the destination icons still cover the
+## overlapping cap where the label appears to slide out from underneath them.
+const RAIL_LABEL_Z_INDEX := 10
+const RAIL_BUTTON_Z_INDEX := RAIL_LABEL_Z_INDEX + 1
+
+## How long the map-layers column takes to unroll out from under its shortcut. The same short beat as
+## the hover labels: this is chrome answering a press, not a panel arriving.
+const MAP_LAYERS_REVEAL_TIME := RAIL_LABEL_TIME
 
 ## How far the floating mobile menu button sits in from the stage's bottom-right corner.
 const MENU_BUTTON_MARGIN := 16
+
+## How far the map shortcut sits in from that same corner — on every side, because the column opens
+## *around* this button rather than beside it and overhangs it by its own moulding in all directions.
+## Inset only [constant MENU_BUTTON_MARGIN], the column's right-hand edge landed on the window's own
+## and its ornament was cut off against it, while its foot landed on the conversation. The two plates
+## are never on screen together — one is the desktop's, one the phone's — so nothing is left looking
+## misaligned by the difference.
+const MAP_LAYERS_BUTTON_MARGIN := MENU_BUTTON_MARGIN + int(UiSkin.MAP_LAYERS_COLUMN_PADDING)
 const SPLIT_GUTTER_SIZE := 10.0
 const MIN_PANEL_FRACTION := 0.15
 
-## How far the conversation is held off the stage's edges. **On desktop only**: the board sits in
-## from the rail on one side and the window on the other, so it reads as an object lying on the map
-## rather than a bar bolted across the bottom of the window. On a phone there is no rail and no room
-## to spare, so it runs the full width.
+## How far the conversation is held from the desktop chrome: after the rail on the left and from the
+## window edge on the right. On a phone there is no rail and no room to spare, so it runs full width.
 const CHAT_SIDE_INSET := 24.0
 const CHAT_TOP_INSET := 16.0
+
+## Breathing room between a destination page and the stage's top edge or the conversation below it.
+## Pages and chat share their horizontal rect; this is the corresponding vertical inset for pages.
+const PAGE_VERTICAL_INSET := 16.0
 
 ## **Nothing under the board.** It sits on the bottom edge of the stage, not floating above it: a gap
 ## there left a strip of dark background below the conversation and made it read as a panel hovering
@@ -86,6 +104,11 @@ signal chat_expanded_changed(expanded: bool)
 ## (Phase 4) will want to know without re-deriving `size.x` itself.
 signal breakpoint_changed(is_mobile: bool)
 
+## The selection band was shown or hidden — including by Esc and by its own ✕, neither of which the
+## caller that put something in it can otherwise see. `game_screen.gd` uses it to clear the map's
+## outline, so closing the band and deselecting cannot come apart.
+signal selection_visibility_changed(visible: bool)
+
 ## Regions callers fill with content. [member base_layer] is always full-rect and always visible —
 ## the map goes here and is never hidden by anything this class does. [member top_bar] is a plain
 ## container a caller adds widgets to; [member chat_slot] holds the one [ChatDock], parented by
@@ -98,6 +121,12 @@ signal breakpoint_changed(is_mobile: bool)
 var base_layer: Control
 var top_bar: HBoxContainer
 var chat_slot: Control
+
+## Holds the one [SelectionDock], parented by [method set_selection_dock]. It is a band **above** the
+## conversation rather than a region of its own elsewhere on the stage: the two are cut from the same
+## parchment and meet with no gap, so together they are one surface growing up from the bottom edge.
+## See [SelectionDock] for why the gap has to be zero.
+var selection_slot: Control
 
 ## Anything a caller wants drawn over the whole shell, laid out by hand. The outpost's banner hangs
 ## here: it is twice the height of the bar it flies from, and a control that size *inside* the bar
@@ -119,6 +148,20 @@ var _rail_label_width := 0.0
 var _rail_label_tween: Tween = null
 var _menu_button: SkinnedButton
 var _map_layers_button: SkinnedButton
+var _map_layers_label_clip: Control
+var _map_layers_label: PanelContainer
+var _map_layers_label_text: Label
+var _map_layers_label_width := 0.0
+var _map_layers_label_source_x := 0.0
+var _map_layers_label_tween: Tween = null
+var _map_layers_flyout: Control
+var _map_layers_column: PanelContainer
+var _map_layers_box: VBoxContainer
+var _map_layers_open := false
+## 0 closed, 1 fully unrolled — the value the reveal drives, read by
+## [method _layout_map_layers_flyout] so the animation and the resting geometry are one path.
+var _map_layers_reveal := 0.0
+var _map_layers_tween: Tween = null
 var _menu_list: HudPanel
 var _menu_list_box: VBoxContainer
 var _return_button: SkinnedButton
@@ -136,6 +179,12 @@ var _chat_dock: ChatDock = null
 ## reads it, so one tween moves the board and nothing else has to know it is moving.
 var _chat_reveal := 0.0
 var _chat_tween: Tween = null
+
+## The band, and whether the player currently has something selected. **Kept while a page is open**
+## even though the band is not drawn then: a page covers the selection, it does not cancel it, so
+## closing the page brings the band back rather than making the player pick the thing again.
+var _selection_dock: SelectionDock = null
+var _selection_open := false
 
 var _stage: Control
 var _page_slot: Control
@@ -204,12 +253,18 @@ func _build() -> void:
 	# whole window costs the map as little height as it can. Anything less than the real parchment —
 	# the border-only thin frame was tried first — leaves the dark background showing through and the
 	# strip reads as a dark panel with a gold edge, which is the look this replaces.
+	var top_shadow := PanelContainer.new()
+	top_shadow.name = "top_header_shadow"
+	top_shadow.z_index = 1
+	top_shadow.add_theme_stylebox_override("panel", UiSkin.header_shadow_style())
+	top_shadow.custom_minimum_size.y = UiSkin.TOP_BAR_HEIGHT
+	root.add_child(top_shadow)
 	var top_plate := PanelContainer.new()
 	# The legacy build's own painted bar rather than a strip cut from the page's frame: parchment in a
 	# dark metal channel with a notched end, which is the shape the wireframe draws.
 	top_plate.add_theme_stylebox_override("panel", UiSkin.top_bar_style())
 	top_plate.custom_minimum_size.y = UiSkin.TOP_BAR_HEIGHT
-	root.add_child(top_plate)
+	top_shadow.add_child(top_plate)
 	top_bar = HBoxContainer.new()
 	top_bar.add_theme_constant_override("separation", 16)
 	top_plate.add_child(top_bar)
@@ -220,6 +275,7 @@ func _build() -> void:
 	overlay = Control.new()
 	overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	overlay.z_index = 2
 
 	var body := Control.new()
 	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -254,6 +310,7 @@ func _build() -> void:
 	_rail_label_clip = Control.new()
 	_rail_label_clip.clip_contents = true
 	_rail_label_clip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_rail_label_clip.z_index = RAIL_LABEL_Z_INDEX
 	_rail_label_clip.visible = false
 	_rail_label = PanelContainer.new()
 	_rail_label.add_theme_stylebox_override("panel", UiSkin.sidemenu_label_style())
@@ -274,6 +331,7 @@ func _build() -> void:
 	_rail.custom_minimum_size = Vector2(RAIL_WIDTH, 0)
 	_rail.alignment = BoxContainer.ALIGNMENT_CENTER
 	_rail.add_theme_constant_override("separation", RAIL_SEPARATION)
+	_rail.z_index = RAIL_BUTTON_Z_INDEX
 	# The host is what the plate sizes itself to, so it has to carry the column's own minimum — a
 	# plain Control has none of its own. `add_rail_action` keeps it in step as plates arrive.
 	_rail_host = Control.new()
@@ -285,6 +343,12 @@ func _build() -> void:
 
 	_page_slot = Control.new()
 	_stage.add_child(_page_slot)
+
+	# Before the conversation in the tree, so that where the two surfaces meet the board's own top
+	# rule is what draws last and the join is a rule rather than a seam.
+	selection_slot = Control.new()
+	selection_slot.visible = false
+	_stage.add_child(selection_slot)
 
 	chat_slot = Control.new()
 	_stage.add_child(chat_slot)
@@ -308,14 +372,70 @@ func _build() -> void:
 	_menu_button.set_anchors_and_offsets_preset(
 		Control.PRESET_BOTTOM_RIGHT, Control.PRESET_MODE_MINSIZE, MENU_BUTTON_MARGIN)
 
-	_map_layers_button = SkinnedButton.create("Map Layers", UiSkin.BROWN, UiSkin.CONTROL_HEIGHT,
-		RAIL_BUTTON_FONT_SIZE)
+	# The right-hand map shortcut is a destination plate too: same footprint, shadow and scale
+	# response as the rail, but with its own authored parchment/selected states.
+	_map_layers_button = UiSkin.map_layers_button()
 	_stage.add_child(_map_layers_button)
 	_map_layers_button.set_anchors_and_offsets_preset(
-		Control.PRESET_BOTTOM_RIGHT, Control.PRESET_MODE_MINSIZE, MENU_BUTTON_MARGIN)
+		Control.PRESET_BOTTOM_RIGHT, Control.PRESET_MODE_MINSIZE, MAP_LAYERS_BUTTON_MARGIN)
+	# Its hover label is wired by `add_map_layers_action`, which is what knows the destination's name.
+	_map_layers_button.pressed.connect(_toggle_map_layers)
+	_map_layers_button.tooltip_text = "Map Layers"
+
+	# **The layers open where the shortcut is, not where a page would be.** The column is pinned by
+	# its bottom edge to the shortcut's own and grows upward from there, so the plate the player just
+	# pressed stays put and the choices arrive above it — a page would have covered both the map they
+	# are about to change and the button they opened it with.
+	#
+	# The reveal is the hover label's trick turned on its side: a clipping window whose bottom edge is
+	# fixed while its height grows, with the column held against that bottom edge inside it. The
+	# column unrolls out from under the shortcut instead of sliding in from somewhere off screen.
+	# **The column straddles the hover label: parchment below it, plates above.** A name unrolls from
+	# behind the plate it belongs to, not from behind the chrome — with the whole column over the
+	# label, a layer's name appeared to come out of the background instead of out of the button, which
+	# is a different (and wronger) thing for it to be doing.
+	_map_layers_flyout = Control.new()
+	_map_layers_flyout.clip_contents = true
+	_map_layers_flyout.visible = false
+	_map_layers_flyout.z_index = RAIL_LABEL_Z_INDEX - 1
+	_map_layers_column = PanelContainer.new()
+	_map_layers_column.add_theme_stylebox_override("panel", UiSkin.map_layers_flyout_style())
+	_map_layers_box = VBoxContainer.new()
+	_map_layers_box.alignment = BoxContainer.ALIGNMENT_CENTER
+	_map_layers_box.add_theme_constant_override("separation", int(UiSkin.MAP_LAYERS_SEPARATION))
+	# Above the label, for the same reason the rail's own icons are: it opens a few units *inside* the
+	# plate it names, and the plate has to be what hides that overlap. Relative to the column, which
+	# is what a child's `z_index` means unless it is told otherwise.
+	_map_layers_box.z_index = RAIL_BUTTON_Z_INDEX - _map_layers_flyout.z_index
+	_map_layers_column.add_child(_map_layers_box)
+	_map_layers_flyout.add_child(_map_layers_column)
+	_stage.add_child(_map_layers_flyout)
+
+	# A mirrored copy of the rail's hover label. This one is parented to the stage because its source
+	# button floats at the opposite edge; its clipping window grows left while the plate stays fixed.
+	_map_layers_label_clip = Control.new()
+	_map_layers_label_clip.clip_contents = true
+	_map_layers_label_clip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_map_layers_label_clip.z_index = RAIL_LABEL_Z_INDEX
+	_map_layers_label_clip.visible = false
+	_map_layers_label = PanelContainer.new()
+	_map_layers_label.add_theme_stylebox_override("panel", UiSkin.sidemenu_label_style())
+	_map_layers_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_map_layers_label_text = Label.new()
+	_map_layers_label_text.add_theme_font_size_override("font_size", UiSkin.FONT_SMALL)
+	_map_layers_label_text.add_theme_color_override("font_color", UiSkin.SIDEMENU_LABEL_INK)
+	_map_layers_label_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_map_layers_label.add_child(_map_layers_label_text)
+	_map_layers_label_clip.add_child(_map_layers_label)
+	_stage.add_child(_map_layers_label_clip)
+	_map_layers_button.z_index = RAIL_BUTTON_Z_INDEX
 	# It belongs to the map, not above a page or expanded conversation. Keep it over the base layer
 	# but underneath the two overlay slots, so it returns when those panels close instead of covering
 	# their content.
+	_stage.move_child(_map_layers_label_clip, _stage.get_children().find(_page_slot))
+	# The column belongs to the same group. Its own z-order decides what it draws over; this only
+	# keeps it with the rest of the map's chrome, above the base layer and below the page slot.
+	_stage.move_child(_map_layers_flyout, _stage.get_children().find(_page_slot))
 	_stage.move_child(_map_layers_button, _stage.get_children().find(_page_slot))
 
 	# Also in the stage, so opening the menu leaves the persistent chrome (top bar, dock) visible —
@@ -370,10 +490,124 @@ func add_rail_action(label: String, on_pressed: Callable, icon: Texture2D = null
 	_add_mobile_menu_action(label, on_pressed)
 
 
+## Name the floating map shortcut, and register the same destination in the mobile menu.
+##
+## [param on_pressed] is the *phone's* path only. A phone has no shortcut to press and no room beside
+## it for a column of layers, so the entry in Menu opens the module's Map Layers page instead. The
+## desktop plate is wired to its own flyout ([method add_map_layers_toggle]) rather than to a caller's
+## action: what it opens is chrome this class owns and places.
 func add_map_layers_action(label: String, on_pressed: Callable) -> void:
-	_map_layers_button.label.text = label
-	_map_layers_button.pressed.connect(on_pressed)
+	_map_layers_button.tooltip_text = label
+	_wire_map_layers_label(_map_layers_button, label)
 	_add_mobile_menu_action(label, on_pressed)
+
+
+## Add one layer to the shortcut's flyout: a plate that latches on and off, painted with
+## [param texture] while the layer is off and [param selected] while it is drawn.
+##
+## The shell owns the column and the animation; the caller owns what a layer *is* — [param on_toggled]
+## receives the new state and is the only thing that touches the map. Returns the plate so a caller
+## can re-state it when the same layer is changed from somewhere else (the phone's page).
+func add_map_layers_toggle(label: String, texture: Texture2D, selected: Texture2D,
+		on_toggled: Callable, pressed: bool = true) -> SkinnedButton:
+	var plate := UiSkin.map_layer_button(texture, selected)
+	plate.button.set_pressed_no_signal(pressed)
+	plate.button.toggled.connect(func(value: bool) -> void: on_toggled.call(value))
+	plate.tooltip_text = label
+	_wire_map_layers_label(plate, label)
+	_map_layers_box.add_child(plate)
+	# Deferred, like the rail's own: the column's minimum only counts the new plate once it has been
+	# laid out, and the flyout's whole height is derived from that minimum.
+	_layout_map_layers_flyout.call_deferred()
+	return plate
+
+
+## Both the shortcut and every plate inside its flyout name themselves the same way: on the one
+## mirrored plate that unrolls toward the left edge.
+func _wire_map_layers_label(plate: SkinnedButton, label: String) -> void:
+	plate.button.mouse_entered.connect(func() -> void: _show_map_layers_label(label, plate))
+	plate.button.mouse_exited.connect(_hide_map_layers_label)
+	plate.button.focus_entered.connect(func() -> void: _show_map_layers_label(label, plate))
+	plate.button.focus_exited.connect(_hide_map_layers_label)
+
+
+func _toggle_map_layers() -> void:
+	# The shortcut is a latch, so by the time this runs Godot has already flipped it — read the plate
+	# rather than the shell, or the two disagree the first time the player presses it.
+	_set_map_layers_open(_map_layers_button.button.button_pressed)
+
+
+## [param animated] is false when the flyout is not being dismissed so much as overtaken: a page
+## opening takes the shortcut off the screen with it, and the tail of an unroll playing over the
+## newly opened page is the same flash [method _relayout_stage] already removes from the hover label.
+func _set_map_layers_open(open: bool, animated: bool = true) -> void:
+	if open == _map_layers_open:
+		return
+	_map_layers_open = open
+	_map_layers_button.button.set_pressed_no_signal(open)
+	if open:
+		_map_layers_flyout.visible = true
+	if not animated:
+		if _map_layers_tween != null and _map_layers_tween.is_valid():
+			_map_layers_tween.kill()
+		_set_map_layers_reveal(1.0 if open else 0.0)
+		_map_layers_flyout.visible = open
+		return
+	_reveal_map_layers(1.0 if open else 0.0)
+
+
+func is_map_layers_open() -> bool:
+	return _map_layers_open
+
+
+func _reveal_map_layers(to: float) -> void:
+	if _map_layers_tween != null and _map_layers_tween.is_valid():
+		_map_layers_tween.kill()
+	if not is_inside_tree():
+		_set_map_layers_reveal(to)
+		_map_layers_flyout.visible = to > 0.0
+		return
+	_map_layers_tween = create_tween().set_ease(Motion.EASE).set_trans(Motion.TRANS)
+	_map_layers_tween.tween_method(_set_map_layers_reveal, _map_layers_reveal, to,
+		MAP_LAYERS_REVEAL_TIME)
+	if is_zero_approx(to):
+		_map_layers_tween.tween_callback(func() -> void: _map_layers_flyout.visible = false)
+
+
+func _set_map_layers_reveal(value: float) -> void:
+	_map_layers_reveal = value
+	_layout_map_layers_flyout()
+
+
+## The column keeps its own size while the window over it opens upward — the same arrangement the
+## hover labels use, and for the same reason: a [PanelContainer] cannot be tweened smaller than the
+## plates inside it, so the thing that moves has to be the window rather than the panel.
+##
+## Placed from the shortcut's live offsets rather than from a constant, so the column follows it up
+## and down as the conversation grows underneath them both.
+func _layout_map_layers_flyout() -> void:
+	if _map_layers_flyout == null:
+		return
+	var wanted := _map_layers_column.get_combined_minimum_size()
+	wanted.x = maxf(wanted.x, UiSkin.MAP_LAYERS_COLUMN_WIDTH)
+	_map_layers_column.size = wanted
+	var height := wanted.y * _map_layers_reveal
+	var centre := (_map_layers_button.offset_left + _map_layers_button.offset_right) * 0.5
+	_map_layers_flyout.anchor_left = 1.0
+	_map_layers_flyout.anchor_right = 1.0
+	_map_layers_flyout.anchor_top = 1.0
+	_map_layers_flyout.anchor_bottom = 1.0
+	_map_layers_flyout.offset_left = centre - wanted.x * 0.5
+	_map_layers_flyout.offset_right = centre + wanted.x * 0.5
+	# The column runs down *past* the shortcut and closes under it, by the same moulding it carries on
+	# every other side — which is what its style reserves room at the foot for
+	# ([method UiSkin.map_layers_flyout_style]).
+	_map_layers_flyout.offset_bottom = (_map_layers_button.offset_bottom
+		+ UiSkin.MAP_LAYERS_COLUMN_PADDING)
+	_map_layers_flyout.offset_top = _map_layers_flyout.offset_bottom - height
+	# Held against the window's bottom edge, so what shows first is the foot of the column and the
+	# rest arrives from above.
+	_map_layers_column.position.y = height - wanted.y
 
 
 func _add_mobile_menu_action(label: String, on_pressed: Callable) -> void:
@@ -552,6 +786,42 @@ func is_chat_expanded() -> bool:
 	return _chat_open
 
 
+# --- selection band ---------------------------------------------------------------------------
+
+## Parent the band into the stage, where it stays for the shell's whole life — like the conversation,
+## it is shown and hidden rather than swapped, so nothing in it has to be rebuilt per selection.
+func set_selection_dock(dock: SelectionDock) -> void:
+	_selection_dock = dock
+	selection_slot.add_child(dock)
+	dock.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	dock.dismissed.connect(func() -> void: set_selection_visible(false))
+	_relayout_stage()
+
+
+## Show or hide the band. It **takes its height out of the conversation's ceiling** rather than
+## floating over it: an expanded chat with a band above it is shorter by exactly the band, so nothing
+## on either is ever covered by the other.
+func set_selection_visible(visible: bool) -> void:
+	if visible == _selection_open:
+		return
+	_selection_open = visible
+	if visible and _selection_dock != null:
+		_selection_dock.modulate.a = 0.0
+		Motion.fade(_selection_dock, 1.0, Motion.DURATION_FAST)
+	_relayout_stage()
+	selection_visibility_changed.emit(_selection_open)
+
+
+func is_selection_visible() -> bool:
+	return _selection_open
+
+
+## Whether the band is actually on the stage, as opposed to selected-but-covered: a page takes the
+## stage and the band waits for it to close.
+func is_selection_showing() -> bool:
+	return _selection_open and _page_panel == null
+
+
 ## Event mode is the UI's view of the kernel world gate. It forces the conversation to own the
 ## stage and prevents an unresolved decision from being collapsed, split, or covered by a page.
 func set_event_active(active: bool) -> void:
@@ -573,23 +843,35 @@ func is_event_active() -> bool:
 
 # --- Esc / hardware back ----------------------------------------------------------------------
 
-## Close whatever is "on top" — the mobile menu list if it is open, else the most recently opened
-## of {page, chat} — and report whether anything was closed. `game_screen.gd`'s own
+## Close whatever is "on top" — the map-layers flyout, then the mobile menu list, else the most
+## recently opened of {page, chat} — and report whether anything was closed. `game_screen.gd`'s own
 ## `on_hardware_back` just forwards to this (ux_plan.md §1.3 rule 6: "Esc closes the topmost thing").
 func close_topmost() -> bool:
 	if _event_active:
 		return true
+	# Shallowest thing on the screen, and the only one that opens *over* the map rather than instead
+	# of it — so it is what one press of Esc is reaching for while it is up.
+	if _map_layers_open:
+		_set_map_layers_open(false)
+		return true
 	if _mobile_menu_open:
 		_close_mobile_menu()
 		return true
-	if _open_order.is_empty():
-		return false
-	var top := String(_open_order[-1])
-	if top == "chat":
-		set_chat_expanded(false)
-	else:
-		hide_page()
-	return true
+	if not _open_order.is_empty():
+		var top := String(_open_order[-1])
+		if top == "chat":
+			set_chat_expanded(false)
+		else:
+			hide_page()
+		return true
+	# **The selection is the last thing Esc reaches**, under the page and the conversation both. It is
+	# the quietest thing on the screen — a band and an outline on the map — and closing it first would
+	# make one press of Esc do the least visible of the available jobs. With a page open the band is
+	# not even drawn, so Esc closes the page, the band comes back, and the next press lets it go.
+	if _selection_open:
+		set_selection_visible(false)
+		return true
+	return false
 
 
 func _touch_order(name: String) -> void:
@@ -628,15 +910,26 @@ func _relayout_stage() -> void:
 	# occupies the stage, leave its content clean; on mobile the same action is in Menu, and on
 	# desktop it returns as soon as the player closes the overlay.
 	_map_layers_button.visible = not _is_mobile and not page_open and not _chat_open
+	if not _map_layers_button.visible:
+		# Its z-order deliberately clears the page so the label can overlap the icon cleanly. Remove
+		# the transient label immediately when the shortcut itself leaves, rather than letting the
+		# tail of its hide animation flash over the newly opened page.
+		_map_layers_label_clip.visible = false
+		# The layers belong to the shortcut, so they leave with it — and they leave *now*, for the
+		# same reason.
+		_set_map_layers_open(false, false)
 	# **The conversation is never hidden any more.** Collapsed it is the same board showing only its
 	# bottom section, which is what makes opening it look like one piece growing rather than a second
 	# panel arriving. Only the page still comes and goes.
 	_gutter.visible = not _is_mobile and page_open and _chat_open and not _event_active
-	if page_open and not (_is_mobile or _event_active):
-		_layout_page_above_split(_split_fraction if _chat_open else 1.0)
+	# Lay the chat out first: a page with a collapsed conversation uses the board's live top edge as
+	# its bottom boundary, so it can never extend underneath the input strip.
+	_layout_chat(page_open)
+	if page_open:
+		var split := _chat_open and not (_is_mobile or _event_active)
+		_layout_page_above_split(_split_fraction if split else 1.0)
 	else:
 		_fill(_page_slot)
-	_layout_chat(page_open)
 	_page_slot.visible = page_open
 
 
@@ -649,35 +942,68 @@ func _layout_chat(page_open: bool) -> void:
 	chat_slot.anchor_right = 1.0
 	chat_slot.anchor_top = 1.0
 	chat_slot.anchor_bottom = 1.0
-	# **The same gap either side, measured from the window.** Not from the rail: the rail floats
-	# inside the left-hand gap, so matching the *rail's* edge on the right left about 24 units there
-	# against ten times that on the left, and the board read as shoved up against the window. The
-	# board is centred on the stage and the rail is a thing standing in the space beside it.
+	# The board is centred in the stage: the stable rail clearance used on the left is mirrored on the
+	# right. This keeps both resting and expanded states on one fixed horizontal rect.
 	chat_slot.offset_left = _content_left()
-	chat_slot.offset_right = -_content_left()
+	chat_slot.offset_right = -_content_right()
 	chat_slot.offset_bottom = -bottom
 
+	var band := _selection_band_height()
 	var collapsed := _collapsed_chat_height() + bottom
 	var stage_height := _stage.size.y
-	var expanded := stage_height - CHAT_TOP_INSET
+	# **The band comes out of the conversation's ceiling.** It sits above the board and both have to
+	# fit the stage, so an expanded chat under a band is shorter by exactly the band's height.
+	var expanded := stage_height - CHAT_TOP_INSET - band
 	# Sharing the stage with a page (desktop rule 1): the board's ceiling is the split instead of the
 	# top of the stage. Event mode ignores the split — an unresolved decision owns the screen.
 	if page_open and not _is_mobile and not _event_active:
 		expanded = stage_height * (1.0 - _split_fraction) - SPLIT_GUTTER_SIZE * 0.5
 	chat_slot.offset_top = -maxf(collapsed, lerpf(collapsed, expanded, _chat_reveal))
 
+	# Flush on the board's top edge — no gap, deliberately. [SelectionDock] documents why.
+	selection_slot.visible = band > 0.0
+	if selection_slot.visible:
+		selection_slot.anchor_left = 0.0
+		selection_slot.anchor_right = 1.0
+		selection_slot.anchor_top = 1.0
+		selection_slot.anchor_bottom = 1.0
+		selection_slot.offset_left = chat_slot.offset_left
+		selection_slot.offset_right = chat_slot.offset_right
+		selection_slot.offset_bottom = chat_slot.offset_top
+		selection_slot.offset_top = chat_slot.offset_top - band
+
 	# **The two floating plates ride on top of the board.** They are anchored to the stage's
 	# bottom-right corner, which used to be free map and is now where the conversation lives — the
 	# mobile Menu plate landed squarely on the send button, which is the same collision ux_plan.md
 	# already recorded once when the dock was a row of its own. Riding the board's edge also means
 	# they move with the reveal instead of being covered halfway through it.
-	_float_above_chat(_menu_button)
-	_float_above_chat(_map_layers_button)
+	_float_above_chat(_menu_button, MENU_BUTTON_MARGIN)
+	# The shortcut clears the board by its own deeper margin, so that the column closing underneath it
+	# has somewhere to close rather than landing on the conversation.
+	_float_above_chat(_map_layers_button, MAP_LAYERS_BUTTON_MARGIN)
+	# After the shortcut, never before: the column is placed from the offsets that call has just set.
+	_layout_map_layers_flyout()
 
 
-func _float_above_chat(button: Control) -> void:
+## How tall the band is right now, and zero when it is not on the stage — which is both "nothing is
+## selected" and "a page has taken the stage". Everything that has to clear the bottom of the screen
+## measures against this rather than asking the two questions separately.
+func _selection_band_height() -> float:
+	if not is_selection_showing() or _selection_dock == null:
+		return 0.0
+	return maxf(_selection_dock.get_combined_minimum_size().y, SelectionDock.BAND_HEIGHT)
+
+
+## The top of everything stacked on the stage's bottom edge: the band when it is up, the conversation
+## otherwise. **The one edge anything above the stack may occupy down to** — a page's foot, and the
+## two floating plates.
+func _stack_top() -> float:
+	return chat_slot.offset_top - _selection_band_height()
+
+
+func _float_above_chat(button: Control, margin: float) -> void:
 	var height := button.get_combined_minimum_size().y
-	button.offset_bottom = chat_slot.offset_top - MENU_BUTTON_MARGIN
+	button.offset_bottom = _stack_top() - margin
 	button.offset_top = button.offset_bottom - height
 
 
@@ -689,16 +1015,20 @@ func _layout_page_above_split(bottom_frac: float) -> void:
 	_page_slot.anchor_top = 0.0
 	_page_slot.anchor_bottom = bottom_frac
 	_page_slot.offset_left = _content_left()
-	_page_slot.offset_right = 0.0
-	_page_slot.offset_top = 0.0
-	_page_slot.offset_bottom = 0.0 if is_equal_approx(bottom_frac, 1.0) else -SPLIT_GUTTER_SIZE * 0.5
+	_page_slot.offset_right = -_content_right()
+	_page_slot.offset_top = PAGE_VERTICAL_INSET
+	if is_equal_approx(bottom_frac, 1.0):
+		# The page owns the area above the collapsed input strip, not the full stage behind it.
+		_page_slot.offset_bottom = _stack_top() - PAGE_VERTICAL_INSET
+	else:
+		_page_slot.offset_bottom = -SPLIT_GUTTER_SIZE * 0.5 - PAGE_VERTICAL_INSET
 
 	_gutter.anchor_left = 0.0
 	_gutter.anchor_right = 1.0
 	_gutter.anchor_top = bottom_frac
 	_gutter.anchor_bottom = bottom_frac
 	_gutter.offset_left = _content_left()
-	_gutter.offset_right = 0.0
+	_gutter.offset_right = -_content_right()
 	_gutter.offset_top = -SPLIT_GUTTER_SIZE * 0.5
 	_gutter.offset_bottom = SPLIT_GUTTER_SIZE * 0.5
 
@@ -740,6 +1070,59 @@ func _hide_rail_label() -> void:
 	_tween_rail_label(0.0, true)
 
 
+## Name a plate on the right-hand side — the shortcut itself, or one of the layers inside its flyout
+## — on a matching plate that unrolls toward the left edge. The inner panel stays at its final
+## position; only the clipping window opens, so it appears to emerge from beneath the plate instead
+## of sliding in from elsewhere.
+##
+## **One plate for all of them**, exactly as the rail has one for its seven destinations: only one
+## can be under the pointer at a time.
+func _show_map_layers_label(text: String, plate: Control) -> void:
+	if not plate.is_visible_in_tree():
+		return
+	_map_layers_label_text.text = text.to_upper()
+	# Sized from the font rather than the container's cached minimum, which still answers for the
+	# previous name — the trap `_show_rail_label` documents.
+	_map_layers_label.reset_size()
+	var wanted := _map_layers_label.get_combined_minimum_size()
+	_map_layers_label.size = wanted
+	_map_layers_label_width = wanted.x
+	var rect := plate.get_global_rect()
+	var origin := _stage.get_global_rect().position
+	_map_layers_label_source_x = rect.position.x - origin.x + RAIL_LABEL_OVERLAP
+	_map_layers_label_clip.position.y = rect.position.y - origin.y + (rect.size.y - wanted.y) * 0.5
+	_map_layers_label_clip.size.y = wanted.y
+	if not _map_layers_label_clip.visible:
+		_set_map_layers_label_width(0.0)
+		_map_layers_label_clip.visible = true
+	_tween_map_layers_label(_map_layers_label_width, false)
+
+
+func _hide_map_layers_label() -> void:
+	_tween_map_layers_label(0.0, true)
+
+
+## Keep the label itself fixed while the clipping window's left edge travels away from the button.
+func _set_map_layers_label_width(width: float) -> void:
+	_map_layers_label_clip.position.x = _map_layers_label_source_x - width
+	_map_layers_label_clip.size.x = width
+	_map_layers_label.position.x = width - _map_layers_label_width
+
+
+func _tween_map_layers_label(to_width: float, hide_after: bool) -> void:
+	if _map_layers_label_tween != null and _map_layers_label_tween.is_valid():
+		_map_layers_label_tween.kill()
+	if not is_inside_tree():
+		return
+	_map_layers_label_tween = create_tween()
+	_map_layers_label_tween.set_ease(Motion.EASE).set_trans(Motion.TRANS)
+	_map_layers_label_tween.tween_method(_set_map_layers_label_width,
+		_map_layers_label_clip.size.x, to_width, RAIL_LABEL_TIME)
+	if hide_after:
+		_map_layers_label_tween.tween_callback(
+			func() -> void: _map_layers_label_clip.visible = false)
+
+
 ## No fade either way: the window is what hides the plate, and the rail is what hides the window's
 ## first few units.
 func _tween_rail_label(to_width: float, hide_after: bool) -> void:
@@ -764,7 +1147,14 @@ func _collapsed_chat_height() -> float:
 func _content_left() -> float:
 	if _is_mobile:
 		return 0.0
-	return RAIL_MARGIN + _rail_plate.get_combined_minimum_size().x + CHAT_SIDE_INSET
+	# Use the declared width, not the live minimum. On the first layout the latter only includes the
+	# style padding; it grows after the destination buttons settle and used to resize the chat then.
+	return RAIL_MARGIN + UiSkin.SIDEMENU_WIDTH + CHAT_SIDE_INSET
+
+
+func _content_right() -> float:
+	# Mirror the complete left clearance so chat and pages remain centred in the stage.
+	return _content_left()
 
 
 ## A page fills the stage, minus whatever the floating rail is standing in front of.
@@ -774,7 +1164,7 @@ func _fill(control: Control) -> void:
 	control.anchor_top = 0.0
 	control.anchor_bottom = 1.0
 	control.offset_left = _content_left()
-	control.offset_right = 0.0
+	control.offset_right = -_content_right()
 	control.offset_top = 0.0
 	control.offset_bottom = 0.0
 
