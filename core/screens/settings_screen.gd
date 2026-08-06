@@ -126,7 +126,12 @@ const KEY_BINDINGS := [
 		["Open the chronicle", "L"],
 	]},
 	{"group": "Map", "actions": [
-		["Pan", "Drag / W A S D"],
+		# Four real bindings now rather than one planned "Pan", so `_is_bindable` retires them from
+		# this list and the live rows above stand in their place.
+		["Pan up", "W"],
+		["Pan left", "A"],
+		["Pan down", "S"],
+		["Pan right", "D"],
 		["Zoom in", "Mouse wheel up / +"],
 		["Zoom out", "Mouse wheel down / -"],
 		["Centre on the outpost", "Home"],

@@ -206,6 +206,30 @@ func _run() -> void:
 		await _shoot("07dd_map_selection_ground")
 		shell.set_selection_visible(false)
 
+		# Building a road. Three shots, because three separate judgements live here and none of them
+		# can be asserted: whether the ghost reads as a plan rather than as a road, whether the
+		# refusal colour is obviously a refusal, and whether the autotiled junctions actually join.
+		var start := site * BaseGameMap.SUBTILES_PER_TILE + Vector2i(2, 8)
+		chat.call("_on_subtile_clicked", start)
+		chat.call("_show_build_tools")
+		await _shoot("07df_build_tools")
+		chat.call("_enter_build_mode", BaseGameMap.TOOL_ROAD)
+		# A run east, a turn north, and a branch — enough shapes that a wrong entry in the mask table
+		# shows up as a junction facing the wrong way.
+		for i in 14:
+			chat.call("_on_subtile_painted", start + Vector2i(i, 0))
+		for i in range(1, 9):
+			chat.call("_on_subtile_painted", start + Vector2i(7, -i))
+		for i in range(1, 6):
+			chat.call("_on_subtile_painted", start + Vector2i(7 + i, -8))
+		# And a stretch straight across a ploughed field, which may not be built on.
+		for i in 8:
+			chat.call("_on_subtile_painted",
+				plot.position * BaseGameMap.SUBTILES_PER_TILE + Vector2i(i, 4))
+		await _shoot("07dg_build_road_plan")
+		chat.call("_confirm_build")
+		await _shoot("07dh_build_road_done")
+
 		# The map stripped back to bare ground: the Terrain plate takes the fields and everything
 		# standing on them away together, which is the one shot that shows the layer really reaching
 		# the map rather than only latching.

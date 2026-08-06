@@ -112,3 +112,19 @@ func show_selection(title: String, owner: String, art: Texture2D) -> void:
 	_owner_label.text = owner
 	_owner_label.visible = not owner.is_empty()
 	_portrait.texture = art
+
+
+## Empty the action area. Every route into the band fills it from scratch — a selection puts Build
+## there, choosing a tool puts Confirm and Cancel there — so nothing is ever left over from the last
+## thing the player had selected.
+func clear_actions() -> void:
+	for child in actions.get_children():
+		actions.remove_child(child)
+		child.queue_free()
+
+
+## Hide the ✕ while the band is a build bar. Cancel is the way out of building, and two controls that
+## both abandon the plan — one of them the same glyph that means "deselect" everywhere else — is one
+## more than the bar can explain.
+func set_closable(closable: bool) -> void:
+	_close.visible = closable

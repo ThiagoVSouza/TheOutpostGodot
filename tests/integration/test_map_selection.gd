@@ -73,7 +73,9 @@ func test_clicking_a_field_outlines_all_of_it_and_names_it_on_the_band() -> void
 	assert_true(shell.is_selection_showing(), "and the band is actually on the stage")
 
 	var dock := shell.get("_selection_dock") as SelectionDock
-	assert_eq((dock.get("_title_label") as Label).text, "Ploughed field")
+	assert_eq((dock.get("_title_label") as Label).text,
+		String(BaseGameMap.CROP_STAGE_TITLES[int(BaseGameMap.crop_stage)]),
+		"a field is named for the crop standing in it, not for the ground it was made from")
 	var owner := dock.get("_owner_label") as Label
 	assert_true(owner.visible, "a field is held by the settlement, and the band says which")
 	assert_false(owner.text.is_empty())

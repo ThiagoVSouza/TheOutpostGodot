@@ -85,6 +85,14 @@ const ANSWER_BUTTON_WIDTH := 130.0
 ## Load sits beside the slot list, so it is sized rather than left to its caption.
 const MENU_ACTION_WIDTH := 140.0
 
+## The plates on the band — Build, the tools, Confirm and Cancel. All one width, so the row does not
+## re-flow as the band changes what it is offering.
+const BUILD_BUTTON_WIDTH := 124.0
+
+## Whether the map-art dev keys are live — see [method _dev_map_keys]. Scaffolding for judging
+## painted art against the running map; one constant so it leaves in one edit.
+const DEV_MAP_KEYS := true
+
 const MARKER_FLAG_WIDTH := 30.0
 const MAIN_MENU_PAGE_ID := "main_menu"
 const MAP_LAYERS_PAGE_ID := "map_layers"
@@ -99,6 +107,16 @@ var _selection_dock: SelectionDock
 ## The map view holds the *footprint*; which layer that footprint belongs to is this screen's to
 ## remember, and it is what decides whether hiding the constructions has to drop it.
 var _selection_kind := ""
+
+## The roads, and the run the player is drawing but has not yet committed to.
+##
+## [member _plan] is `{subtile -> true}` for pieces that may be applied and `{subtile -> false}` for
+## the ones that may not — both are in it, because a red piece is feedback about why the finished
+## road has a gap, not something to hide. [member _build_tool] is empty when not building.
+var _roads: RoadNetwork
+var _build_tool := ""
+var _plan: Dictionary = {}
+var _confirm_button: SkinnedButton
 
 var _source: AiInputSource
 var _outpost_label: Label
@@ -223,12 +241,94 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event.is_action(InputActions.QUICK_SAVE):
 		_on_save()
 		get_viewport().set_input_as_handled()
+	elif _dev_map_keys(event):
+		get_viewport().set_input_as_handled()
+
+
+## **Dev keys for looking at map art, and nothing else.** Turn [constant DEV_MAP_KEYS] off and they
+## are gone.
+##
+## [table]
+## [cell]`5` `6` `7` `8`[/cell]        [cell]house: foundation, under construction, nearly finished, finished[/cell]
+## [cell]`Shift+5` … `Shift+8`[/cell]  [cell]house: ruin, damaged, burnt, abandoned[/cell]
+## [cell]`9`[/cell]                    [cell]advance the crop cycle one stage, wrapping[/cell]
+## [cell]`0`[/cell]                    [cell]snow on the buildings, on and off[/cell]
+## [/table]
+##
+## The building stages hold `5`–`8` because that is what they were asked for; the crop cycle had them
+## on loan while there were no buildings and moves to one key that cycles, which is enough for four
+## frames of the same field.
+##
+## Deliberately *not* in [InputActions]: that file's own rule is that only actions with something
+## behind them live there, because a binding the player can change and then watch do nothing is the
+## failure the whole `planned` discipline exists to prevent. These drive statics that no game system
+## reads or writes — they are a way of seeing paintings, not a feature.
+##
+## They are also checked **last**, after every real action above, so nothing here can shadow a key the
+## player actually uses. The day one of these is bound to something real, the real action wins.
+func _dev_map_keys(event: InputEvent) -> bool:
+	if not DEV_MAP_KEYS:
+		return false
+	var key := event as InputEventKey
+	if key == null or key.ctrl_pressed or key.alt_pressed:
+		return false
+	var slot := [KEY_5, KEY_6, KEY_7, KEY_8].find(key.keycode)
+	if slot >= 0:
+		# The two rows of four: the build stages plain, the ruined states shifted. They are one enum,
+		# so the shifted row is simply the second half of it.
+		_set_house_appearance((slot + (4 if key.shift_pressed else 0)) as Buildings.Appearance)
+		return true
+	if key.shift_pressed:
+		return false
+	if key.keycode == KEY_9:
+		_set_crop_stage(((int(BaseGameMap.crop_stage) + 1)
+			% BaseGameMap.CropStage.size()) as BaseGameMap.CropStage)
+		return true
+	if key.keycode == KEY_0:
+		Buildings.snow = not Buildings.snow
+		_refresh_map_content()
+		return true
+	return false
+
+
+func _set_crop_stage(stage: BaseGameMap.CropStage) -> void:
+	if BaseGameMap.crop_stage == stage:
+		return
+	BaseGameMap.crop_stage = stage
+	_refresh_map_content()
+
+
+func _set_house_appearance(appearance: Buildings.Appearance) -> void:
+	if Buildings.appearance == appearance:
+		return
+	Buildings.appearance = appearance
+	_refresh_map_content()
+
+
+## Push the fields and the houses at the map: the sprites drawn over the ground, and the ground colour
+## under the fields that is what survives zooming out past the point where art is drawn at all.
+##
+## **The band is re-read too.** It names the crop and the house's state, so anything selected while
+## these change would otherwise go on claiming to be the thing it was a moment ago.
+func _refresh_map_content() -> void:
+	if _map_view == null or _terrain_map == null:
+		return
+	_map_view.set_textures(BaseGameMap.load_textures(_terrain_map))
+	_map_view.set_standing(BaseGameMap.standing(_terrain_map))
+	if _selection_kind == BaseGameMap.KIND_CONSTRUCTION:
+		_clear_selection()
 
 
 ## Esc closes whatever panel is on top before falling through to the exit-confirm dialog
 ## (ux_plan.md §1.3 rule 6) — `BACK_CLOSE` reaches here via `Kernel.request_back()`
 ## (`core/kernel.gd`'s `_handle_hardware_back`).
+## **A plan in progress is the shallowest thing on the screen**, so Esc abandons it before anything
+## the shell owns. It is also the only one that would otherwise be closed *from underneath* — the
+## shell's own first move is to hide the band, which is where Cancel lives.
 func on_hardware_back() -> bool:
+	if is_building():
+		_cancel_build()
+		return true
 	return _shell.close_topmost()
 
 
@@ -287,7 +387,11 @@ func _build_map() -> void:
 	_map_view.setup(map, BaseGameMap.load_textures(map))
 	_map_view.set_scatter(BaseGameMap.load_scatter(map))
 	_map_view.set_ground_overrides(BaseGameMap.load_ground_overrides(map))
+	_refresh_map_content()
+	_roads = RoadNetwork.new()
+	_refresh_roads()
 	_map_view.subtile_clicked.connect(_on_subtile_clicked)
+	_map_view.subtile_painted.connect(_on_subtile_painted)
 	# The map drops a selection the player has zoomed away from, on its own. That is the only route by
 	# which the band can go stale without anything here being pressed.
 	_map_view.selection_changed.connect(_on_map_selection_changed)
@@ -685,7 +789,7 @@ func _on_subtile_clicked(subtile: Vector2i) -> void:
 	if _terrain_map == null or _map_view == null:
 		return
 	var picked := BaseGameMap.selection_at(_terrain_map, _map_view, subtile,
-		_map_view.is_construction_layer_visible())
+		_map_view.is_construction_layer_visible(), _roads)
 	# Nothing selectable there — off the map, or everything under the pointer is too small at this
 	# zoom to point at. Either way the honest answer is that the player has selected nothing.
 	if picked.is_empty():
@@ -701,7 +805,176 @@ func _on_subtile_clicked(subtile: Vector2i) -> void:
 	_map_view.set_selection(footprint)
 	_selection_dock.show_selection(String(picked["title"]),
 		_holder_of(bool(picked["owned"])), picked["art"] as Texture2D)
+	_fill_selection_actions()
 	_shell.set_selection_visible(true)
+
+
+## What can be done with what is selected. **Only open ground can be built on**, so only open ground
+## offers the button — a selected farm gets an empty action area rather than a Build that would
+## refuse. There is one thing to build, so Build goes straight to the tools rather than through a
+## menu with a single entry.
+func _fill_selection_actions() -> void:
+	_selection_dock.clear_actions()
+	_selection_dock.set_closable(true)
+	if _selection_kind != BaseGameMap.KIND_TERRAIN:
+		return
+	var build := SkinnedButton.create("Build", UiSkin.BROWN, UiSkin.CONTROL_HEIGHT,
+		UiSkin.CONTROL_FONT_SIZE)
+	build.custom_minimum_size.x = BUILD_BUTTON_WIDTH
+	build.pressed.connect(_show_build_tools)
+	_selection_dock.actions.add_child(build)
+
+
+## The things that can be built. Two plates, because demolishing is how you take back a road you drew
+## wrong and there is no undo.
+func _show_build_tools() -> void:
+	_selection_dock.clear_actions()
+	for tool: Array in [[BaseGameMap.TOOL_ROAD, "Road", UiSkin.BROWN],
+			[BaseGameMap.TOOL_DEMOLISH, "Demolish", UiSkin.RED]]:
+		var plate := SkinnedButton.create(String(tool[1]), tool[2] as UiSkin.Variant,
+			UiSkin.CONTROL_HEIGHT, UiSkin.CONTROL_FONT_SIZE)
+		plate.custom_minimum_size.x = BUILD_BUTTON_WIDTH
+		plate.pressed.connect(_enter_build_mode.bind(String(tool[0])))
+		_selection_dock.actions.add_child(plate)
+	var back := SkinnedButton.create("Back", UiSkin.GRAY, UiSkin.CONTROL_HEIGHT,
+		UiSkin.CONTROL_FONT_SIZE)
+	back.custom_minimum_size.x = BUILD_BUTTON_WIDTH
+	back.pressed.connect(_fill_selection_actions)
+	_selection_dock.actions.add_child(back)
+
+
+# --- build mode ---------------------------------------------------------------------------------
+
+## Hand the map over to drawing. The selection goes: what is on the band from here is the run being
+## drawn, and an outline round the square the player happened to click first would only be in the way.
+func _enter_build_mode(tool: String) -> void:
+	_build_tool = tool
+	_plan.clear()
+	_map_view.clear_selection()
+	_map_view.set_paint_mode(true)
+	_map_view.clear_road_plan()
+	_selection_kind = ""
+	_refresh_build_bar()
+	_shell.set_selection_visible(true)
+
+
+## The band while building: what is being drawn, how, and the two ways out of it.
+func _refresh_build_bar() -> void:
+	var demolishing := _build_tool == BaseGameMap.TOOL_DEMOLISH
+	_selection_dock.show_selection("Demolish" if demolishing else "Build a road",
+		"Drag on the map to draw. W A S D or the screen edge moves the view.",
+		RoadNetwork.ATLAS)
+	_selection_dock.set_closable(false)
+	_selection_dock.clear_actions()
+	_confirm_button = SkinnedButton.create("Confirm", UiSkin.GREEN, UiSkin.CONTROL_HEIGHT,
+		UiSkin.CONTROL_FONT_SIZE)
+	_confirm_button.custom_minimum_size.x = BUILD_BUTTON_WIDTH
+	_confirm_button.pressed.connect(_confirm_build)
+	_selection_dock.actions.add_child(_confirm_button)
+	var cancel := SkinnedButton.create("Cancel", UiSkin.BROWN, UiSkin.CONTROL_HEIGHT,
+		UiSkin.CONTROL_FONT_SIZE)
+	cancel.custom_minimum_size.x = BUILD_BUTTON_WIDTH
+	cancel.pressed.connect(_cancel_build)
+	_selection_dock.actions.add_child(cancel)
+	_restate_confirm()
+
+
+## Nothing drawn yet is nothing to confirm. A plan of only refusals is the same: pressing Confirm
+## would apply none of it and look like the button was broken.
+func _restate_confirm() -> void:
+	if _confirm_button == null:
+		return
+	var buildable := 0
+	for subtile: Vector2i in _plan:
+		if bool(_plan[subtile]):
+			buildable += 1
+	_confirm_button.button.disabled = buildable == 0
+
+
+## One subtile crossed by the drag. The plan grows; nothing touches the world until Confirm.
+func _on_subtile_painted(subtile: Vector2i) -> void:
+	if _build_tool.is_empty() or _terrain_map == null:
+		return
+	var state := BaseGameMap.plan_state(_terrain_map, subtile, _roads, _build_tool)
+	if state == "skip":
+		return
+	_plan[subtile] = state == "valid"
+	_refresh_plan_ghosts()
+	_restate_confirm()
+
+
+## Draw the plan as it stands. The pieces are shaped as though the plan and the network were already
+## one thing, so a run drawn up to an existing road shows the junction it is about to make rather
+## than two roads ending beside each other.
+func _refresh_plan_ghosts() -> void:
+	var demolishing := _build_tool == BaseGameMap.TOOL_DEMOLISH
+	var pieces: Dictionary = {}
+	var refused: Dictionary = {}
+	# **Every piece in the plan is shaped against every other**, refused ones included. A stretch that
+	# cannot be built still runs *through* the ground it was drawn across, so drawing each refusal as
+	# an isolated stub gives a dotted line of red specks where what the player needs to see is a red
+	# road: the shape they drew, in the colour that says it will not be laid.
+	for subtile: Vector2i in _plan:
+		var mask := _roads.mask_at(subtile, _plan)
+		pieces[subtile] = RoadNetwork.silhouette_for_mask(mask)
+		# Demolition is refusal all the way through: there is no valid-looking way to draw a road
+		# about to be taken away, and red is already the colour for "this will not be here".
+		if demolishing or not bool(_plan[subtile]):
+			refused[subtile] = true
+	_map_view.set_road_plan(pieces, refused)
+
+
+## Apply the plan. **The refused pieces are simply dropped** — sweeping a road across a farm gives
+## the road either side of it, which is what the player was drawing.
+func _confirm_build() -> void:
+	var demolishing := _build_tool == BaseGameMap.TOOL_DEMOLISH
+	for subtile: Vector2i in _plan:
+		if not bool(_plan[subtile]):
+			continue
+		if demolishing:
+			_roads.remove(subtile)
+		else:
+			_roads.add(subtile)
+	Kernel.state.set_value(RoadNetwork.STATE_KEY, _roads.to_state())
+	_refresh_roads()
+	_leave_build_mode()
+
+
+func _cancel_build() -> void:
+	_leave_build_mode()
+
+
+func _leave_build_mode() -> void:
+	_build_tool = ""
+	_plan.clear()
+	_confirm_button = null
+	_map_view.set_paint_mode(false)
+	_map_view.clear_road_plan()
+	_selection_dock.set_closable(true)
+	_selection_dock.clear_actions()
+	_shell.set_selection_visible(false)
+
+
+func is_building() -> bool:
+	return not _build_tool.is_empty()
+
+
+## Push the network at the map, and re-read it from state. Called on entry and after anything that
+## can replace the world under it — a load or a new game — for the same reason the outpost's marker is.
+## **A world that has never had roads gets the demonstration figure**, and one that has gets its own.
+## The distinction is whether the key is *there*, not whether it is empty: a player who demolishes
+## their last road has a world with no roads in it, and putting the fixture back would be the game
+## rebuilding what they just took down.
+func _refresh_roads() -> void:
+	if _map_view == null or _roads == null:
+		return
+	if Kernel.state.has_value(RoadNetwork.STATE_KEY):
+		_roads.from_state(Kernel.state.get_value(RoadNetwork.STATE_KEY, []))
+	else:
+		_roads.clear()
+		for at: Vector2i in BaseGameMap.demonstration_roads(_terrain_map):
+			_roads.add(at)
+	_map_view.set_roads(_roads.textures())
 
 
 ## Who holds the selected thing. The settlement's own name for anything the player owns; nothing at
@@ -1107,6 +1380,8 @@ func _on_load() -> void:
 	_refresh_day()
 	_refresh_resources()
 	_refresh_map_marker()
+	# A loaded world brings its own roads, and drops the ones the previous one had.
+	_refresh_roads()
 	# A loaded game brings its own unanswered question, if it had one.
 	_present_oldest_pending()
 	_set_busy(false)
@@ -1121,6 +1396,8 @@ func _on_new_game() -> void:
 	_refresh_resources()
 	_refresh_slots()
 	_refresh_map_marker()
+	# A new settlement starts on unbuilt ground.
+	_refresh_roads()
 	_set_busy(false)
 
 

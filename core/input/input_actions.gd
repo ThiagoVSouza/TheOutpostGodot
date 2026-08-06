@@ -26,6 +26,13 @@ const OPEN_CHAT := "open_chat"
 const OPEN_MAP := "open_map"
 const MAP_ZOOM_IN := "map_zoom_in"
 const MAP_ZOOM_OUT := "map_zoom_out"
+## Panning by key, which the Controls tab has listed as intended since it was written. It lands now
+## because build mode needs it: while the left button is drawing a road it is not moving the map, so
+## the map has to answer to something else.
+const MAP_PAN_UP := "map_pan_up"
+const MAP_PAN_DOWN := "map_pan_down"
+const MAP_PAN_LEFT := "map_pan_left"
+const MAP_PAN_RIGHT := "map_pan_right"
 const QUICK_SAVE := "quick_save"
 const OPEN_SETTINGS := "open_settings"
 const BACK_CLOSE := "back_close"
@@ -42,6 +49,11 @@ const ACTIONS := [
 	{"id": OPEN_MAP, "label": "Open the map", "group": "The world", "default": KEY_M},
 	{"id": MAP_ZOOM_IN, "label": "Zoom in", "group": "Map", "default": KEY_EQUAL},
 	{"id": MAP_ZOOM_OUT, "label": "Zoom out", "group": "Map", "default": KEY_MINUS},
+	# W A S D, which is what the Controls tab has promised for panning all along.
+	{"id": MAP_PAN_UP, "label": "Pan up", "group": "Map", "default": KEY_W},
+	{"id": MAP_PAN_LEFT, "label": "Pan left", "group": "Map", "default": KEY_A},
+	{"id": MAP_PAN_DOWN, "label": "Pan down", "group": "Map", "default": KEY_S},
+	{"id": MAP_PAN_RIGHT, "label": "Pan right", "group": "Map", "default": KEY_D},
 	{"id": OPEN_SETTINGS, "label": "Settings", "group": "System", "default": KEY_F1},
 	{"id": QUICK_SAVE, "label": "Quick save", "group": "System", "default": KEY_F5},
 	{"id": BACK_CLOSE, "label": "Back / close", "group": "System", "default": KEY_ESCAPE},
