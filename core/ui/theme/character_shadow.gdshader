@@ -33,19 +33,10 @@ uniform vec4 shadow_color : source_color = vec4(0.0, 0.0, 0.0, 0.55);
 // so it darkens what is visible without touching the shape of the falloff: the part it would push
 // past one is the part hidden behind the figure anyway.
 uniform float shadow_gain = 1.0;
-// What is still inside the scene's picture, in the drawn rect's UV. Nothing may spill onto the
-// parchment the conversation is written on.
-uniform vec4 clip_uv = vec4(0.0, 0.0, 1.0, 1.0);
-// Mirrored about its own middle, for the character on the other side of the band.
-uniform bool flip = false;
 
 // The texture's UV for a point of the drawn rect, and whether that point is on the texture at all.
 vec2 figure_uv(vec2 uv) {
-	vec2 mapped = (uv - pad) / max(vec2(1.0) - 2.0 * pad, vec2(0.0001));
-	if (flip) {
-		mapped.x = 1.0 - mapped.x;
-	}
-	return mapped;
+	return (uv - pad) / max(vec2(1.0) - 2.0 * pad, vec2(0.0001));
 }
 
 // Whether a mapped coordinate is on the texture at all. Outside it is transparent, not the clamped
@@ -58,30 +49,26 @@ bool on_figure(vec2 uv) {
 // exist only inside the stage functions, and Godot will not take one as a `sampler2D` argument
 // either — so the loop reads the texture directly.
 void fragment() {
-	if (UV.x < clip_uv.x || UV.y < clip_uv.y || UV.x > clip_uv.z || UV.y > clip_uv.w) {
-		COLOR = vec4(0.0);
-	} else {
-		vec2 mapped = figure_uv(UV);
-		vec4 figure = vec4(0.0);
-		if (on_figure(mapped)) {
-			figure = texture(TEXTURE, mapped);
-		}
-
-		float shade = 0.0;
-		for (int i = 0; i < TAPS; i++) {
-			float step = float(i);
-			float angle = step * GOLDEN_ANGLE;
-			float spread = sqrt(step / float(TAPS));
-			vec2 tap = vec2(cos(angle), sin(angle)) * spread * shadow_radius;
-			vec2 at = figure_uv(UV - shadow_offset + tap);
-			if (on_figure(at)) {
-				shade += texture(TEXTURE, at).a;
-			}
-		}
-		shade = clamp(shade / float(TAPS) * shadow_gain, 0.0, 1.0);
-
-		vec4 shadow = vec4(shadow_color.rgb, shade * shadow_color.a);
-		// The figure over its own shadow, so the shadow only ever shows where the figure does not.
-		COLOR = mix(shadow, figure, figure.a);
+	vec2 mapped = figure_uv(UV);
+	vec4 figure = vec4(0.0);
+	if (on_figure(mapped)) {
+		figure = texture(TEXTURE, mapped);
 	}
+
+	float shade = 0.0;
+	for (int i = 0; i < TAPS; i++) {
+		float step = float(i);
+		float angle = step * GOLDEN_ANGLE;
+		float spread = sqrt(step / float(TAPS));
+		vec2 tap = vec2(cos(angle), sin(angle)) * spread * shadow_radius;
+		vec2 at = figure_uv(UV - shadow_offset + tap);
+		if (on_figure(at)) {
+			shade += texture(TEXTURE, at).a;
+		}
+	}
+	shade = clamp(shade / float(TAPS) * shadow_gain, 0.0, 1.0);
+
+	vec4 shadow = vec4(shadow_color.rgb, shade * shadow_color.a);
+	// The figure over its own shadow, so the shadow only ever shows where the figure does not.
+	COLOR = mix(shadow, figure, figure.a);
 }

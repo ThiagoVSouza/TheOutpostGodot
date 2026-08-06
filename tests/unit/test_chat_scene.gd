@@ -149,33 +149,71 @@ func test_the_two_sides_are_placed_symmetrically() -> void:
 	assert_lt(left.get_center().x, right.get_center().x)
 
 
-## **Nothing in the scene may spill out of it.** The shadow is why this matters: it is a ring of copies
-## dropped below a figure that already stands on the band's bottom edge, so unclipped it lands on the
-## parchment the conversation is written on.
-func test_what_falls_outside_the_picture_is_cropped_away() -> void:
-	var band := Rect2(0.0, 0.0, 1000.0, 400.0)
-	var art := Vector2(100.0, 200.0)
+## **Nothing in the scene may spill out of it**, and a figure is the thing that tries: it stands on the
+## band's bottom edge with a shadow dropped below it, and the canvas it is drawn from is grown further
+## still to give that shadow room.
+##
+## The window is a clipping container the figures are children of, so what keeps them in cannot drift
+## out of step with where they are — which is exactly what happened when the clip lived in the shadow
+## shader and the layers moved into a [CanvasGroup]: the uniform went on being set against a rectangle
+## the shader no longer measured in, and trousers appeared on the parchment.
+func test_the_figures_stand_in_a_window_that_clips_them_to_the_picture() -> void:
+	var scene := _scene()
+	scene.size = Vector2(1732.0, 10.0)
+	var figure := ImageTexture.create_from_image(
+		Image.create_empty(int(FIGURE.x), int(FIGURE.y), false, Image.FORMAT_RGBA8))
+	scene.show_scene(_plate(), 0.97, [
+		{"texture": figure, "content": FIGURE_CONTENT, "side": 1},
+	])
 
-	# Wholly inside: all of the texture, untouched.
-	assert_eq(ChatScene.clipped_region(Rect2(100.0, 100.0, 200.0, 200.0), band, art),
-		Rect2(0.0, 0.0, art.x, art.y))
+	var stage := scene.get("_stage") as Control
+	assert_true(stage.clip_contents, "the window clips, or nothing else here matters")
+	assert_false(scene.clip_contents,
+		"and the scene itself must not, or its bleed would be cut off with everything else")
 
-	# Hanging off the bottom by a quarter of its height: the bottom quarter of the texture goes, and
-	# what is left is still anchored at the top of it.
-	var over := Rect2(100.0, 200.0, 200.0, 400.0)   # 200 of its 400 units are below the band
-	var region := ChatScene.clipped_region(over, band, art)
-	assert_eq(region.position, Vector2.ZERO, "the top of the picture is kept")
-	assert_almost_eq(region.size.y, art.y * 0.5, 0.001, "and exactly the half that fitted")
-	assert_eq(region.size.x, art.x, "with nothing taken off the sides")
-	assert_eq(over.intersection(band).size.y, 200.0, "the destination is trimmed to match")
+	# The window *is* the picture — same rectangle, bleed and all.
+	var picture := scene.call("_picture_rect") as Rect2
+	assert_eq(stage.position, picture.position)
+	assert_eq(stage.size, picture.size)
 
-	# Off the left, so the region starts partway into the texture rather than at its edge.
-	var left := Rect2(-100.0, 0.0, 200.0, 200.0)
-	assert_almost_eq(ChatScene.clipped_region(left, band, art).position.x, art.x * 0.5, 0.001)
+	# Every figure is inside it, so the clip reaches them.
+	var nodes := 0
+	for child in stage.get_children():
+		if child is ChatCharacter:
+			nodes += 1
+	assert_eq(nodes, 1, "figures are children of the window, not siblings of it")
 
-	# Wholly outside is nothing at all, rather than a rectangle of nonsense.
-	assert_eq(ChatScene.clipped_region(Rect2(-500.0, 0.0, 100.0, 100.0), band, art), Rect2())
-	assert_eq(ChatScene.clipped_region(Rect2(0.0, 0.0, 0.0, 0.0), band, art), Rect2())
+	# And a figure really does hang past the bottom — which is why the window has to be there.
+	var node := stage.get_child(0) as Control
+	assert_gt(node.position.y + node.size.y, stage.size.y,
+		"the canvas reaches below the band, and is cut rather than drawn on the parchment")
+
+
+## A layer given a `tone` is **remapped by a shader**, not multiplied — and one without keeps the
+## plain tint. Asserted on the node itself, because a tone that never reaches the layer is invisible:
+## the figure simply draws in its painted colours and every tone looks the same.
+func test_a_toned_layer_gets_the_remap_shader_and_a_plain_one_does_not() -> void:
+	var scene := _scene()
+	scene.size = Vector2(1732.0, 10.0)
+	var figure := ImageTexture.create_from_image(
+		Image.create_empty(int(FIGURE.x), int(FIGURE.y), false, Image.FORMAT_RGBA8))
+	scene.show_scene(_plate(), 0.97, [{
+		"texture": figure, "content": FIGURE_CONTENT, "side": 1,
+		"layers": [
+			{"texture": figure, "tone": {"shadow": Color.RED, "highlight": Color.WHITE}},
+			{"texture": figure, "tint": Color.BLUE},
+		],
+	}])
+
+	var node := (scene.get("_stage") as Control).get_child(0) as ChatCharacter
+	var stack: Array = node.get("_layer_nodes")
+	assert_eq(stack.size(), 2)
+	assert_true((stack[0] as Control).material is ShaderMaterial,
+		"the toned layer carries the remap")
+	assert_eq((stack[0] as Control).material.get_shader_parameter("shadow_color"), Color.RED,
+		"and is told which colour its shadows become")
+	assert_null((stack[1] as Control).material,
+		"a plain layer is multiplied, which needs no shader at all")
 
 
 ## **The shadow needs room in the rect before the shader can use it.** A canvas shader only paints
@@ -191,7 +229,7 @@ func test_a_figure_is_given_room_around_it_for_the_shadow_to_spread_into() -> vo
 	])
 
 	var nodes: Array[Node] = []
-	for child in scene.get_children():
+	for child in (scene.get("_stage") as Control).get_children():
 		if child is ChatCharacter:
 			nodes.append(child)
 	assert_eq(nodes.size(), 1, "one node per figure, carrying its own shadow material")
@@ -208,6 +246,42 @@ func test_a_figure_is_given_room_around_it_for_the_shadow_to_spread_into() -> vo
 	var pad := (node.material as ShaderMaterial).get_shader_parameter("pad") as Vector2
 	assert_gt(pad.x, 0.0)
 	assert_gt(pad.y, 0.0)
+
+
+func test_character_layers_are_flattened_before_the_one_shadow_is_applied() -> void:
+	var scene := _scene()
+	scene.size = Vector2(1732.0, 10.0)
+	var base := ImageTexture.create_from_image(
+		Image.create_empty(int(FIGURE.x), int(FIGURE.y), false, Image.FORMAT_RGBA8))
+	var hair := ImageTexture.create_from_image(
+		Image.create_empty(int(FIGURE.x), int(FIGURE.y), false, Image.FORMAT_RGBA8))
+	scene.show_scene(_plate(), 0.97, [{
+		"layers": [
+			{"texture": base},
+			{"texture": hair, "tint": Color("965b38")},
+		],
+		"canvas": FIGURE,
+		"content": FIGURE_CONTENT,
+		"side": 1,
+	}])
+
+	var character: ChatCharacter = null
+	for child in (scene.get("_stage") as Control).get_children():
+		if child is ChatCharacter:
+			character = child
+			break
+	assert_not_null(character)
+	assert_true(character.material is ShaderMaterial, "one shadow material belongs to the figure")
+
+	var groups: Array[CanvasGroup] = []
+	for child in character.get_children():
+		if child is CanvasGroup:
+			groups.append(child)
+	assert_eq(groups.size(), 1, "the visual stack has one composite")
+	assert_true(groups[0].use_parent_material, "the composite receives the figure's shadow material")
+	assert_eq(groups[0].get_child_count(), 2, "base and hair are separate layers")
+	for layer: Control in groups[0].get_children():
+		assert_eq(layer.size, character.size, "every layer uses the identical padded canvas")
 
 
 ## The whole canvas is placed by where the *figure* on it has to land, so a transparent margin never
