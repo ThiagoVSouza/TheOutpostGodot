@@ -77,6 +77,13 @@ const BANNER_TOP_INSET := -34.0
 ## gives the shadow its outer edge, and too few leave that edge visibly polygonal.
 const BANNER_SHADOW_TAPS := 8
 const SPEED_BUTTON_SEPARATION := 4
+const HAIR_TEXTURE_BUTTON_SIZE := 54.0
+const HAIR_COLOR_BUTTON_SIZE := 34.0
+## Crop the shared character canvas to the head for chooser thumbnails. Rendering still uses the
+## complete canvas; this region is presentation only.
+const HAIR_THUMBNAIL_REGION := Rect2(130, 20, 210, 250)
+## Every chooser row's caption takes the same width, so the buttons line up down the column.
+const HAIR_ROW_LABEL_WIDTH := 54.0
 
 ## Wide enough that "Yes" and "No" are the same plate — an answer whose halves are different sizes
 ## reads as one of them being the expected one.
@@ -145,11 +152,23 @@ var _message_list: ChatMessageList
 var _input: LineEdit
 var _send_button: Button
 var _retry_button: SkinnedButton
-## Which scene the dev key is currently showing — an index into [ChatScenes], where anything outside
-## the catalogue means none. Scaffolding, like the map-art statics it sits beside.
-var _chat_scene := -1
+## Which scene the board is showing — an index into [ChatScenes].
+## **The board carries a scene from the moment it is built.** It began as scaffolding that had to be
+## switched on, so `-1` meant none; the picture is part of the conversation now, so there is no off.
+var _chat_scene := 0
 ## How many figures are on the scene's stage — an index into [constant ChatScenes.CHARACTER_STEPS].
-var _chat_characters := 0
+var _chat_characters := 1
+var _chat_hair_style := ChatScenes.DEFAULT_HAIR_STYLE
+var _chat_hair_color := ChatScenes.DEFAULT_HAIR_COLOR
+var _hair_controls: VBoxContainer
+var _chat_skin_tone := ChatScenes.DEFAULT_SKIN_TONE
+var _hair_style_buttons: Array[Button] = []
+var _hair_color_buttons: Array[Button] = []
+var _skin_tone_buttons: Array[Button] = []
+var _chat_age := ChatScenes.DEFAULT_AGE
+var _age_buttons: Array[Button] = []
+var _cast_buttons: Array[Button] = []
+var _scene_buttons: Array[Button] = []
 var _speed_buttons: Dictionary = {}
 var _speed_host: Control
 ## The plates in the map-layers flyout. Held because the same overlays are also reachable from the
@@ -257,8 +276,6 @@ func _unhandled_input(event: InputEvent) -> void:
 ## [cell]`Shift+5` … `Shift+8`[/cell]  [cell]house: ruin, damaged, burnt, abandoned[/cell]
 ## [cell]`9`[/cell]                    [cell]advance the crop cycle one stage, wrapping[/cell]
 ## [cell]`0`[/cell]                    [cell]snow on the buildings, on and off[/cell]
-## [cell]`Shift+9`[/cell]              [cell]walk the conversation's painted scenes, and off again[/cell]
-## [cell]`Shift+0`[/cell]              [cell]put nobody, one figure, then a pair on the scene's stage[/cell]
 ## [/table]
 ##
 ## The building stages hold `5`–`8` because that is what they were asked for; the crop cycle had them
@@ -278,13 +295,6 @@ func _dev_map_keys(event: InputEvent) -> bool:
 	var key := event as InputEventKey
 	if key == null or key.ctrl_pressed or key.alt_pressed:
 		return false
-	if key.shift_pressed and key.keycode == KEY_9:
-		_cycle_chat_scene()
-		return true
-	if key.shift_pressed and key.keycode == KEY_0:
-		_chat_characters = (_chat_characters + 1) % ChatScenes.CHARACTER_STEPS.size()
-		_show_chat_scene(_chat_scene)
-		return true
 	var slot := [KEY_5, KEY_6, KEY_7, KEY_8].find(key.keycode)
 	if slot >= 0:
 		# The two rows of four: the build stages plain, the ruined states shifted. They are one enum,
@@ -304,30 +314,70 @@ func _dev_map_keys(event: InputEvent) -> bool:
 	return false
 
 
-## Walk the scene catalogue: every painted scene in turn, then none, then round again. The real
-## trigger is [method _play_opening] — the throne room is the moment that workflow narrates — and this
-## exists only so looking at the art does not mean starting a new game each time.
-func _cycle_chat_scene() -> void:
-	_chat_scene = ChatScenes.next(_chat_scene)
+func _show_chat_scene(index: int) -> void:
+	_chat_scene = clampi(index, 0, maxi(ChatScenes.count() - 1, 0))
+	var scene := ChatScenes.at(_chat_scene)
+	if scene.is_empty():
+		_chat_dock.set_scene(null)
+		_set_hair_controls_visible(false)
+		return
+	_chat_dock.set_scene(scene["background"] as Texture2D, float(scene["floor"]),
+		ChatScenes.characters(_chat_characters, _chat_hair_style, _chat_hair_color, _chat_skin_tone,
+			_chat_age))
+	_set_hair_controls_visible(true)
+	# **Setting the scene does not open the board.** It did while a dev key was the only way to see
+	# one — there was no point showing a picture on a board nobody had opened. Now the conversation
+	# always carries one, and forcing it open at boot would put an expanded chat over the map before
+	# the player has asked for anything.
+
+
+## Absent entirely when the scaffolding is off, so every caller has to tolerate that rather than
+## assume the chooser exists.
+func _set_hair_controls_visible(visible: bool) -> void:
+	if _hair_controls != null:
+		_hair_controls.visible = visible
+
+
+func _select_chat_hair_style(index: int) -> void:
+	_chat_hair_style = clampi(index, 0, ChatScenes.HAIR_STYLES.size() - 1)
+	_refresh_hair_buttons()
 	_show_chat_scene(_chat_scene)
 
 
-func _show_chat_scene(index: int) -> void:
-	var scene := ChatScenes.at(index)
-	if scene.is_empty():
-		_chat_dock.set_scene(null)
-		return
-	_chat_dock.set_scene(scene["background"] as Texture2D, float(scene["floor"]),
-		ChatScenes.characters(_chat_characters))
-	# A scene the player cannot see is not showing them anything: the board has to be open for the
-	# picture to have a top edge to own.
-	_shell.set_chat_expanded(true)
-	# **And then give the keyboard back.** Opening the board puts the caret in the chat field
-	# ([method _on_chat_expanded_changed]), and a focused [LineEdit] swallows every printable key — so
-	# the dev key that opened the scene would be the last one to work, and the next would type a
-	# bracket into the conversation instead of adding a character. Only the *automatic* grab is undone;
-	# a player who clicks into the field still gets their typing.
-	_input.release_focus()
+func _select_chat_hair_color(index: int) -> void:
+	_chat_hair_color = clampi(index, 0, ChatScenes.HAIR_COLORS.size() - 1)
+	_refresh_hair_buttons()
+	_show_chat_scene(_chat_scene)
+
+
+func _select_chat_skin_tone(index: int) -> void:
+	_chat_skin_tone = clampi(index, 0, ChatScenes.SKIN_TONES.size() - 1)
+	_refresh_hair_buttons()
+	_show_chat_scene(_chat_scene)
+
+
+func _select_chat_cast(step: int) -> void:
+	_chat_characters = clampi(step, 0, ChatScenes.CHARACTER_STEPS.size() - 1)
+	_refresh_hair_buttons()
+	_show_chat_scene(_chat_scene)
+
+
+func _select_chat_age(index: int) -> void:
+	_chat_age = clampi(index, 0, ChatScenes.AGES.size() - 1)
+	_refresh_hair_buttons()
+	_show_chat_scene(_chat_scene)
+
+
+func _refresh_hair_buttons() -> void:
+	for row: Array in [[_hair_style_buttons, _chat_hair_style], [_hair_color_buttons, _chat_hair_color],
+			[_skin_tone_buttons, _chat_skin_tone], [_age_buttons, _chat_age],
+			[_cast_buttons, _chat_characters], [_scene_buttons, _chat_scene]]:
+		var buttons := row[0] as Array
+		var chosen := int(row[1])
+		for index in buttons.size():
+			var button := buttons[index] as Button
+			button.button_pressed = index == chosen
+			UiSkin.apply_thumbnail(button, index == chosen)
 
 
 func _set_crop_stage(stage: BaseGameMap.CropStage) -> void:
@@ -728,6 +778,15 @@ func _build_chat_panel() -> void:
 	# being empty. The painted scene takes the board's own top edge instead ([ChatDock.set_scene]) and
 	# there is nothing at all when there is nothing to show.
 
+	# **Behind the same flag as every other piece of art scaffolding.** These are a preview tool, not
+	# chrome: once `_play_opening` puts the throne room in front of a player, a hair chooser sitting in
+	# their conversation would be a dev control shipped by accident.
+	if DEV_MAP_KEYS:
+		_build_hair_controls()
+		# The picture is part of the conversation now, so the board opens carrying one rather than
+		# waiting to be told.
+		_show_chat_scene.call_deferred(_chat_scene)
+
 	_message_list = ChatMessageList.new()
 	_chat_dock.body.add_child(_message_list)
 
@@ -737,6 +796,146 @@ func _build_chat_panel() -> void:
 	_log_label.bbcode_enabled = true
 	_log_label.visible = false
 	_chat_dock.body.add_child(_log_label)
+
+
+## A compact preview tool for the layered character. One flow container owns desktop and phone
+## layouts, so a narrow board wraps the colour swatches instead of squeezing the chat off-screen.
+func _build_hair_controls() -> void:
+	# **A column of rows, one choice per row.** They shared a single flow before and ran together into
+	# one long line that wrapped wherever it happened to run out of width, so which label belonged to
+	# which run of buttons was a matter of counting. Each row still flows internally, so a narrow board
+	# wraps a row's own buttons rather than folding one row into the next.
+	_hair_controls = VBoxContainer.new()
+	_hair_controls.visible = false
+	_hair_controls.add_theme_constant_override("separation", 4)
+	_chat_dock.body.add_child(_hair_controls)
+
+	# **What the two dev keys used to do.** They were the wrong shape for it — a key that opens the
+	# board also hands the keyboard to the chat field, so the first press was the last one that worked.
+	_add_caption_row("Scene", ChatScenes.count(), _scene_buttons,
+		func(index: int) -> String: return String(ChatScenes.at(index)["title"]),
+		_show_chat_scene)
+	_add_caption_row("Cast", ChatScenes.CHARACTER_STEPS.size(), _cast_buttons,
+		func(index: int) -> String: return ["Nobody", "One", "A pair"][index],
+		_select_chat_cast)
+	_add_thumbnail_row("Hair", ChatScenes.HAIR_STYLES.size(), _hair_style_buttons,
+		func(index: int) -> Texture2D: return ChatScenes.HAIR_STYLES[index]["texture"] as Texture2D,
+		func(index: int) -> String: return "%s hair" % String(ChatScenes.HAIR_STYLES[index]["label"]),
+		_select_chat_hair_style)
+	# **Age is a whole painting, so its thumbnail is a face**, cropped from the same head region the
+	# hairstyles use — lines round the eyes are the only thing that tells one apart from another.
+	_add_thumbnail_row("Age", ChatScenes.AGES.size(), _age_buttons,
+		func(index: int) -> Texture2D: return ChatScenes.AGES[index]["texture"] as Texture2D,
+		func(index: int) -> String: return String(ChatScenes.AGES[index]["label"]),
+		_select_chat_age)
+	_add_swatch_row("Color", ChatScenes.HAIR_COLORS.size(), _hair_color_buttons,
+		func(index: int) -> Color: return ChatScenes.HAIR_COLORS[index]["color"] as Color,
+		func(index: int) -> String: return String(ChatScenes.HAIR_COLORS[index]["label"]),
+		_select_chat_hair_color)
+	# **Skin swatches are not the tint.** The tone is a multiply, and some of them lighten — shown raw,
+	# every lightening tone would be a blank white square. The swatch is the figure's own skin under
+	# the tone instead, which is what the button is actually offering.
+	_add_swatch_row("Skin", ChatScenes.SKIN_TONES.size(), _skin_tone_buttons,
+		func(index: int) -> Color: return ChatScenes.skin_swatch(index),
+		func(index: int) -> String: return String(ChatScenes.SKIN_TONES[index]["label"]),
+		_select_chat_skin_tone)
+
+	_refresh_hair_buttons()
+
+
+## One labelled run of ordinary captioned buttons, for choices with no picture to show.
+func _add_caption_row(label: String, count: int, into: Array[Button], caption: Callable,
+		on_pressed: Callable) -> void:
+	var row := _control_row(label)
+	var group := ButtonGroup.new()
+	for index in count:
+		var button := Button.new()
+		button.text = String(caption.call(index))
+		button.toggle_mode = true
+		button.button_group = group
+		button.custom_minimum_size.y = HAIR_COLOR_BUTTON_SIZE
+		# The same plate the picture rows wear — [method _refresh_hair_buttons] applies it, so a
+		# captioned choice and a thumbnail one read as the same kind of control.
+		#
+		# **Only the lettering needed fixing.** Godot's default button colour is cream, meant for the
+		# dark chrome this game does not have; on parchment the unselected choices were very nearly
+		# invisible. Not [method UiSkin.apply_input], which sets `clip_text` so a field never sizes to
+		# its longest value — correct for a field and fatal for a button that is only its caption.
+		button.add_theme_font_size_override("font_size", UiSkin.FONT_SMALL)
+		for state: String in ["font_color", "font_hover_color", "font_pressed_color",
+				"font_hover_pressed_color", "font_focus_color"]:
+			button.add_theme_color_override(state, UiSkin.INK)
+		UiSkin.apply_cursor(button)
+		button.pressed.connect(func() -> void: on_pressed.call(index))
+		into.append(button)
+		row.add_child(button)
+
+
+## One labelled run of picture buttons, each showing the head of what it selects. Hair and age differ
+## only in which texture the thumbnail is cut from, so they share this.
+func _add_thumbnail_row(label: String, count: int, into: Array[Button], texture: Callable,
+		tooltip: Callable, on_pressed: Callable) -> void:
+	var row := _control_row(label)
+	var group := ButtonGroup.new()
+	for index in count:
+		var button := Button.new()
+		button.custom_minimum_size = Vector2(HAIR_TEXTURE_BUTTON_SIZE, HAIR_TEXTURE_BUTTON_SIZE)
+		button.toggle_mode = true
+		button.button_group = group
+		button.tooltip_text = String(tooltip.call(index))
+		button.expand_icon = true
+		var thumbnail := AtlasTexture.new()
+		thumbnail.atlas = texture.call(index) as Texture2D
+		thumbnail.region = HAIR_THUMBNAIL_REGION
+		button.icon = thumbnail
+		UiSkin.apply_cursor(button)
+		button.pressed.connect(func() -> void: on_pressed.call(index))
+		into.append(button)
+		row.add_child(button)
+
+
+## One labelled run of colour buttons. Hair and skin differ only in what colour each swatch shows and
+## what pressing one does, so they share this rather than the same twenty lines twice.
+func _add_swatch_row(label: String, count: int, into: Array[Button], swatch_color: Callable,
+		tooltip: Callable, on_pressed: Callable) -> void:
+	var row := _control_row(label)
+	var group := ButtonGroup.new()
+	for index in count:
+		var button := Button.new()
+		button.custom_minimum_size = Vector2(HAIR_COLOR_BUTTON_SIZE, HAIR_COLOR_BUTTON_SIZE)
+		button.toggle_mode = true
+		button.button_group = group
+		button.tooltip_text = String(tooltip.call(index))
+		UiSkin.apply_cursor(button)
+		var swatch := ColorRect.new()
+		swatch.color = swatch_color.call(index) as Color
+		swatch.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		swatch.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		swatch.offset_left = 6.0
+		swatch.offset_top = 6.0
+		swatch.offset_right = -6.0
+		swatch.offset_bottom = -6.0
+		button.add_child(swatch)
+		button.pressed.connect(func() -> void: on_pressed.call(index))
+		into.append(button)
+		row.add_child(button)
+
+
+## One row of the chooser: its caption, and the run of buttons that follows. The caption is given a
+## fixed width so every row's buttons start on the same line down the column, which is what makes the
+## stack read as a list of choices rather than as ragged text.
+func _control_row(label: String) -> HFlowContainer:
+	var row := HFlowContainer.new()
+	row.add_theme_constant_override("h_separation", 6)
+	row.add_theme_constant_override("v_separation", 4)
+	_hair_controls.add_child(row)
+
+	var caption := _bar_label(UiSkin.FONT_SMALL, true)
+	caption.text = label
+	caption.custom_minimum_size.x = HAIR_ROW_LABEL_WIDTH
+	caption.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	row.add_child(caption)
+	return row
 
 
 ## The board's bottom section: the line the player writes on, the send plate, and the pending

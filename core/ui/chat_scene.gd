@@ -110,6 +110,8 @@ var _floor_line := 1.0
 var _characters: Array = []
 ## One [ChatCharacter] per figure on stage, in step with [member _characters].
 var _figures: Array[ChatCharacter] = []
+## The window the figures stand in — exactly the picture, and it clips. See [method _place_characters].
+var _stage: Control = null
 ## Re-parented onto the scene while one is showing, so the board's close control keeps working when
 ## the header it normally lives in has given way to the picture.
 var _close: Control = null
@@ -119,15 +121,21 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	resized.connect(_refit)
 	visible = false
+	# Added here rather than on demand so a figure can never be parented to nothing. **It** clips,
+	# which this control must not: the scene's own picture is drawn a bleed outside its box on purpose.
+	_stage = Control.new()
+	_stage.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_stage.clip_contents = true
+	add_child(_stage)
 
 
 ## Show [param background], with its floor at [param floor_line] (a fraction of the scene's height)
-## and [param characters] standing in it, each `{texture, content, side, height}` — see
+## and [param characters] standing in it, each `{layers, canvas, content, side, height}` — see
 ## [method _place_characters].
 func show_scene(background: Texture2D, floor_line: float = 1.0, characters: Array = []) -> void:
 	_background = background
 	_floor_line = clampf(floor_line, 0.0, 1.0)
-	_characters = characters.duplicate()
+	_characters = characters.duplicate(true)
 	_rebuild_figures()
 	visible = _background != null
 	_refit()
@@ -301,34 +309,6 @@ static func character_content_rect(picture: Rect2, content: Rect2, side: int,
 	return Rect2(centre - wide * 0.5, picture.end.y - high, wide, high)
 
 
-## **Which part of a texture is still inside [param bounds] once it is drawn into [param dest]** — the
-## region to pass alongside `dest.intersection(bounds)`.
-##
-## The scene is a window onto a painting and **nothing in it may spill out of that window**. The
-## shadow is what makes this matter: it is a ring of copies dropped below the figure, and the figure
-## already stands on the band's bottom edge, so without this the shadow falls out of the picture and
-## onto the parchment the conversation is written on.
-##
-## Clipping by region rather than by [member CanvasItem.clip_contents], which is not available here:
-## the scene deliberately draws [constant BLEED] outside its own rectangle to meet the frame, and a
-## control that clipped its own drawing would cut that off as well.
-static func clipped_region(dest: Rect2, bounds: Rect2, art: Vector2) -> Rect2:
-	var visible := dest.intersection(bounds)
-	if dest.size.x <= 0.0 or dest.size.y <= 0.0 or not visible.has_area():
-		return Rect2()
-	var scale := Vector2(art.x / dest.size.x, art.y / dest.size.y)
-	return Rect2((visible.position - dest.position) * scale, visible.size * scale)
-
-
-## Draw [param texture] into [param dest], showing only what falls inside [param bounds].
-func _draw_texture_clipped(texture: Texture2D, dest: Rect2, bounds: Rect2, tint: Color) -> void:
-	var visible := dest.intersection(bounds)
-	if not visible.has_area():
-		return
-	draw_texture_rect_region(texture, visible,
-		clipped_region(dest, bounds, texture.get_size()), tint)
-
-
 ## **Where the whole canvas lands on screen, given where the figure on it has to end up.**
 ##
 ## Layers share a canvas — a hat has to be painted on the same grid as the head it sits on — so what
@@ -353,21 +333,37 @@ static func character_canvas_rect(figure: Rect2, content: Rect2, canvas: Vector2
 ## the player can actually see. Only the horizontal differs — there is no vertical crop, so a height
 ## given against the painting and one given against the band are the same number.
 func _place_characters(picture: Rect2) -> void:
+	# **The stage is what keeps the figures inside the picture.** It is exactly the band, it clips, and
+	# every figure is a child of it — so a waist or a shadow that reaches past the bottom is cut by the
+	# window rather than by anything the figure itself has to know.
+	#
+	# The clip used to be the shadow shader's job, through a `clip_uv` uniform. That stopped working
+	# the moment the layers moved into a [CanvasGroup]: the material is applied to the group's
+	# composite, whose UV is its own buffer rather than the rect the uniform was measured against, so
+	# the test that a figure stays in its band silently became a test of nothing and trousers appeared
+	# on the parchment. A container that clips cannot drift out of step with the thing it clips.
+	_stage.position = picture.position
+	_stage.size = picture.size
+
 	var drop := CHARACTER_SHADOW_DROP * picture.size.y
 	var radius := CHARACTER_SHADOW_RADIUS * picture.size.y
 	# Enough room in the rect for the blur to reach its full extent in any direction, plus wherever
 	# the drop has carried it. A shader cannot paint outside its own primitive.
 	var spread := radius + maxf(absf(drop.x), absf(drop.y))
+	# Figures are children of the stage, so they are placed against the picture's own origin.
+	var band := Rect2(Vector2.ZERO, picture.size)
 	for index in _characters.size():
 		var character: Dictionary = _characters[index]
 		var node: ChatCharacter = _figures[index]
-		var texture := character.get("texture") as Texture2D
-		var content := character.get("content", Rect2(Vector2.ZERO, texture.get_size())) as Rect2
+		var layers := _character_layers(character)
+		var texture := _first_layer_texture(layers)
+		var canvas := character.get("canvas", texture.get_size()) as Vector2
+		var content := character.get("content", Rect2(Vector2.ZERO, canvas)) as Rect2
 		var side := int(character.get("side", 1))
-		var figure := character_content_rect(picture, content, side,
+		var figure := character_content_rect(band, content, side,
 			float(character.get("height", CHARACTER_HEIGHT)))
-		node.place(texture, character_canvas_rect(figure, content, texture.get_size()),
-			spread, drop, radius, picture, side < 0)
+		node.place(layers, character_canvas_rect(figure, content, canvas),
+			spread, drop, radius, side < 0)
 
 
 ## Keep one [ChatCharacter] per figure on stage. Rebuilt rather than pooled: the stage changes when a
@@ -378,16 +374,34 @@ func _rebuild_figures() -> void:
 		node.queue_free()
 	_figures.clear()
 	for character: Dictionary in _characters:
-		if character.get("texture") == null:
+		if _first_layer_texture(_character_layers(character)) == null:
 			continue
 		var node := ChatCharacter.new()
 		node.set_shadow(CHARACTER_SHADOW_COLOR, CHARACTER_SHADOW_GAIN)
-		add_child(node)
+		_stage.add_child(node)
 		_figures.append(node)
 	# A figure with no texture is dropped, so the two lists have to be brought back into step or
 	# `_place_characters` would pair a node with the wrong record.
 	var staged: Array = []
 	for character: Dictionary in _characters:
-		if character.get("texture") != null:
+		if _first_layer_texture(_character_layers(character)) != null:
 			staged.append(character)
 	_characters = staged
+
+
+## The layered contract, with a small compatibility bridge for callers and tests that still hand the
+## scene one `texture`. Keeping the conversion here means [ChatCharacter] only ever receives a stack.
+static func _character_layers(character: Dictionary) -> Array:
+	var layers := character.get("layers", []) as Array
+	if not layers.is_empty():
+		return layers
+	var texture := character.get("texture") as Texture2D
+	return [{"texture": texture}] if texture != null else []
+
+
+static func _first_layer_texture(layers: Array) -> Texture2D:
+	for entry: Dictionary in layers:
+		var texture := entry.get("texture") as Texture2D
+		if texture != null:
+			return texture
+	return null
