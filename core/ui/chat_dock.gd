@@ -39,8 +39,13 @@ var collapsed_height: float:
 		var content: float = maxf(input_row.get_combined_minimum_size().y, UiSkin.CHAT_SEND_SIZE)
 		return content + _frame_padding_height + _pending_height()
 
+## The painted scene, when there is one — the board's top edge belongs to it while it is showing. See
+## [ChatScene], and [method set_scene].
+var scene: ChatScene
+
 var _header: Control
 var _title_label: Label
+var _close: Button
 var _sheet: PanelContainer
 ## Top plus bottom, asked of the style rather than doubling one of them: the board's rule is on its
 ## top edge and not its foot, so the two are deliberately unequal
@@ -64,6 +69,12 @@ func _ready() -> void:
 	column.add_theme_constant_override("separation", UiSkin.CHAT_FRAME_PADDING)
 	add_child(column)
 
+	# **First in the column, so it owns the board's top edge.** It draws up and outward past its own
+	# box to meet the painted rule ([constant ChatScene.BLEED]), which is why it has to be the thing at
+	# the top: anything above it would be drawn over.
+	scene = ChatScene.new()
+	column.add_child(scene)
+
 	_header = HBoxContainer.new()
 	_header.add_theme_constant_override("separation", 12)
 	column.add_child(_header)
@@ -73,14 +84,14 @@ func _ready() -> void:
 	_title_label.add_theme_color_override("font_color", UiSkin.INK)
 	_title_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_header.add_child(_title_label)
-	var close := Button.new()
-	close.text = "✕"
-	close.tooltip_text = "Close"
-	UiSkin.apply_input(close)
-	close.add_theme_font_size_override("font_size", UiSkin.FONT_BODY)
-	close.custom_minimum_size = Vector2(UiSkin.CONTROL_HEIGHT, UiSkin.CONTROL_HEIGHT)
-	close.pressed.connect(func() -> void: dismissed.emit())
-	_header.add_child(close)
+	_close = Button.new()
+	_close.text = "✕"
+	_close.tooltip_text = "Close"
+	UiSkin.apply_input(_close)
+	_close.add_theme_font_size_override("font_size", UiSkin.FONT_BODY)
+	_close.custom_minimum_size = Vector2(UiSkin.CONTROL_HEIGHT, UiSkin.CONTROL_HEIGHT)
+	_close.pressed.connect(func() -> void: dismissed.emit())
+	_header.add_child(_close)
 
 	# The chronicle sheet. It expands into whatever the board is given, so the board's height is the
 	# only thing that decides how much of the conversation is on show.
@@ -105,11 +116,54 @@ func set_title(text: String) -> void:
 	_title_label.text = text
 
 
+## **Put a painted scene at the top of the board, or take it away.** Pass `null` for no scene.
+##
+## While one is showing the header gives way to it: the picture becomes the board's top edge, which is
+## the whole point of it reaching out to the frame, and a title bar above it would put a strip of
+## parchment between the two. The ✕ moves onto the picture's own corner so closing the conversation
+## goes on working — it is the same button, carried, rather than a second one that could drift.
+func set_scene(background: Texture2D, floor_line: float = 1.0, characters: Array = []) -> void:
+	if background == null:
+		scene.set_close_control(null)
+		scene.clear_scene()
+		_reparent_close(_header)
+		_restate_header()
+		return
+	scene.show_scene(background, floor_line, characters)
+	_reparent_close(scene)
+	scene.set_close_control(_close)
+	_restate_header()
+
+
+func has_scene() -> bool:
+	return scene != null and scene.has_scene()
+
+
 ## Everything above the input row belongs to the expanded board. Hidden rather than faded, so a
 ## collapsed strip reports the height of its own contents and nothing more.
 func set_expanded(expanded: bool) -> void:
-	_header.visible = expanded
 	_sheet.visible = expanded
+	scene.visible = expanded and has_scene()
+	_restate_header()
+
+
+## The header is on show only when the board is open **and** no scene has taken its place at the top.
+func _restate_header() -> void:
+	_header.visible = _sheet.visible and not has_scene()
+
+
+## Move the ✕ without letting it keep a stale anchor or position from wherever it was. It is laid out
+## by a container in the header and placed by hand on a scene, so each move has to hand it back in the
+## state the new parent expects.
+func _reparent_close(to: Node) -> void:
+	if _close == null or _close.get_parent() == to:
+		return
+	if _close.get_parent() != null:
+		_close.get_parent().remove_child(_close)
+	to.add_child(_close)
+	if to == _header:
+		_close.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
+		_close.position = Vector2.ZERO
 
 
 ## A row the caller wants kept on the collapsed strip — the pending question, which must stay

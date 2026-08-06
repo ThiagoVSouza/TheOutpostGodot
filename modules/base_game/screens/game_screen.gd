@@ -145,7 +145,11 @@ var _message_list: ChatMessageList
 var _input: LineEdit
 var _send_button: Button
 var _retry_button: SkinnedButton
-var _event_image: Control
+## Which scene the dev key is currently showing — an index into [ChatScenes], where anything outside
+## the catalogue means none. Scaffolding, like the map-art statics it sits beside.
+var _chat_scene := -1
+## How many figures are on the scene's stage — an index into [constant ChatScenes.CHARACTER_STEPS].
+var _chat_characters := 0
 var _speed_buttons: Dictionary = {}
 var _speed_host: Control
 ## The plates in the map-layers flyout. Held because the same overlays are also reachable from the
@@ -253,6 +257,8 @@ func _unhandled_input(event: InputEvent) -> void:
 ## [cell]`Shift+5` … `Shift+8`[/cell]  [cell]house: ruin, damaged, burnt, abandoned[/cell]
 ## [cell]`9`[/cell]                    [cell]advance the crop cycle one stage, wrapping[/cell]
 ## [cell]`0`[/cell]                    [cell]snow on the buildings, on and off[/cell]
+## [cell]`Shift+9`[/cell]              [cell]walk the conversation's painted scenes, and off again[/cell]
+## [cell]`Shift+0`[/cell]              [cell]put nobody, one figure, then a pair on the scene's stage[/cell]
 ## [/table]
 ##
 ## The building stages hold `5`–`8` because that is what they were asked for; the crop cycle had them
@@ -272,6 +278,13 @@ func _dev_map_keys(event: InputEvent) -> bool:
 	var key := event as InputEventKey
 	if key == null or key.ctrl_pressed or key.alt_pressed:
 		return false
+	if key.shift_pressed and key.keycode == KEY_9:
+		_cycle_chat_scene()
+		return true
+	if key.shift_pressed and key.keycode == KEY_0:
+		_chat_characters = (_chat_characters + 1) % ChatScenes.CHARACTER_STEPS.size()
+		_show_chat_scene(_chat_scene)
+		return true
 	var slot := [KEY_5, KEY_6, KEY_7, KEY_8].find(key.keycode)
 	if slot >= 0:
 		# The two rows of four: the build stages plain, the ruined states shifted. They are one enum,
@@ -289,6 +302,32 @@ func _dev_map_keys(event: InputEvent) -> bool:
 		_refresh_map_content()
 		return true
 	return false
+
+
+## Walk the scene catalogue: every painted scene in turn, then none, then round again. The real
+## trigger is [method _play_opening] — the throne room is the moment that workflow narrates — and this
+## exists only so looking at the art does not mean starting a new game each time.
+func _cycle_chat_scene() -> void:
+	_chat_scene = ChatScenes.next(_chat_scene)
+	_show_chat_scene(_chat_scene)
+
+
+func _show_chat_scene(index: int) -> void:
+	var scene := ChatScenes.at(index)
+	if scene.is_empty():
+		_chat_dock.set_scene(null)
+		return
+	_chat_dock.set_scene(scene["background"] as Texture2D, float(scene["floor"]),
+		ChatScenes.characters(_chat_characters))
+	# A scene the player cannot see is not showing them anything: the board has to be open for the
+	# picture to have a top edge to own.
+	_shell.set_chat_expanded(true)
+	# **And then give the keyboard back.** Opening the board puts the caret in the chat field
+	# ([method _on_chat_expanded_changed]), and a focused [LineEdit] swallows every printable key — so
+	# the dev key that opened the scene would be the last one to work, and the next would type a
+	# bracket into the conversation instead of adding a character. Only the *automatic* grab is undone;
+	# a player who clicks into the field still gets their typing.
+	_input.release_focus()
 
 
 func _set_crop_stage(stage: BaseGameMap.CropStage) -> void:
@@ -684,29 +723,10 @@ func _build_chat_panel() -> void:
 	_shell.set_chat_dock(_chat_dock)
 	_chat_dock.set_title("Conversation")
 
-	# The slot art will hang in is a mount, so it is drawn as one: the thin frame, empty, with the
-	# note inside saying what belongs there. It was a dark rounded rectangle from the old theme —
-	# the one remaining piece of chrome that would still have looked borrowed once the panel around
-	# it was parchment.
-	var event_image := PanelContainer.new()
-	_event_image = event_image
-	event_image.custom_minimum_size = Vector2(0, 140)
-	event_image.tooltip_text = "Event artwork"
-	event_image.add_theme_stylebox_override("panel", UiSkin.thin_frame_style())
-	_chat_dock.body.add_child(event_image)
-	var placeholder := VBoxContainer.new()
-	placeholder.alignment = BoxContainer.ALIGNMENT_CENTER
-	event_image.add_child(placeholder)
-	var placeholder_title := Label.new()
-	placeholder_title.text = "Event illustration"
-	placeholder_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_ink(placeholder_title, UiSkin.FONT_BODY, true)
-	placeholder.add_child(placeholder_title)
-	var placeholder_note := Label.new()
-	placeholder_note.text = "Artwork arrives with the authored event."
-	placeholder_note.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_ink(placeholder_note, UiSkin.FONT_SMALL, true)
-	placeholder.add_child(placeholder_note)
+	# **The scene lives on the board itself, not in its body.** It was an empty framed box here — a
+	# mount waiting for art, permanently on show and permanently holding a caption apologising for
+	# being empty. The painted scene takes the board's own top edge instead ([ChatDock.set_scene]) and
+	# there is nothing at all when there is nothing to show.
 
 	_message_list = ChatMessageList.new()
 	_chat_dock.body.add_child(_message_list)
@@ -1312,7 +1332,6 @@ func _show_question(instance_id: String, wake: Dictionary) -> void:
 	_pending_label.text = "%s%s" % [String(wake.get("msg", "confirm")), suffix]
 	_pending_row.visible = true
 	_shell.set_event_active(true)
-	_event_image.visible = true
 	_append("[color=#95560d]Game master asks:[/color] %s" % _pending_label.text)
 	_say("King", _pending_label.text)
 	_set_busy(false)  # re-evaluates the lock now that a question is pending
